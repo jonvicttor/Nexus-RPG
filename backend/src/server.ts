@@ -5,9 +5,11 @@ import path from 'path';
 
 const fastify = Fastify();
 
+// CONFIGURAÇÃO DE PORTA PARA O RENDER
+const PORT = Number(process.env.PORT) || 4000;
+
 const io = new Server(fastify.server, {
   cors: { origin: "*" },
-  // AUMENTADO PARA 50MB PARA EVITAR QUE MAPAS GRANDES TRAVEM
   maxHttpBufferSize: 50 * 1024 * 1024 
 });
 
@@ -29,6 +31,7 @@ interface GameState {
   chatHistory: any[];
   customMonsters: any[];    
   globalBrightness: number; 
+  weather: 'none' | 'rain' | 'snow'; // NOVO
 }
 
 const DATA_FILE = path.join(process.cwd(), 'savegame_v2.json');
@@ -41,10 +44,11 @@ let currentGameState: GameState = {
   activeTurnId: null,
   chatHistory: [],
   customMonsters: [], 
-  globalBrightness: 1 
+  globalBrightness: 1,
+  weather: 'none' // NOVO
 };
 
-// --- 3. CARREGAR SAVE (Se existir) ---
+// --- 3. CARREGAR SAVE ---
 if (fs.existsSync(DATA_FILE)) {
   try {
     const rawData = fs.readFileSync(DATA_FILE, 'utf-8');
@@ -53,16 +57,9 @@ if (fs.existsSync(DATA_FILE)) {
     currentGameState = { 
         ...currentGameState, 
         ...loadedData,
-        customMonsters: loadedData.customMonsters || [],
-        globalBrightness: loadedData.globalBrightness !== undefined ? loadedData.globalBrightness : 1
+        weather: loadedData.weather || 'none'
     };
-
-    if (!currentGameState.fogGrid || currentGameState.fogGrid.length < ROWS) {
-        console.log("⚠️ Grade inválida detectada! Recriando neblina...");
-        currentGameState.fogGrid = createInitialFog();
-    }
-
-    console.log('✅ SAVE CARREGADO. Entidades:', currentGameState.entities.length);
+    console.log('✅ SAVE CARREGADO.');
   } catch (e) {
     console.error('❌ ERRO AO LER SAVE:', e);
   }
@@ -71,39 +68,34 @@ if (fs.existsSync(DATA_FILE)) {
 io.on('connection', (socket) => {
   console.log('🔌 Nova conexão:', socket.id);
 
-  // Sincroniza o estado completo ao entrar
   socket.on('joinRoom', (roomId) => {
     socket.join(roomId);
     socket.emit('gameStateSync', currentGameState);
-    console.log(`👤 Usuário entrou na sala: ${roomId}`);
   });
 
-  socket.on('checkExistingCharacter', (data) => {
-    console.log(`🔎 Verificando existência de: ${data.name}`);
-    const existingChar = currentGameState.entities.find(
-      (e: any) => e.type === 'player' && e.name.toLowerCase() === data.name.toLowerCase()
-    );
-    if (existingChar) {
-      socket.emit('characterFound', existingChar);
-    } else {
-      socket.emit('characterNotFound');
-    }
+  // --- NOVAS FUNÇÕES DE CLIMA E ANIMAÇÃO ---
+  socket.on('updateWeather', (data) => {
+      currentGameState.weather = data.weather;
+      io.in(data.roomId).emit('weatherUpdated', { weather: data.weather });
   });
+
+  socket.on('triggerCombatAnimation', (data) => {
+      io.in(data.roomId).emit('triggerCombatAnimation', data);
+  });
+
+  socket.on('pingMap', (data) => {
+      socket.to(data.roomId).emit('mapPinged', data);
+  });
+  // ---------------------------------------
 
   socket.on('changeMap', (data) => {
     const newFog = createInitialFog();
     currentGameState.currentMap = data.mapUrl;
     currentGameState.fogGrid = newFog;
-    
-    io.in(data.roomId).emit('mapChanged', { 
-      mapUrl: data.mapUrl,
-      fogGrid: newFog
-    });
+    io.in(data.roomId).emit('mapChanged', { mapUrl: data.mapUrl, fogGrid: newFog });
   });
 
-  // Salvar Jogo ATUALIZADO
   socket.on('saveGame', (data) => {
-    console.log(`📥 PERSISTINDO DADOS NO DISCO...`);
     currentGameState = {
         ...currentGameState,
         entities: data.entities,
@@ -113,7 +105,8 @@ io.on('connection', (socket) => {
         activeTurnId: data.activeTurnId,
         chatHistory: data.chatMessages || [],
         customMonsters: data.customMonsters || [],
-        globalBrightness: data.globalBrightness 
+        globalBrightness: data.globalBrightness,
+        weather: data.weather || currentGameState.weather
     };
 
     try {
@@ -124,22 +117,14 @@ io.on('connection', (socket) => {
     }
   });
 
-  // --- SINCRONIZAR BRILHO (DIA/NOITE) ---
   socket.on('updateGlobalBrightness', (data) => {
       currentGameState.globalBrightness = data.brightness;
-      io.in(data.roomId).emit('globalBrightnessUpdated', { 
-          brightness: data.brightness 
-      });
+      io.in(data.roomId).emit('globalBrightnessUpdated', { brightness: data.brightness });
   });
-
-  // --- ATUALIZAÇÕES EM TEMPO REAL ---
 
   socket.on('updateEntityPosition', (data) => {
     const ent = currentGameState.entities.find((e: any) => e.id === data.entityId);
-    if (ent) {
-      ent.x = data.x;
-      ent.y = data.y;
-    }
+    if (ent) { ent.x = data.x; ent.y = data.y; }
     socket.to(data.roomId).emit('entityPositionUpdated', data);
   });
 
@@ -192,13 +177,9 @@ io.on('connection', (socket) => {
     io.in(data.roomId).emit('newDiceResult', data); 
   });
 
-  // --- NOVA FUNCIONALIDADE: ROLAGEM PEDIDA PELO MESTRE ---
   socket.on('dmRequestRoll', (data) => {
-    console.log(`🎲 Mestre pediu rolagem de ${data.skillName} (CD ${data.dc}) para ID ${data.targetId}`);
-    // Envia para todos na sala (o App.tsx do jogador vai filtrar se é pra ele)
     io.in(data.roomId).emit('dmRequestRoll', data);
   });
-  // --------------------------------------------------------
 
   socket.on('triggerAudio', (data) => { 
     io.to(data.roomId).emit('triggerAudio', data); 
@@ -212,7 +193,8 @@ io.on('connection', (socket) => {
   });
 });
 
-fastify.listen({ port: 4000, host: '0.0.0.0' }, (err) => {
+// ESCUTAR NA PORTA DINÂMICA E HOST 0.0.0.0 (Obrigatório para Render)
+fastify.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
   if (err) { console.error(err); process.exit(1); }
-  console.log('⚔️  NEXUS BACKEND ONLINE - PORTA 4000');
+  console.log(`⚔️ NEXUS BACKEND ONLINE - PORTA ${PORT}`);
 });
