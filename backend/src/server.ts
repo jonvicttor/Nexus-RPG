@@ -5,12 +5,15 @@ import path from 'path';
 
 const fastify = Fastify();
 
-// CONFIGURAÇÃO DE PORTA PARA O RENDER
+// CONFIGURAÇÃO DE PORTA PARA O RENDER (Obrigatório)
 const PORT = Number(process.env.PORT) || 4000;
 
 const io = new Server(fastify.server, {
-  cors: { origin: "*" },
-  maxHttpBufferSize: 50 * 1024 * 1024 
+  cors: { 
+    origin: "*", 
+    methods: ["GET", "POST"] 
+  },
+  maxHttpBufferSize: 50 * 1024 * 1024 // 50MB para mapas grandes
 });
 
 // --- 1. CONFIGURAÇÃO DO MAPA ---
@@ -21,7 +24,7 @@ const ROWS = Math.ceil(MAP_LIMIT / GRID_SIZE);
 
 const createInitialFog = () => Array(ROWS).fill(null).map(() => Array(COLS).fill(false));
 
-// --- 2. ESTADO INICIAL ATUALIZADO ---
+// --- 2. ESTADO INICIAL ---
 interface GameState {
   entities: any[];
   fogGrid: boolean[][];
@@ -31,7 +34,7 @@ interface GameState {
   chatHistory: any[];
   customMonsters: any[];    
   globalBrightness: number; 
-  weather: 'none' | 'rain' | 'snow'; // NOVO
+  weather: 'none' | 'rain' | 'snow';
 }
 
 const DATA_FILE = path.join(process.cwd(), 'savegame_v2.json');
@@ -45,7 +48,7 @@ let currentGameState: GameState = {
   chatHistory: [],
   customMonsters: [], 
   globalBrightness: 1,
-  weather: 'none' // NOVO
+  weather: 'none'
 };
 
 // --- 3. CARREGAR SAVE ---
@@ -57,23 +60,40 @@ if (fs.existsSync(DATA_FILE)) {
     currentGameState = { 
         ...currentGameState, 
         ...loadedData,
+        customMonsters: loadedData.customMonsters || [],
         weather: loadedData.weather || 'none'
     };
-    console.log('✅ SAVE CARREGADO.');
+    console.log('✅ SAVE CARREGADO COM SUCESSO.');
   } catch (e) {
     console.error('❌ ERRO AO LER SAVE:', e);
   }
 }
 
+// --- 4. EVENTOS DO SOCKET ---
 io.on('connection', (socket) => {
   console.log('🔌 Nova conexão:', socket.id);
 
+  // Sincroniza ao entrar
   socket.on('joinRoom', (roomId) => {
     socket.join(roomId);
     socket.emit('gameStateSync', currentGameState);
+    console.log(`👤 Usuário entrou na sala: ${roomId}`);
   });
 
-  // --- NOVAS FUNÇÕES DE CLIMA E ANIMAÇÃO ---
+  // FIX: VERIFICAÇÃO DE PERSONAGEM (Isso evita o carregamento infinito)
+  socket.on('checkExistingCharacter', (data) => {
+    console.log(`🔎 Verificando existência de: ${data.name}`);
+    const existingChar = currentGameState.entities.find(
+      (e: any) => e.type === 'player' && e.name.toLowerCase() === data.name.toLowerCase()
+    );
+    if (existingChar) {
+      socket.emit('characterFound', existingChar);
+    } else {
+      socket.emit('characterNotFound');
+    }
+  });
+
+  // CLIMA E ANIMAÇÕES
   socket.on('updateWeather', (data) => {
       currentGameState.weather = data.weather;
       io.in(data.roomId).emit('weatherUpdated', { weather: data.weather });
@@ -86,8 +106,8 @@ io.on('connection', (socket) => {
   socket.on('pingMap', (data) => {
       socket.to(data.roomId).emit('mapPinged', data);
   });
-  // ---------------------------------------
 
+  // MAPA E SAVE
   socket.on('changeMap', (data) => {
     const newFog = createInitialFog();
     currentGameState.currentMap = data.mapUrl;
@@ -117,11 +137,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('updateGlobalBrightness', (data) => {
-      currentGameState.globalBrightness = data.brightness;
-      io.in(data.roomId).emit('globalBrightnessUpdated', { brightness: data.brightness });
-  });
-
+  // ENTIDADES E POSIÇÃO
   socket.on('updateEntityPosition', (data) => {
     const ent = currentGameState.entities.find((e: any) => e.id === data.entityId);
     if (ent) { ent.x = data.x; ent.y = data.y; }
@@ -149,16 +165,17 @@ io.on('connection', (socket) => {
     socket.to(data.roomId).emit('entityDeleted', data);
   });
 
+  // BRILHO, NEBLINA E INICIATIVA
+  socket.on('updateGlobalBrightness', (data) => {
+      currentGameState.globalBrightness = data.brightness;
+      io.in(data.roomId).emit('globalBrightnessUpdated', { brightness: data.brightness });
+  });
+
   socket.on('updateFog', (data) => {
     if (currentGameState.fogGrid[data.y]) {
       currentGameState.fogGrid[data.y][data.x] = data.shouldReveal;
     }
     socket.to(data.roomId).emit('fogUpdated', data);
-  });
-
-  socket.on('syncFogGrid', (data) => {
-    currentGameState.fogGrid = data.grid;
-    socket.to(data.roomId).emit('fogGridSynced', data);
   });
 
   socket.on('updateInitiative', (data) => {
@@ -167,6 +184,7 @@ io.on('connection', (socket) => {
     socket.to(data.roomId).emit('initiativeUpdated', data);
   });
 
+  // CHAT, DADOS E ÁUDIO
   socket.on('sendMessage', (data) => {
     currentGameState.chatHistory.push(data.message);
     if (currentGameState.chatHistory.length > 50) currentGameState.chatHistory.shift();
@@ -177,24 +195,20 @@ io.on('connection', (socket) => {
     io.in(data.roomId).emit('newDiceResult', data); 
   });
 
-  socket.on('dmRequestRoll', (data) => {
-    io.in(data.roomId).emit('dmRequestRoll', data);
-  });
-
   socket.on('triggerAudio', (data) => { 
     io.to(data.roomId).emit('triggerAudio', data); 
   });
 
-  socket.on('syncMapState', (data) => {
-    socket.to(data.roomId).emit('mapStateUpdated', {
-      offset: data.offset,
-      scale: data.scale
-    });
+  socket.on('dmRequestRoll', (data) => {
+    io.in(data.roomId).emit('dmRequestRoll', data);
   });
 });
 
-// ESCUTAR NA PORTA DINÂMICA E HOST 0.0.0.0 (Obrigatório para Render)
+// ESCUTAR NA PORTA DO AMBIENTE E HOST 0.0.0.0
 fastify.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
-  if (err) { console.error(err); process.exit(1); }
+  if (err) { 
+    console.error(err); 
+    process.exit(1); 
+  }
   console.log(`⚔️ NEXUS BACKEND ONLINE - PORTA ${PORT}`);
 });
