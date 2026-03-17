@@ -1,0 +1,140 @@
+/* --- 1. Importações de Fontes e Tailwind --- */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@400;600&family=Lato:wght@300;400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --- 2. Variáveis Globais e Reset --- */
+:root {
+  --font-heading: 'Cinzel', serif;
+  --font-decorative: 'Cinzel Decorative', serif;
+  --font-body: 'Lato', sans-serif;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background-color: #050505; /* Fundo bem escuro para contraste */
+  color: #e5e5e5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden; /* Evita scroll na tela inteira do app */
+}
+
+/* Aplica a fonte de RPG em todos os títulos e botões automaticamente */
+h1, h2, h3, h4, h5, h6, button {
+  font-family: var(--font-heading);
+}
+
+/* --- 3. Scrollbar Personalizada (Estilo Madeira/Ferro) --- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1510; /* Fundo escuro levemente marrom */
+}
+
+::-webkit-scrollbar-thumb {
+  background: #453a2f; /* Cor de madeira escura */
+  border-radius: 3px;
+  border: 1px solid #18181b;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #d97706; /* Brilho âmbar ao passar o mouse */
+}
+
+/* Classe utilitária para containers com scroll */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #453a2f #1a1510;
+}
+
+/* --- 4. Utilitários para Efeitos 3D (Usado no Dado) --- */
+.perspective-1000 {
+  perspective: 1000px;
+}
+.transform-style-3d {
+  transform-style: preserve-3d;
+}
+.backface-hidden {
+  backface-visibility: hidden;
+}
+.rotate-y-180 {
+  transform: rotateY(180deg);
+}
+
+/* --- 5. Estilos Especiais (CTA / Destino / Títulos Épicos) --- */
+
+/* Container Centralizado */
+.destiny-cta-container {
+  position: absolute;
+  top: 60%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: 10;
+  cursor: pointer;
+  pointer-events: none; /* Permite clicar através, mude para auto se for um botão */
+}
+
+/* Texto Pequeno (Subtítulo) */
+.cta-small {
+  font-family: var(--font-heading);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4em;
+  color: rgba(251, 191, 36, 0.6); /* Dourado pálido */
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+/* Texto Principal (Dourado Épico com Gradiente) */
+.cta-main {
+  font-family: var(--font-decorative);
+  font-size: 2.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin: 0;
+  letter-spacing: 0.15em;
+  
+  /* Gradiente Dourado no Texto */
+  background: linear-gradient(to bottom, #fff7cc 0%, #fbbf24 50%, #b45309 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+  
+  /* Sombra e Brilho */
+  filter: drop-shadow(0 0 15px rgba(245, 158, 11, 0.4));
+  
+  /* Animação */
+  animation: pulseGold 4s infinite ease-in-out;
+}
+
+/* Linha Separadora Decorativa */
+.cta-separator {
+  height: 1px;
+  width: 150px;
+  margin: 1rem auto 0;
+  background: linear-gradient(90deg, transparent, #fbbf24, transparent);
+  opacity: 0.5;
+  box-shadow: 0 0 10px #fbbf24;
+}
+
+/* Animação de Pulsar Dourado */
+@keyframes pulseGold {
+  0%, 100% { 
+    filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.3)); 
+    transform: scale(1); 
+    opacity: 0.9; 
+  }
+  50% { 
+    filter: drop-shadow(0 0 25px rgba(245, 158, 11, 0.6)); 
+    transform: scale(1.02); 
+    opacity: 1; 
+  }
+}
