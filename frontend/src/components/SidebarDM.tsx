@@ -9,7 +9,7 @@ import SkillList from './SkillList';
 import ItemCreator from './ItemCreator';
 import Scratchpad from './Scratchpad'; 
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Image as ImageIcon, Check, X } from 'lucide-react';
 
 export interface InitiativeItem { id: number; name: string; value: number; }
 
@@ -22,7 +22,7 @@ const MONSTER_LIST: MonsterPreset[] = [
   { name: 'Zumbi', hp: 22, ac: 8, image: '/tokens/zumbi.png' }
 ];
 
-const AVAILABLE_MAPS = [
+const INITIAL_MAPS = [
     { name: 'Floresta', url: '/maps/floresta.jpg' }, 
     { name: 'Caverna', url: '/maps/caverna.jpg' }, 
     { name: 'Taverna', url: '/maps/taverna.jpg' }, 
@@ -73,7 +73,6 @@ interface SidebarDMProps {
   onRequestRoll: (targetId: number, skillName: string, mod: number, dc: number) => void;
   onToggleVisibility: (id: number) => void;
   
-  // PROPS DE ÁUDIO
   currentTrack: string | null;
   onPlayMusic: (trackId: string) => void;
   onStopMusic: () => void;
@@ -81,13 +80,8 @@ interface SidebarDMProps {
   audioVolume: number;
   onSetAudioVolume: (val: number) => void;
 
-  // MAPA
   onResetView: () => void;
-
-  // INVENTÁRIO 
   onGiveItem: (targetId: number, item: any) => void;
-
-  // NOVO: APLICAR DANO VIA CHAT
   onApplyDamageFromChat: (targetId: number, damageExpression: string) => void;
 }
 
@@ -277,18 +271,52 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const [activeTab, setActiveTab] = useState<SidebarTab>('combat');
   const [mainTab, setMainTab] = useState<MainTab>('tools'); 
   const [showMonsterSelector, setShowMonsterSelector] = useState(false);
-  const [customMapUrl, setCustomMapUrl] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingSkillRequest, setPendingSkillRequest] = useState<{ skillName: string, mod: number } | null>(null);
   const [dcInput, setDcInput] = useState<number>(10);
+  
+  // SISTEMA DE MAPAS MELHORADO
+  const [mapList, setMapList] = useState<{name: string, url: string}[]>(INITIAL_MAPS);
+  const [customMapUrl, setCustomMapUrl] = useState('');
+  const [previewMap, setPreviewMap] = useState<{url: string, name: string} | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const FULL_MONSTER_LIST = [...MONSTER_LIST, ...(customMonsters || [])];
   const targetId = targetEntityIds[0];
   const targetEntity = entities.find(e => e.id === targetId);
   const handleConfirmRequest = () => { if (pendingSkillRequest && targetEntity) { onRequestRoll(targetEntity.id, pendingSkillRequest.skillName, pendingSkillRequest.mod, dcInput); setPendingSkillRequest(null); setDcInput(10); } };
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) { const reader = new FileReader(); reader.onload = (event) => { if (event.target?.result) onChangeMap(event.target.result as string); }; reader.readAsDataURL(file); } };
+  
+  // Handlers de Pré-visualização de Mapa
+  const handleFileUploadPreview = (e: React.ChangeEvent<HTMLInputElement>) => { 
+      const file = e.target.files?.[0]; 
+      if (file) { 
+          const reader = new FileReader(); 
+          reader.onload = (event) => { 
+              if (event.target?.result) {
+                  const mapName = file.name.replace(/\.[^/.]+$/, ""); // Tira a extensão (.jpg)
+                  setPreviewMap({ url: event.target.result as string, name: mapName });
+              }
+          }; 
+          reader.readAsDataURL(file); 
+      } 
+  };
+  
+  const handleUrlPreview = () => { 
+      if (customMapUrl.trim()) { 
+          setPreviewMap({ url: customMapUrl, name: 'Mapa da Web' });
+          setCustomMapUrl(''); 
+      } 
+  };
+
+  const handleConfirmNewMap = () => {
+      if (previewMap && previewMap.name.trim()) {
+          setMapList(prev => [...prev, { name: previewMap.name, url: previewMap.url }]);
+          onChangeMap(previewMap.url);
+          setPreviewMap(null);
+      }
+  };
+
   const handleDragStart = (e: React.DragEvent, type: 'enemy' | 'player') => { e.dataTransfer.setData("entityType", type); };
   const handleSelectPreset = (monster: MonsterPreset) => { const count = entities.filter(e => e.name.startsWith(monster.name)).length; const finalName = count > 0 ? `${monster.name} ${count + 1}` : monster.name; onAddEntity('enemy', finalName, monster); setShowMonsterSelector(false); };
-  const handleLoadCustomMap = () => { if (customMapUrl.trim()) { onChangeMap(customMapUrl); setCustomMapUrl(''); } };
   const attacker = entities.find(e => e.id === attackerId) || null;
   const targets = entities.filter(e => targetEntityIds.includes(e.id));
   const toggleConditionForAll = (cond: string) => { targets.forEach(t => onToggleCondition(t.id, cond)); };
@@ -354,7 +382,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                             messages={chatMessages} 
                             onSendMessage={onSendMessage} 
                             role="DM" 
-                            onApplyDamage={onApplyDamageFromChat} // <--- AQUI REPASA
+                            onApplyDamage={onApplyDamageFromChat} 
                         />
                     </div>
                 </div>
@@ -420,19 +448,58 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                 </section>
                             </div>
                         )}
-                        {/* ... MAP ... */}
+                        {/* ... MAPA COM PRÉ-VISUALIZAÇÃO ... */}
                         {activeTab === 'map' && (
                             <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                                <section className="mb-6 border-b border-white/5 pb-4">
-                                    <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest">Mapa Customizado</h3>
-                                    <div className="flex gap-2">
-                                            <input type="text" placeholder="Cole o link da imagem..." className="w-full bg-black/50 border border-white/20 rounded p-2 text-xs text-white outline-none focus:border-blue-500" value={customMapUrl} onChange={(e) => setCustomMapUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLoadCustomMap()} />
-                                            <button onClick={handleLoadCustomMap} className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-3 rounded text-xs transition-colors disabled:opacity-50" disabled={!customMapUrl.trim()}>Ir</button>
-                                    </div>
-                                    <div className="mt-2 flex items-center justify-center"><span className="text-[9px] text-gray-500 uppercase mr-2">OU</span><div className="h-px bg-white/10 flex-grow"></div></div>
-                                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
-                                    <button onClick={() => fileInputRef.current?.click()} className="w-full mt-2 bg-purple-900/40 hover:bg-purple-600 border border-purple-500/50 text-white font-bold py-2 rounded uppercase text-xs transition-all flex items-center justify-center gap-2">📂 Abrir Arquivo Local</button>
+                                
+                                {/* ADICIONAR NOVO MAPA COM PREVIEW */}
+                                <section className="mb-6 border-b pb-4 bg-blue-900/10 p-3 rounded-lg border border-blue-500/20 shadow-inner">
+                                    <h3 className="text-blue-400 font-bold text-[11px] uppercase mb-3 tracking-widest flex items-center gap-2"><ImageIcon size={14}/> Carregar Novo Mapa</h3>
+                                    
+                                    {!previewMap ? (
+                                        <>
+                                            <div className="flex gap-2">
+                                                <input type="text" placeholder="Cole o link da imagem (URL)..." className="w-full bg-black/60 border border-white/20 rounded p-2 text-xs text-white outline-none focus:border-blue-500" value={customMapUrl} onChange={(e) => setCustomMapUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleUrlPreview()} />
+                                                <button onClick={handleUrlPreview} className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-3 rounded text-xs transition-colors disabled:opacity-50" disabled={!customMapUrl.trim()}>Preview</button>
+                                            </div>
+                                            <div className="mt-3 mb-3 flex items-center justify-center"><span className="text-[9px] text-gray-500 uppercase px-2 font-bold">Ou do seu Computador</span></div>
+                                            <input type="file" ref={fileInputRef} onChange={handleFileUploadPreview} className="hidden" accept="image/*" />
+                                            <button onClick={() => fileInputRef.current?.click()} className="w-full bg-black/60 hover:bg-blue-900/40 border border-blue-500/50 text-blue-200 font-bold py-2.5 rounded uppercase text-xs transition-all flex items-center justify-center gap-2 shadow">📂 Escolher Arquivo Local</button>
+                                        </>
+                                    ) : (
+                                        <div className="animate-in zoom-in-95 duration-200">
+                                            <div className="w-full h-32 rounded-lg overflow-hidden border-2 border-blue-500 mb-3 shadow-[0_0_15px_rgba(59,130,246,0.3)] relative">
+                                                <img src={previewMap.url} alt="Preview" className="w-full h-full object-cover opacity-80" />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-2">
+                                                    <span className="text-[10px] text-white font-mono tracking-widest">PRÉ-VISUALIZAÇÃO</span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="mb-3">
+                                                <label className="text-[9px] text-blue-300 uppercase font-bold mb-1 block">Nome do Botão:</label>
+                                                <input autoFocus type="text" className="w-full bg-black border border-blue-500/50 rounded p-2 text-sm text-white font-bold" value={previewMap.name} onChange={(e) => setPreviewMap({...previewMap, name: e.target.value})} />
+                                            </div>
+
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setPreviewMap(null)} className="flex-1 bg-red-900/50 hover:bg-red-700 text-red-200 text-xs py-2 rounded font-bold flex items-center justify-center gap-1 transition-colors"><X size={14}/> Cancelar</button>
+                                                <button onClick={handleConfirmNewMap} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs py-2 rounded font-bold flex items-center justify-center gap-1 transition-colors shadow-lg"><Check size={14}/> Salvar & Usar</button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </section>
+
+                                {/* LISTA DE MAPAS SALVOS */}
+                                <section className="mb-6 border-b border-white/5 pb-4">
+                                    <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest">Mapas Disponíveis</h3>
+                                    <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                                        {mapList.map((map, idx) => (
+                                            <button key={idx} onClick={() => onChangeMap(map.url)} className="bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-blue-400 text-gray-300 hover:text-white text-[10px] font-bold py-3 px-2 rounded transition-all active:scale-95 truncate">
+                                                {map.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </section>
+
                                 <section className="mb-6 border-b border-white/5 pb-4">
                                     <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest">Ambiente & Luz</h3>
                                     <div className="bg-black/40 p-2 rounded border border-white/10">
@@ -443,10 +510,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                             <input type="range" min="0" max="1" step="0.05" value={globalBrightness} onChange={(e) => onSetGlobalBrightness && onSetGlobalBrightness(parseFloat(e.target.value))} className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"/>
                                     </div>
                                 </section>
-                                <section className="mb-6 border-b border-white/5 pb-4">
-                                    <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest">Mapas Padrão</h3>
-                                    <div className="grid grid-cols-2 gap-2">{AVAILABLE_MAPS.map(map => (<button key={map.url} onClick={() => onChangeMap(map.url)} className="bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-300 text-[10px] font-bold py-2 rounded transition-all active:scale-95">{map.name}</button>))}</div>
-                                </section>
+                                
                                 <section className="mb-6 border-b border-white/5 pb-4 bg-white/5 rounded p-2">
                                     <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest text-center">Magias & Áreas</h3>
                                     <AoEColorPicker selected={aoeColor} onSelect={onSetAoEColor} />

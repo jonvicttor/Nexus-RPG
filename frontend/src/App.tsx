@@ -186,6 +186,9 @@ function App() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entity: Entity } | null>(null);
   const [pings, setPings] = useState<MapPing[]>([]);
 
+  // Novo estado para Notificações flutuantes (Substitui o alert)
+  const [toastMsg, setToastMsg] = useState<{text: string, id: number} | null>(null);
+
   useEffect(() => {
     const handleResize = () => setWindowSize({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', handleResize);
@@ -274,6 +277,7 @@ function App() {
     };
   }, [isLoggedIn]);
 
+  // Removido o statusSelectionId das dependências para não reiniciar os sockets ao clicar num token!
   useEffect(() => {
     if (!isLoggedIn) return;
 
@@ -289,7 +293,12 @@ function App() {
       if (gameState.currentTrack) handlePlayMusic(gameState.currentTrack, false);
     });
 
-    socket.on('notification', (data: any) => { alert(data.message); });
+    // SUBSTITUI O ALERT BLOQUEADOR
+    socket.on('notification', (data: any) => { 
+        setToastMsg({ text: data.message, id: Date.now() });
+        setTimeout(() => setToastMsg(null), 4000);
+    });
+
     socket.on('newDiceResult', () => playSound('dado'));
     
     socket.on('chatMessage', (data: any) => {
@@ -309,7 +318,8 @@ function App() {
     
     socket.on('entityDeleted', (data: any) => {
         setEntities(prev => prev.filter(ent => ent.id !== data.entityId));
-        if (statusSelectionId === data.entityId) setStatusSelectionId(null);
+        // Correção que permite remover statusSelectionId das dependências:
+        setStatusSelectionId(prev => prev === data.entityId ? null : prev);
     });
 
     socket.on('mapChanged', (data: any) => { setCurrentMap(data.mapUrl); setFogGrid(data.fogGrid); });
@@ -394,7 +404,7 @@ function App() {
       socket.off('playSFX');
       socket.off('mapPinged'); 
     };
-  }, [isLoggedIn, addLog, role, statusSelectionId, playerName, handlePlayMusic, handleStopMusic, handlePlaySFX, playSound]); 
+  }, [isLoggedIn, addLog, role, playerName, handlePlayMusic, handleStopMusic, handlePlaySFX, playSound]); 
 
   const handleResetView = () => {
       setMapOffset({ x: 0, y: 0 });
@@ -643,8 +653,10 @@ function App() {
           }
       }
 
+      // CORREÇÃO: Substituição de Alert por Notificação Flutuante
       if (!receiver) {
-          alert(role === 'DM' ? "Selecione um token (Alvo) para pegar o item." : "Você não tem um personagem para pegar isso.");
+          setToastMsg({ text: role === 'DM' ? "Selecione um token (Alvo) para pegar o item." : "Você não tem um personagem para pegar isso.", id: Date.now() });
+          setTimeout(() => setToastMsg(null), 4000);
           return;
       }
 
@@ -668,7 +680,11 @@ function App() {
       switch (action) {
           case 'VIEW_SHEET':
               if (role === 'DM') setEditingEntity(entity);
-              else alert(`Visualizando ficha de ${entity.name} (Em breve)`);
+              else {
+                  // CORREÇÃO: Substituição de Alert por Notificação Flutuante
+                  setToastMsg({ text: `Visualizando ficha de ${entity.name} (Em breve)`, id: Date.now() });
+                  setTimeout(() => setToastMsg(null), 4000);
+              }
               break;
           case 'WHISPER':
               addLog({ text: `(Sistema) Use "/w ${entity.name} mensagem" para sussurrar.`, type: 'info', sender: 'Sistema' });
@@ -1002,7 +1018,15 @@ function App() {
   const myCharacter = isMobilePlayer ? entities.find(e => e.name === playerName && e.type === 'player') : null;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-rpgBg" onClick={() => { if (Howler.ctx && Howler.ctx.state !== 'running') Howler.ctx.resume(); }}>
+    <div className="flex h-[100dvh] w-screen overflow-hidden bg-rpgBg" onClick={() => { if (Howler.ctx && Howler.ctx.state !== 'running') Howler.ctx.resume(); }}>
+      {/* TOAST DE NOTIFICAÇÃO (Substitui o alert bloqueador) */}
+      {toastMsg && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[400] bg-gray-900 border border-cyan-500/50 text-cyan-50 px-6 py-3 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.4)] animate-in slide-in-from-top-5 fade-in duration-300 flex items-center gap-3">
+            <span className="text-xl">🔔</span>
+            <span className="font-bold tracking-wider">{toastMsg.text}</span>
+        </div>
+      )}
+
       {initModalEntity && (<InitiativeModal entity={initModalEntity} onClose={() => setInitModalEntity(null)} onConfirm={handleSubmitInitiative} />)}
 
       {editingEntity && (

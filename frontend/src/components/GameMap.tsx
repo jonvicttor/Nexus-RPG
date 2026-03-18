@@ -24,7 +24,7 @@ interface GameMapProps {
   onAddToken?: (type: string, x: number, y: number) => void; 
   onRotateToken: (id: number, angle: number) => void;
   onResizeToken: (id: number, size: number) => void;
-  onTokenDoubleClick: (entity: Entity, multi?: boolean) => void; // Assinatura atualizada
+  onTokenDoubleClick: (entity: Entity, multi?: boolean) => void; 
   targetEntityIds: number[]; 
   attackerId: number | null;
   onSetTarget: (id: number | number[] | null, multiSelect?: boolean) => void;
@@ -66,7 +66,9 @@ const GameMap: React.FC<GameMapProps> = (props) => {
 
     const [isMeasuring, setIsMeasuring] = useState(false);
     const [rulerStart, setRulerStart] = useState<{ x: number, y: number } | null>(null);
-    const [rulerEnd, setRulerEnd] = useState<{ x: number, y: number } | null>(null);
+    // REFS PARA ALTA PERFORMANCE NA RÉGUA
+    const rulerLineRef = useRef<SVGLineElement>(null);
+    const rulerTextRef = useRef<SVGTextElement>(null);
     const isMPressed = useRef(false);
     
     const isMapMouseDown = useRef(false);
@@ -112,7 +114,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 if (isMeasuring) {
                     setIsMeasuring(false);
                     setRulerStart(null);
-                    setRulerEnd(null);
                 }
             }
 
@@ -128,7 +129,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 if (isMeasuring) {
                     setIsMeasuring(false);
                     setRulerStart(null);
-                    setRulerEnd(null);
                 }
             }
         };
@@ -203,17 +203,29 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             
             setIsMeasuring(true);
             setRulerStart({ x: mouseX, y: mouseY });
-            setRulerEnd({ x: mouseX, y: mouseY });
         }
     };
 
+    // MANIPULAÇÃO DIRETA DO DOM NA RÉGUA = PERFORMANCE MÁXIMA
     const handleMouseMove = (e: React.MouseEvent) => {
-        if (isMeasuring && rulerStart) {
+        if (isMeasuring && rulerStart && rulerLineRef.current) {
             const rect = containerRef.current?.getBoundingClientRect();
             if (!rect) return;
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
-            setRulerEnd({ x: mouseX, y: mouseY });
+            
+            rulerLineRef.current.setAttribute('x2', mouseX.toString());
+            rulerLineRef.current.setAttribute('y2', mouseY.toString());
+
+            if (rulerTextRef.current) {
+                const distPx = Math.hypot(mouseX - rulerStart.x, mouseY - rulerStart.y);
+                const distSquares = distPx / (gridSize * scale);
+                const distMeters = (distSquares * 1.5).toFixed(1); // 1 quadrado = 1.5m
+                
+                rulerTextRef.current.setAttribute('x', (mouseX + 15).toString());
+                rulerTextRef.current.setAttribute('y', (mouseY + 20).toString());
+                rulerTextRef.current.textContent = `${distMeters}m`;
+            }
         }
     };
 
@@ -221,7 +233,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         if (isMeasuring) {
             setIsMeasuring(false);
             setRulerStart(null);
-            setRulerEnd(null);
         }
 
         if (!isMapMouseDown.current) return;
@@ -344,14 +355,23 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 </div>
             ))}
 
-            {isMeasuring && rulerStart && rulerEnd && (
+            {isMeasuring && rulerStart && (
                 <svg className="absolute inset-0 w-full h-full pointer-events-none z-[150]">
                     <line 
+                        ref={rulerLineRef}
                         x1={rulerStart.x} y1={rulerStart.y} 
-                        x2={rulerEnd.x} y2={rulerEnd.y} 
+                        x2={rulerStart.x} y2={rulerStart.y} 
                         stroke="yellow" strokeWidth="3" strokeDasharray="6,4" 
                         className="drop-shadow-[0_0_2px_black]"
                     />
+                    <text 
+                        ref={rulerTextRef}
+                        x={rulerStart.x + 15} y={rulerStart.y + 20} 
+                        fill="yellow" fontSize="16" fontWeight="900"
+                        className="drop-shadow-[0_0_4px_black] font-mono"
+                    >
+                        0m
+                    </text>
                 </svg>
             )}
 

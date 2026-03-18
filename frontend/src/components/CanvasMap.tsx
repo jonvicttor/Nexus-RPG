@@ -41,6 +41,8 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
 
   const [measureStart, setMeasureStart] = useState<{x: number, y: number} | null>(null);
   const [aoeStart, setAoeStart] = useState<{x: number, y: number} | null>(null);
+  
+  // Controles de Performance de Pan/Fog
   const [isPaintingFog, setIsPaintingFog] = useState(false);
   const isPanningRef = useRef(false);
   const panStartMouseRef = useRef({ x: 0, y: 0 });
@@ -48,6 +50,10 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
   const mousePosRef = useRef({ x: 0, y: 0 });
   const isMKeyPressed = useRef(false);
   const [forceRender, setForceRender] = useState(0);
+
+  // NOVO: Throttle para Sockets da Névoa (Reduz LAG)
+  const lastFogUpdate = useRef<number>(0);
+  const fogDebounceMs = 50; 
 
   useEffect(() => {
       const handleResize = () => setCanvasSize({ w: window.innerWidth, h: window.innerHeight });
@@ -69,6 +75,7 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
     return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
   }, []);
 
+  // O "Motor Gráfico" do Canvas
   useEffect(() => {
     const canvas = canvasRef.current; 
     if (!canvas || !mapImage) return;
@@ -85,8 +92,10 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
     ctx.translate(offset.x, offset.y); 
     ctx.scale(scale, scale);
     
+    // Desenha o Fundo
     ctx.drawImage(mapImage, 0, 0, mapImage.width, mapImage.height);
 
+    // Sistema de Iluminação Global
     if (globalBrightness < 1) {
         ctx.save();
         ctx.fillStyle = "#000000";
@@ -95,17 +104,31 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
         ctx.restore();
     }
 
-    if (fogGrid) {
+    // Desenha a Névoa de Guerra
+    if (fogGrid && fogGrid.length > 0) {
       ctx.fillStyle = "#000000"; 
       ctx.globalAlpha = role === 'DM' ? 0.6 : 1.0; 
-      fogGrid.forEach((row, y) => {
-        row.forEach((isRevealed, x) => {
-          if (!isRevealed) { ctx.fillRect(x * gridSize, y * gridSize, gridSize + 1, gridSize + 1); }
-        });
-      });
+      // Em vez de iterar sobre TODO o array de 8000x8000, 
+      // iteramos apenas sobre a zona visível no Canvas para poupar CPU
+      
+      const startCol = Math.max(0, Math.floor(-offset.x / (gridSize * scale)));
+      const startRow = Math.max(0, Math.floor(-offset.y / (gridSize * scale)));
+      const endCol = Math.min(fogGrid[0]?.length || 0, Math.ceil((canvas.width - offset.x) / (gridSize * scale)));
+      const endRow = Math.min(fogGrid.length, Math.ceil((canvas.height - offset.y) / (gridSize * scale)));
+
+      for (let y = startRow; y < endRow; y++) {
+          if (!fogGrid[y]) continue;
+          for (let x = startCol; x < endCol; x++) {
+             if (fogGrid[y][x] === false) { 
+                 // Pinta apenas os quadrados não revelados
+                 ctx.fillRect(x * gridSize, y * gridSize, gridSize + 1, gridSize + 1); 
+             }
+          }
+      }
       ctx.globalAlpha = 1.0; 
     }
 
+    // Geometria de Magias e Régua
     const rect = canvas.getBoundingClientRect();
     const mX = (mousePosRef.current.x - rect.left - offset.x) / scale;
     const mY = (mousePosRef.current.y - rect.top - offset.y) / scale;
@@ -197,9 +220,11 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
     if (e.altKey) return; 
     if (isMKeyPressed.current) { setMeasureStart({ x: worldX, y: worldY }); return; }
     if (activeAoE) { setAoeStart({ x: worldX, y: worldY }); return; }
+    
     if (isFogMode) { 
-        onFogUpdate(Math.floor(worldX/gridSize), Math.floor(worldY/gridSize), fogTool === 'reveal'); 
         setIsPaintingFog(true); 
+        onFogUpdate(Math.floor(worldX/gridSize), Math.floor(worldY/gridSize), fogTool === 'reveal'); 
+        lastFogUpdate.current = Date.now();
         return; 
     }
   };
@@ -210,10 +235,15 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
     if (aoeStart || measureStart) setForceRender(prev => prev + 1);
     
     if (isFogMode && isPaintingFog) {
-        const rect = canvasRef.current!.getBoundingClientRect();
-        const worldX = (e.clientX - rect.left - offset.x) / scale; 
-        const worldY = (e.clientY - rect.top - offset.y) / scale;
-        onFogUpdate(Math.floor(worldX/gridSize), Math.floor(worldY/gridSize), fogTool === 'reveal');
+        const now = Date.now();
+        // OTIMIZAÇÃO: Throttle (Apenas atualiza o socket de névoa a cada X ms)
+        if (now - lastFogUpdate.current > fogDebounceMs) {
+            const rect = canvasRef.current!.getBoundingClientRect();
+            const worldX = (e.clientX - rect.left - offset.x) / scale; 
+            const worldY = (e.clientY - rect.top - offset.y) / scale;
+            onFogUpdate(Math.floor(worldX/gridSize), Math.floor(worldY/gridSize), fogTool === 'reveal');
+            lastFogUpdate.current = now;
+        }
     }
     
     if (isPanningRef.current) {
@@ -228,7 +258,16 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
 
   const handleMouseUp = (e: React.MouseEvent) => {
     isPanningRef.current = false;
-    setIsPaintingFog(false);
+    
+    if (isPaintingFog) {
+        setIsPaintingFog(false);
+        // Garante que o último quadrado pintado no mouseUp é registado
+        const rect = canvasRef.current!.getBoundingClientRect();
+        const worldX = (e.clientX - rect.left - offset.x) / scale; 
+        const worldY = (e.clientY - rect.top - offset.y) / scale;
+        onFogUpdate(Math.floor(worldX/gridSize), Math.floor(worldY/gridSize), fogTool === 'reveal');
+    }
+    
     setMeasureStart(null);
     
     if (aoeStart && activeAoE && onAoEComplete) {
@@ -238,7 +277,6 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
         
         const dist = Math.hypot(worldX - aoeStart.x, worldY - aoeStart.y);
         
-        // CORREÇÃO: Se for apenas um CLIQUE RÁPIDO, cria uma área mínima de 1 quadrado!
         if (dist < 5) {
             worldX = aoeStart.x + gridSize;
             worldY = aoeStart.y + gridSize;

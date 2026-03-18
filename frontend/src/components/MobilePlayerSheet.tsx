@@ -85,8 +85,6 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
             if (newUsed > newMax) newUsed = newMax;
         }
         if (action === 'toggle_used' && slotIndex !== undefined) {
-             // Se clicar num slot, marcamos todos até esse como usados
-             // Se clicar no último slot usado, desmarca ele.
              if (newUsed === slotIndex + 1) {
                  newUsed--; // Desmarcar
              } else {
@@ -106,7 +104,8 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
     };
 
     return (
-        <div className="flex flex-col h-screen w-screen bg-[#050505] text-amber-50 font-serif items-center justify-center overflow-hidden">
+        // FIX AQUI: Trocado h-screen para h-[100dvh]
+        <div className="flex flex-col h-[100dvh] w-screen bg-[#050505] text-amber-50 font-serif items-center justify-center overflow-hidden">
             <div className="w-full max-w-3xl flex flex-col h-full relative bg-[#0a0a0a] md:border-l md:border-r border-gray-900 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
                 
                 <header className="p-4 md:px-8 bg-gradient-to-b from-black to-[#0a0a0a] border-b border-amber-900/50 sticky top-0 z-10 shadow-lg shrink-0">
@@ -294,7 +293,6 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                                     {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(level => {
                                         const slotData = character.spellSlots?.[level] || { max: 0, used: 0 };
                                         
-                                        // Só mostra o nível se ele tem pelo menos 1 slot máx, ou se é o próximo nível vazio para poder adicionar
                                         const hasMax = slotData.max > 0;
                                         const prevLevelData = level > 1 ? character.spellSlots?.[level-1] : null;
                                         const canAdd = hasMax || (level === 1) || (prevLevelData && prevLevelData.max > 0);
@@ -308,7 +306,6 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                                                     <div className="flex gap-1.5">
                                                         {[...Array(Math.max(1, slotData.max))].map((_, i) => {
                                                             const isUsed = i < slotData.used;
-                                                            // Se max for 0, só mostra um botão fantasma pra adicionar
                                                             if (slotData.max === 0) return null;
                                                             return (
                                                                 <div 

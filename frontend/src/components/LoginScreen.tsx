@@ -240,7 +240,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   );
 
   const BackgroundWrapper = ({ children }: { children: React.ReactNode }) => (
-    <div className="relative w-screen h-screen flex items-center justify-center overflow-hidden bg-[#050505] font-serif">
+    // FIX AQUI: Trocado de h-screen para h-[100dvh]
+    <div className="relative w-screen h-[100dvh] flex items-center justify-center overflow-hidden bg-[#050505] font-serif">
       <div 
         className="absolute inset-0 bg-cover bg-center opacity-60 animate-in fade-in duration-[2s]"
         style={{ backgroundImage: "url('/login-bg.jpg')" }}
