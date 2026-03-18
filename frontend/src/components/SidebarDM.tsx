@@ -9,7 +9,7 @@ import SkillList from './SkillList';
 import ItemCreator from './ItemCreator';
 import Scratchpad from './Scratchpad'; 
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
-import { Eye, EyeOff, Image as ImageIcon, Check, X } from 'lucide-react';
+import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus } from 'lucide-react';
 
 export interface InitiativeItem { id: number; name: string; value: number; }
 
@@ -38,13 +38,17 @@ interface SidebarDMProps {
   onAddEntity: (type: 'enemy' | 'player', name: string, preset?: MonsterPreset) => void;
   onDeleteEntity: (id: number) => void;
   onEditEntity: (id: number, updates: Partial<Entity>) => void;
+  
   isFogMode: boolean;
   onToggleFogMode: () => void;
   onResetFog: () => void;
   onRevealAll: () => void;
   fogTool: 'reveal' | 'hide';
   onSetFogTool: (tool: 'reveal' | 'hide') => void;
+  fogShape?: 'brush' | 'rect' | 'line';
+  onSetFogShape?: (shape: 'brush' | 'rect' | 'line') => void;
   onSyncFog: () => void;
+  
   onSaveGame: () => void;
   onChangeMap: (mapUrl: string) => void;
   initiativeList: InitiativeItem[];
@@ -258,7 +262,9 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage }: { attac
 
 const SidebarDM: React.FC<SidebarDMProps> = ({ 
   entities, onUpdateHP, onAddEntity, onDeleteEntity, onEditEntity,
-  isFogMode, onToggleFogMode, onResetFog, onRevealAll, fogTool, onSetFogTool, onSyncFog, onSaveGame, onChangeMap,
+  isFogMode, onToggleFogMode, onResetFog, onRevealAll, fogTool, onSetFogTool, 
+  fogShape = 'brush', onSetFogShape, 
+  onSyncFog, onSaveGame, onChangeMap,
   initiativeList, activeTurnId, onAddToInitiative, onRemoveFromInitiative, onNextTurn, onClearInitiative, onSortInitiative,
   targetEntityIds, attackerId, onSetTarget, onToggleCondition,
   activeAoE, onSetAoE, chatMessages, onSendMessage,
@@ -274,7 +280,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const [pendingSkillRequest, setPendingSkillRequest] = useState<{ skillName: string, mod: number } | null>(null);
   const [dcInput, setDcInput] = useState<number>(10);
   
-  // SISTEMA DE MAPAS MELHORADO
   const [mapList, setMapList] = useState<{name: string, url: string}[]>(INITIAL_MAPS);
   const [customMapUrl, setCustomMapUrl] = useState('');
   const [previewMap, setPreviewMap] = useState<{url: string, name: string} | null>(null);
@@ -285,14 +290,13 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const targetEntity = entities.find(e => e.id === targetId);
   const handleConfirmRequest = () => { if (pendingSkillRequest && targetEntity) { onRequestRoll(targetEntity.id, pendingSkillRequest.skillName, pendingSkillRequest.mod, dcInput); setPendingSkillRequest(null); setDcInput(10); } };
   
-  // Handlers de Pré-visualização de Mapa
   const handleFileUploadPreview = (e: React.ChangeEvent<HTMLInputElement>) => { 
       const file = e.target.files?.[0]; 
       if (file) { 
           const reader = new FileReader(); 
           reader.onload = (event) => { 
               if (event.target?.result) {
-                  const mapName = file.name.replace(/\.[^/.]+$/, ""); // Tira a extensão (.jpg)
+                  const mapName = file.name.replace(/\.[^/.]+$/, "");
                   setPreviewMap({ url: event.target.result as string, name: mapName });
               }
           }; 
@@ -452,8 +456,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                         {activeTab === 'map' && (
                             <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                                 
-                                {/* ADICIONAR NOVO MAPA COM PREVIEW */}
-                                <section className="mb-6 border-b pb-4 bg-blue-900/10 p-3 rounded-lg border border-blue-500/20 shadow-inner">
+                                <section className="mb-6 pb-4 bg-blue-900/10 p-3 rounded-lg border border-blue-500/20 shadow-inner">
                                     <h3 className="text-blue-400 font-bold text-[11px] uppercase mb-3 tracking-widest flex items-center gap-2"><ImageIcon size={14}/> Carregar Novo Mapa</h3>
                                     
                                     {!previewMap ? (
@@ -488,7 +491,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                     )}
                                 </section>
 
-                                {/* LISTA DE MAPAS SALVOS */}
                                 <section className="mb-6 border-b border-white/5 pb-4">
                                     <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest">Mapas Disponíveis</h3>
                                     <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
@@ -521,24 +523,48 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                     </div>
                                     {activeAoE && <p className="text-[9px] mt-2 text-center animate-pulse opacity-80" style={{color: aoeColor}}>🖌️ Clique e arraste no mapa</p>}
                                 </section>
+                                
+                                {/* NOVA NEBLINA DE GUERRA COM GEOMETRIA */}
                                 <section className="mb-6 border-b border-white/5 pb-4 bg-black/20 rounded p-2">
                                     <h3 className="text-rpgText font-mono text-[10px] uppercase mb-3 opacity-50 tracking-widest">Neblina de Guerra</h3>
-                                    <div className="flex flex-col gap-2">
+                                    <div className="flex flex-col gap-3">
                                             <button onClick={onToggleFogMode} className={`w-full py-2 rounded text-xs font-bold uppercase tracking-wider border transition-all ${isFogMode ? 'bg-yellow-600 border-yellow-400 text-white shadow-sm' : 'bg-gray-800 border-gray-600 text-gray-400 hover:bg-gray-700'}`}>{isFogMode ? '✎ Modo Edição Ativo' : '✎ Editar Neblina'}</button>
-                                            {isFogMode && (<div className="flex gap-1 bg-black/40 p-1 rounded border border-white/10 mt-1 mb-1"><button onClick={() => onSetFogTool('reveal')} className={`flex-1 py-1 text-[10px] uppercase font-bold rounded transition-colors ${fogTool === 'reveal' ? 'bg-green-600 text-white shadow-sm' : 'hover:bg-white/10 text-gray-400'}`}>🔦 Revelar</button><button onClick={() => onSetFogTool('hide')} className={`flex-1 py-1 text-[10px] uppercase font-bold rounded transition-colors ${fogTool === 'hide' ? 'bg-red-600 text-white shadow-sm' : 'hover:bg-white/10 text-gray-400'}`}>☁️ Esconder</button></div>)}
-                                            <div className="flex gap-2"><button onClick={onRevealAll} className="flex-1 py-1 bg-gray-800 hover:bg-gray-700 text-[9px] text-gray-400 rounded border border-gray-700">Tudo Visível</button><button onClick={onResetFog} className="flex-1 py-1 bg-gray-800 hover:bg-gray-700 text-[9px] text-gray-400 rounded border border-gray-700">Tudo Preto</button></div>
-                                            <button onClick={onSyncFog} className="w-full py-1 mt-2 bg-purple-900/30 hover:bg-purple-600/50 border border-purple-500/30 text-[9px] text-purple-200 uppercase font-bold rounded transition-all">📡 Sincronizar Jogadores</button>
+                                            
+                                            {isFogMode && (
+                                              <div className="flex flex-col gap-2 bg-black/40 p-2 rounded border border-white/10 animate-in fade-in zoom-in-95">
+                                                  
+                                                  {/* Seleção de Ferramenta (Revelar / Esconder) */}
+                                                  <div className="flex gap-1 bg-black/40 p-1 rounded border border-white/5">
+                                                      <button onClick={() => onSetFogTool('reveal')} className={`flex-1 py-1.5 text-[10px] uppercase font-bold rounded transition-colors ${fogTool === 'reveal' ? 'bg-green-600 text-white shadow-sm' : 'hover:bg-white/10 text-gray-400'}`}>🔦 Revelar</button>
+                                                      <button onClick={() => onSetFogTool('hide')} className={`flex-1 py-1.5 text-[10px] uppercase font-bold rounded transition-colors ${fogTool === 'hide' ? 'bg-red-600 text-white shadow-sm' : 'hover:bg-white/10 text-gray-400'}`}>☁️ Esconder</button>
+                                                  </div>
+
+                                                  {/* Seleção de Forma Geométrica */}
+                                                  <div className="flex gap-1 justify-between">
+                                                      <button onClick={() => onSetFogShape && onSetFogShape('brush')} className={`flex-1 py-1.5 flex flex-col items-center gap-1 rounded text-[10px] transition-all border ${fogShape === 'brush' ? 'bg-white/10 border-white text-white shadow-inner' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Pincel Livre">
+                                                          <Brush size={16} /> Livre
+                                                      </button>
+                                                      <button onClick={() => onSetFogShape && onSetFogShape('rect')} className={`flex-1 py-1.5 flex flex-col items-center gap-1 rounded text-[10px] transition-all border ${fogShape === 'rect' ? 'bg-white/10 border-white text-white shadow-inner' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Retângulo">
+                                                          <Square size={16} /> Sala
+                                                      </button>
+                                                      <button onClick={() => onSetFogShape && onSetFogShape('line')} className={`flex-1 py-1.5 flex flex-col items-center gap-1 rounded text-[10px] transition-all border ${fogShape === 'line' ? 'bg-white/10 border-white text-white shadow-inner' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Linha">
+                                                          <Minus size={16} /> Linha
+                                                      </button>
+                                                  </div>
+                                                  <p className="text-center text-[9px] text-yellow-500/70 italic mt-1">Arraste no mapa para pintar.</p>
+                                              </div>
+                                            )}
+
+                                            <div className="flex gap-2 mt-1"><button onClick={onRevealAll} className="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-[10px] font-bold uppercase text-gray-400 rounded border border-gray-700 transition-colors">Limpar Tudo</button><button onClick={onResetFog} className="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-[10px] font-bold uppercase text-gray-400 rounded border border-gray-700 transition-colors">Tudo Preto</button></div>
+                                            <button onClick={onSyncFog} className="w-full py-1.5 mt-1 bg-purple-900/30 hover:bg-purple-600/50 border border-purple-500/30 text-[10px] text-purple-200 uppercase font-bold rounded transition-all flex justify-center items-center gap-2">📡 Sincronizar Jogadores</button>
                                     </div>
                                 </section>
                                 <div className="px-2">
                                     <button onClick={onSaveGame} className="w-full py-2 bg-green-900/40 hover:bg-green-600/60 border border-green-500/30 text-green-200 text-xs font-bold uppercase rounded transition-all shadow-lg mb-2">💾 Salvar Estado do Jogo</button>
-                                    
-                                    {/* --- BOTÃO DE RECENTRALIZAR --- */}
                                     <button onClick={onResetView} className="w-full py-2 bg-blue-900/40 hover:bg-blue-600/60 border border-blue-500/30 text-blue-200 text-xs font-bold uppercase rounded transition-all shadow-lg">Recentralizar Câmera 🎯</button>
                                 </div>
                             </div>
                         )}
-                        {/* ... CREATE ... */}
                         {activeTab === 'create' && (
                             <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                                 <h3 className="text-rpgText font-mono text-[10px] uppercase mb-4 opacity-50 tracking-widest text-center">Adicionar Entidades</h3>
@@ -547,7 +573,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                 <p className="text-gray-500 text-xs text-center mt-6 italic px-4">Dica: Você também pode arrastar esses botões diretamente para o mapa!</p>
                             </div>
                         )}
-                        {/* --- NOVA ABA DE AUDIO INTEGRADA --- */}
                         {activeTab === 'audio' && (
                             <div className="animate-in fade-in slide-in-from-right-4 duration-300 h-full">
                                 <Soundboard 

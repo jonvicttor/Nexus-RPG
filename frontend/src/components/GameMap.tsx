@@ -18,8 +18,12 @@ interface GameMapProps {
   fogGrid: boolean[][];
   isFogMode: boolean;
   fogTool: 'reveal' | 'hide';
-  activeTurnId: number | null; 
   onFogUpdate: (x: number, y: number, shouldReveal: boolean) => void;
+  
+  fogShape?: 'brush' | 'rect' | 'line';
+  onFogBulkUpdate?: (cells: {x: number, y: number}[], shouldReveal: boolean) => void;
+
+  activeTurnId: number | null; 
   onMoveToken: (id: number, x: number, y: number) => void;
   onAddToken?: (type: string, x: number, y: number) => void; 
   onRotateToken: (id: number, angle: number) => void;
@@ -51,6 +55,7 @@ interface GameMapProps {
 const GameMap: React.FC<GameMapProps> = (props) => {
     const { 
         mapUrl, gridSize = 70, entities, role, fogGrid, isFogMode, fogTool,
+        fogShape, onFogBulkUpdate,
         activeTurnId, onFogUpdate, onMoveToken, onAddToken, onRotateToken,
         onResizeToken, targetEntityIds, attackerId,
         onSetTarget, onSetAttacker, onFlipToken, activeAoE, onAoEComplete,
@@ -66,7 +71,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
 
     const [isMeasuring, setIsMeasuring] = useState(false);
     const [rulerStart, setRulerStart] = useState<{ x: number, y: number } | null>(null);
-    // REFS PARA ALTA PERFORMANCE NA RÉGUA
     const rulerLineRef = useRef<SVGLineElement>(null);
     const rulerTextRef = useRef<SVGTextElement>(null);
     const isMPressed = useRef(false);
@@ -91,6 +95,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             const entityY = focusEntity.y * gridSize;
             const newOffsetX = (screenW / 2) - (entityX * scale);
             const newOffsetY = (screenH / 2) - (entityY * scale);
+            // Isso acionará a correção automática do useEffect no CanvasMap
             setOffset({ x: newOffsetX, y: newOffsetY });
         }
     }, [focusEntity, scale, gridSize]);
@@ -206,7 +211,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         }
     };
 
-    // MANIPULAÇÃO DIRETA DO DOM NA RÉGUA = PERFORMANCE MÁXIMA
     const handleMouseMove = (e: React.MouseEvent) => {
         if (isMeasuring && rulerStart && rulerLineRef.current) {
             const rect = containerRef.current?.getBoundingClientRect();
@@ -220,7 +224,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             if (rulerTextRef.current) {
                 const distPx = Math.hypot(mouseX - rulerStart.x, mouseY - rulerStart.y);
                 const distSquares = distPx / (gridSize * scale);
-                const distMeters = (distSquares * 1.5).toFixed(1); // 1 quadrado = 1.5m
+                const distMeters = (distSquares * 1.5).toFixed(1); 
                 
                 rulerTextRef.current.setAttribute('x', (mouseX + 15).toString());
                 rulerTextRef.current.setAttribute('y', (mouseY + 20).toString());
@@ -334,9 +338,10 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 fogGrid={fogGrid}
                 isFogMode={isFogMode}
                 fogTool={fogTool}
+                fogShape={fogShape}
+                onFogBulkUpdate={onFogBulkUpdate}
                 onFogUpdate={onFogUpdate}
-                onPan={(newOff) => { if(!isMeasuring) handleMapTransform(newOff, scale) }}
-                onZoom={(newSc) => handleMapTransform(offset, newSc)}
+                onMapTransform={(newOff, newSc) => { if(!isMeasuring) handleMapTransform(newOff, newSc) }}
                 activeAoE={activeAoE}
                 aoeColor={aoeColor}
                 onAoEComplete={handleAoECompleted}
@@ -386,31 +391,29 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 targetEntityIds={targetEntityIds}
                 onMoveToken={onMoveToken}
                 
-                // 1 CLIQUE = ATACANTE (AZUL)
                 onSelectToken={(entity, multi) => {
                     if (!entity || entity.classType === 'Item') return; 
                     if (role === 'DM') {
-                        onSelectEntity(entity, 0, 0); // Mostra o modal de status
+                        onSelectEntity(entity, 0, 0); 
                         if (attackerId === entity.id) {
-                            onSetAttacker(null); // Se já era, tira a seleção
+                            onSetAttacker(null); 
                         } else {
-                            onSetAttacker(entity.id); // Se não era, vira o atacante
+                            onSetAttacker(entity.id); 
                         }
                     }
                 }}
                 
-                // 2 CLIQUES = ALVO (VERMELHO)
                 onTokenDoubleClick={(entity, multi) => {
                     if (!entity || entity.classType === 'Item') return; 
                     if (role === 'DM') {
                         if (targetEntityIds.includes(entity.id)) {
-                            if (multi) { // Tirar com Shift
+                            if (multi) { 
                                 onSetTarget(targetEntityIds.filter(id => id !== entity.id));
                             } else {
-                                onSetTarget(null); // Tirar sem Shift
+                                onSetTarget(null); 
                             }
                         } else {
-                            onSetTarget(entity.id, multi); // Adicionar alvo
+                            onSetTarget(entity.id, multi); 
                         }
                     }
                 }}

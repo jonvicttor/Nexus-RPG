@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 export interface AoEData {
   type: 'circle' | 'cone' | 'cube';
@@ -18,8 +18,11 @@ interface CanvasMapProps {
   fogTool: 'reveal' | 'hide';
   onFogUpdate: (x: number, y: number, shouldReveal: boolean) => void;
   
-  onPan: (newOffset: { x: number, y: number }) => void;
-  onZoom: (newScale: number) => void;
+  fogShape?: 'brush' | 'rect' | 'line';
+  onFogBulkUpdate?: (cells: {x: number, y: number}[], shouldReveal: boolean) => void;
+  
+  // NOVA FUNÇÃO UNIFICADA DE CÂMERA
+  onMapTransform: (newOffset: { x: number, y: number }, newScale: number) => void;
   
   activeAoE: 'circle' | 'cone' | 'cube' | null;
   aoeColor: string;
@@ -32,17 +35,19 @@ interface CanvasMapProps {
 const CanvasMap: React.FC<CanvasMapProps> = ({ 
   mapUrl, gridSize = 70, offset, scale,
   fogGrid, isFogMode, fogTool, onFogUpdate,
-  onPan, onZoom,
+  fogShape = 'brush', onFogBulkUpdate,
+  onMapTransform,
   activeAoE, aoeColor, onAoEComplete, role, globalBrightness = 1
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [mapImage, setMapImage] = useState<HTMLImageElement | null>(null);
-  const [canvasSize, setCanvasSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+  // O tamanho real da área disponível, descontando menus laterais
+  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
 
   const [measureStart, setMeasureStart] = useState<{x: number, y: number} | null>(null);
   const [aoeStart, setAoeStart] = useState<{x: number, y: number} | null>(null);
+  const [fogDrawStart, setFogDrawStart] = useState<{x: number, y: number} | null>(null);
   
-  // Controles de Performance de Pan/Fog
   const [isPaintingFog, setIsPaintingFog] = useState(false);
   const isPanningRef = useRef(false);
   const panStartMouseRef = useRef({ x: 0, y: 0 });
@@ -51,14 +56,22 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
   const isMKeyPressed = useRef(false);
   const [forceRender, setForceRender] = useState(0);
 
-  // NOVO: Throttle para Sockets da Névoa (Reduz LAG)
   const lastFogUpdate = useRef<number>(0);
   const fogDebounceMs = 50; 
 
+  // Observador de tamanho de ecrã dinâmico
   useEffect(() => {
-      const handleResize = () => setCanvasSize({ w: window.innerWidth, h: window.innerHeight });
-      window.addEventListener('resize', handleResize);
-      return () => window.removeEventListener('resize', handleResize);
+      const parent = canvasRef.current?.parentElement;
+      if (!parent) return;
+      setCanvasSize({ w: parent.clientWidth, h: parent.clientHeight });
+      
+      const resizeObserver = new ResizeObserver((entries) => {
+          for (let entry of entries) {
+              setCanvasSize({ w: entry.contentRect.width, h: entry.contentRect.height });
+          }
+      });
+      resizeObserver.observe(parent);
+      return () => resizeObserver.disconnect();
   }, []);
 
   useEffect(() => { 
@@ -75,10 +88,46 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
     return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
   }, []);
 
-  // O "Motor Gráfico" do Canvas
+  // --- CÁLCULOS DE CÂMARA (IMPEDE VER O FUNDO PRETO) ---
+  const clampView = useCallback((proposedOffset: {x: number, y: number}, proposedScale: number) => {
+      if (!mapImage || canvasSize.w === 0 || canvasSize.h === 0) {
+          return { offset: proposedOffset, scale: proposedScale };
+      }
+      
+      // 1. Zoom Mínimo (O mapa tem de preencher a ecrã)
+      const minScaleX = canvasSize.w / mapImage.width;
+      const minScaleY = canvasSize.h / mapImage.height;
+      const minScale = Math.max(minScaleX, minScaleY);
+      
+      const finalScale = Math.max(minScale, Math.min(proposedScale, 10)); // Limite máximo de zoom 10x
+      
+      // 2. Limites de Arrastamento (Pan)
+      const minX = canvasSize.w - (mapImage.width * finalScale);
+      const minY = canvasSize.h - (mapImage.height * finalScale);
+      
+      const finalX = Math.min(Math.max(proposedOffset.x, minX), 0);
+      const finalY = Math.min(Math.max(proposedOffset.y, minY), 0);
+      
+      return { offset: { x: finalX, y: finalY }, scale: finalScale };
+  }, [mapImage, canvasSize]);
+
+  // Garante que a ecrã nunca sai dos limites em nenhum momento (Ex: ao redimensionar a janela)
+  useEffect(() => {
+      if (!mapImage || canvasSize.w === 0) return;
+      const clamped = clampView(offset, scale);
+      
+      const diffX = Math.abs(clamped.offset.x - offset.x);
+      const diffY = Math.abs(clamped.offset.y - offset.y);
+      const diffScale = Math.abs(clamped.scale - scale);
+      
+      if (diffScale > 0.001 || diffX > 0.1 || diffY > 0.1) {
+          onMapTransform(clamped.offset, clamped.scale);
+      }
+  }, [offset, scale, mapImage, canvasSize, clampView, onMapTransform]);
+
   useEffect(() => {
     const canvas = canvasRef.current; 
-    if (!canvas || !mapImage) return;
+    if (!canvas || !mapImage || canvasSize.w === 0) return;
     const ctx = canvas.getContext('2d'); 
     if (!ctx) return;
     
@@ -92,10 +141,8 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
     ctx.translate(offset.x, offset.y); 
     ctx.scale(scale, scale);
     
-    // Desenha o Fundo
     ctx.drawImage(mapImage, 0, 0, mapImage.width, mapImage.height);
 
-    // Sistema de Iluminação Global
     if (globalBrightness < 1) {
         ctx.save();
         ctx.fillStyle = "#000000";
@@ -104,12 +151,9 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
         ctx.restore();
     }
 
-    // Desenha a Névoa de Guerra
     if (fogGrid && fogGrid.length > 0) {
       ctx.fillStyle = "#000000"; 
       ctx.globalAlpha = role === 'DM' ? 0.6 : 1.0; 
-      // Em vez de iterar sobre TODO o array de 8000x8000, 
-      // iteramos apenas sobre a zona visível no Canvas para poupar CPU
       
       const startCol = Math.max(0, Math.floor(-offset.x / (gridSize * scale)));
       const startRow = Math.max(0, Math.floor(-offset.y / (gridSize * scale)));
@@ -120,7 +164,6 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
           if (!fogGrid[y]) continue;
           for (let x = startCol; x < endCol; x++) {
              if (fogGrid[y][x] === false) { 
-                 // Pinta apenas os quadrados não revelados
                  ctx.fillRect(x * gridSize, y * gridSize, gridSize + 1, gridSize + 1); 
              }
           }
@@ -128,10 +171,32 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
       ctx.globalAlpha = 1.0; 
     }
 
-    // Geometria de Magias e Régua
     const rect = canvas.getBoundingClientRect();
     const mX = (mousePosRef.current.x - rect.left - offset.x) / scale;
     const mY = (mousePosRef.current.y - rect.top - offset.y) / scale;
+
+    if (isFogMode && fogDrawStart) {
+        ctx.save();
+        ctx.fillStyle = fogTool === 'reveal' ? "rgba(255, 255, 255, 0.4)" : "rgba(0, 0, 0, 0.6)";
+        ctx.strokeStyle = fogTool === 'reveal' ? "white" : "black";
+        ctx.lineWidth = 2 / scale;
+        
+        if (fogShape === 'rect') {
+            const width = mX - fogDrawStart.x;
+            const height = mY - fogDrawStart.y;
+            ctx.fillRect(fogDrawStart.x, fogDrawStart.y, width, height);
+            ctx.strokeRect(fogDrawStart.x, fogDrawStart.y, width, height);
+        } else if (fogShape === 'line') {
+            ctx.beginPath();
+            ctx.moveTo(fogDrawStart.x, fogDrawStart.y);
+            ctx.lineTo(mX, mY);
+            ctx.stroke();
+            
+            ctx.beginPath(); ctx.arc(fogDrawStart.x, fogDrawStart.y, 4/scale, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(mX, mY, 4/scale, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.restore();
+    }
 
     if (aoeStart && activeAoE) {
         ctx.save();
@@ -193,11 +258,29 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
     }
 
     ctx.restore();
-  }, [mapImage, offset, scale, gridSize, fogGrid, role, measureStart, aoeStart, activeAoE, aoeColor, globalBrightness, canvasSize, forceRender]); 
+  }, [mapImage, offset, scale, gridSize, fogGrid, role, measureStart, aoeStart, activeAoE, aoeColor, globalBrightness, canvasSize, forceRender, fogDrawStart, isFogMode, fogShape, fogTool]); 
 
+  // --- ZOOM SUAVE NA POSIÇÃO DO RATO ---
   const handleWheel = (e: React.WheelEvent) => {
-    const newScale = Math.min(Math.max(0.1, scale - e.deltaY * 0.001), 5);
-    onZoom(newScale);
+    if (!mapImage || canvasSize.w === 0) return;
+    
+    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1; 
+    const proposedScale = scale * zoomFactor;
+
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const worldX = (mouseX - offset.x) / scale;
+    const worldY = (mouseY - offset.y) / scale;
+
+    const proposedOffset = {
+        x: mouseX - worldX * proposedScale,
+        y: mouseY - worldY * proposedScale
+    };
+
+    const clamped = clampView(proposedOffset, proposedScale);
+    onMapTransform(clamped.offset, clamped.scale);
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -222,9 +305,13 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
     if (activeAoE) { setAoeStart({ x: worldX, y: worldY }); return; }
     
     if (isFogMode) { 
-        setIsPaintingFog(true); 
-        onFogUpdate(Math.floor(worldX/gridSize), Math.floor(worldY/gridSize), fogTool === 'reveal'); 
-        lastFogUpdate.current = Date.now();
+        if (fogShape === 'brush') {
+            setIsPaintingFog(true); 
+            onFogUpdate(Math.floor(worldX/gridSize), Math.floor(worldY/gridSize), fogTool === 'reveal'); 
+            lastFogUpdate.current = Date.now();
+        } else {
+            setFogDrawStart({ x: worldX, y: worldY });
+        }
         return; 
     }
   };
@@ -232,11 +319,10 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
   const handleMouseMove = (e: React.MouseEvent) => {
     mousePosRef.current = { x: e.clientX, y: e.clientY };
     
-    if (aoeStart || measureStart) setForceRender(prev => prev + 1);
+    if (aoeStart || measureStart || fogDrawStart) setForceRender(prev => prev + 1);
     
-    if (isFogMode && isPaintingFog) {
+    if (isFogMode && isPaintingFog && fogShape === 'brush') {
         const now = Date.now();
-        // OTIMIZAÇÃO: Throttle (Apenas atualiza o socket de névoa a cada X ms)
         if (now - lastFogUpdate.current > fogDebounceMs) {
             const rect = canvasRef.current!.getBoundingClientRect();
             const worldX = (e.clientX - rect.left - offset.x) / scale; 
@@ -249,23 +335,79 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
     if (isPanningRef.current) {
         const deltaX = e.clientX - panStartMouseRef.current.x;
         const deltaY = e.clientY - panStartMouseRef.current.y;
-        onPan({
+        
+        const proposedOffset = {
             x: panStartOffsetRef.current.x + deltaX,
             y: panStartOffsetRef.current.y + deltaY
-        });
+        };
+        const clamped = clampView(proposedOffset, scale);
+        onMapTransform(clamped.offset, clamped.scale);
     }
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
     isPanningRef.current = false;
     
-    if (isPaintingFog) {
-        setIsPaintingFog(false);
-        // Garante que o último quadrado pintado no mouseUp é registado
-        const rect = canvasRef.current!.getBoundingClientRect();
-        const worldX = (e.clientX - rect.left - offset.x) / scale; 
-        const worldY = (e.clientY - rect.top - offset.y) / scale;
-        onFogUpdate(Math.floor(worldX/gridSize), Math.floor(worldY/gridSize), fogTool === 'reveal');
+    if (isFogMode) {
+        if (isPaintingFog && fogShape === 'brush') {
+            setIsPaintingFog(false);
+            const rect = canvasRef.current!.getBoundingClientRect();
+            const worldX = (e.clientX - rect.left - offset.x) / scale; 
+            const worldY = (e.clientY - rect.top - offset.y) / scale;
+            onFogUpdate(Math.floor(worldX/gridSize), Math.floor(worldY/gridSize), fogTool === 'reveal');
+        } 
+        else if (fogDrawStart && onFogBulkUpdate) {
+            const rect = canvasRef.current!.getBoundingClientRect();
+            const endWorldX = (e.clientX - rect.left - offset.x) / scale;
+            const endWorldY = (e.clientY - rect.top - offset.y) / scale;
+
+            const startGridX = Math.floor(fogDrawStart.x / gridSize);
+            const startGridY = Math.floor(fogDrawStart.y / gridSize);
+            const endGridX = Math.floor(endWorldX / gridSize);
+            const endGridY = Math.floor(endWorldY / gridSize);
+
+            const cellsToUpdate: {x: number, y: number}[] = [];
+
+            if (fogShape === 'rect') {
+                const minX = Math.min(startGridX, endGridX);
+                const maxX = Math.max(startGridX, endGridX);
+                const minY = Math.min(startGridY, endGridY);
+                const maxY = Math.max(startGridY, endGridY);
+
+                if ((maxX - minX) * (maxY - minY) < 5000) {
+                    for (let y = minY; y <= maxY; y++) {
+                        for (let x = minX; x <= maxX; x++) {
+                            cellsToUpdate.push({x, y});
+                        }
+                    }
+                }
+            } else if (fogShape === 'line') {
+                let x0 = startGridX;
+                let y0 = startGridY;
+                let x1 = endGridX;
+                let y1 = endGridY;
+                
+                let dx = Math.abs(x1 - x0);
+                let dy = Math.abs(y1 - y0);
+                let sx = (x0 < x1) ? 1 : -1;
+                let sy = (y0 < y1) ? 1 : -1;
+                let err = dx - dy;
+
+                let loopSafeguard = 0;
+                while(loopSafeguard++ < 1000) {
+                    cellsToUpdate.push({x: x0, y: y0});
+                    if ((x0 === x1) && (y0 === y1)) break;
+                    let e2 = 2 * err;
+                    if (e2 > -dy) { err -= dy; x0 += sx; }
+                    if (e2 < dx) { err += dx; y0 += sy; }
+                }
+            }
+
+            if (cellsToUpdate.length > 0) {
+                onFogBulkUpdate(cellsToUpdate, fogTool === 'reveal');
+            }
+            setFogDrawStart(null);
+        }
     }
     
     setMeasureStart(null);
@@ -282,14 +424,7 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
             worldY = aoeStart.y + gridSize;
         }
         
-        onAoEComplete({
-            type: activeAoE,
-            startX: aoeStart.x,
-            startY: aoeStart.y,
-            endX: worldX,
-            endY: worldY
-        });
-        
+        onAoEComplete({ type: activeAoE, startX: aoeStart.x, startY: aoeStart.y, endX: worldX, endY: worldY });
         setAoeStart(null);
         setForceRender(prev => prev + 1);
     }
