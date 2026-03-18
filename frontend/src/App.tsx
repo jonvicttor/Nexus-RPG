@@ -64,10 +64,13 @@ export interface Entity {
   inventory?: Item[]; 
   race?: string; 
   visible?: boolean; 
-  // NOVOS CAMPOS PARA A FICHA MOBILE
+  // NOVOS CAMPOS PARA A FICHA MOBILE (Descanso, Magias e Economia)
   proficiencies?: Record<string, number>; 
   deathSaves?: { successes: number, failures: number }; 
   inspiration?: boolean; 
+  spellSlots?: Record<number, { max: number, used: number }>;
+  spells?: { id: string, name: string, level: number }[];
+  coins?: { cp: number, sp: number, ep: number, gp: number, pp: number };
 }
 
 export interface MonsterPreset {
@@ -810,7 +813,13 @@ function App() {
       level: customStats?.level || 1,
       inventory: customStats?.inventory || [], 
       race: customStats?.race || 'Humano',
-      visible: true 
+      visible: true,
+      proficiencies: customStats?.proficiencies || {},
+      deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 },
+      inspiration: customStats?.inspiration || false,
+      spellSlots: customStats?.spellSlots || {},
+      spells: customStats?.spells || [],
+      coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 }
     };
     setEntities(prev => [...prev, newEntity]);
     socket.emit('createEntity', { entity: newEntity, roomId: ROOM_ID });
@@ -924,7 +933,13 @@ function App() {
                         level: charData.level || 1,
                         inventory: charData.inventory || [], 
                         race: charData.race || 'Humano',
-                        visible: charData.visible !== false
+                        visible: charData.visible !== false,
+                        proficiencies: charData.proficiencies || {},
+                        deathSaves: charData.deathSaves || { successes: 0, failures: 0 },
+                        inspiration: charData.inspiration || false,
+                        spellSlots: charData.spellSlots || {},
+                        spells: charData.spells || [],
+                        coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 }
                     };
                     socket.emit('createEntity', { entity: newEntity, roomId: ROOM_ID });
                     return [...prev, newEntity];
@@ -983,7 +998,7 @@ function App() {
       );
   }
 
-  const isMobilePlayer = role === 'PLAYER' && windowSize.w < 768;
+  const isMobilePlayer = role === 'PLAYER' && windowSize.w <= 1024;
   const myCharacter = isMobilePlayer ? entities.find(e => e.name === playerName && e.type === 'player') : null;
 
   return (
