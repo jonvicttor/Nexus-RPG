@@ -97,14 +97,23 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
         });
     };
 
+    // --- NOVA MAGIA: Alternar Equipamento ---
+    const toggleEquip = (itemId: string) => {
+        const newInventory = character.inventory?.map(item => 
+            item.id === itemId ? { ...item, isEquipped: !item.isEquipped } : item
+        ) || [];
+        onUpdateCharacter(character.id, { inventory: newInventory });
+    };
+
     const ProfBubble = ({ level }: { level: number }) => {
         if (level === 2) return <Star size={16} className="text-amber-400 fill-amber-400 drop-shadow-[0_0_5px_rgba(251,191,36,0.8)]" />;
         if (level === 1) return <CheckCircle2 size={16} className="text-green-500 fill-green-900" />;
         return <Circle size={16} className="text-gray-600" />;
     };
 
+    const equippedWeapons = character.inventory?.filter(i => i.type === 'weapon' && i.isEquipped) || [];
+
     return (
-        // FIX AQUI: Trocado h-screen para h-[100dvh]
         <div className="flex flex-col h-[100dvh] w-screen bg-[#050505] text-amber-50 font-serif items-center justify-center overflow-hidden">
             <div className="w-full max-w-3xl flex flex-col h-full relative bg-[#0a0a0a] md:border-l md:border-r border-gray-900 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
                 
@@ -261,22 +270,46 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                     {activeTab === 'ACTIONS' && (
                         <div className="space-y-6 animate-in fade-in duration-300">
                             <div>
-                                <h2 className="text-blue-400/80 uppercase tracking-[0.2em] text-xs font-bold border-b border-blue-900/30 pb-2 mb-4">Ataques e Armas</h2>
+                                <h2 className="text-blue-400/80 uppercase tracking-[0.2em] text-xs font-bold border-b border-blue-900/30 pb-2 mb-4 flex justify-between items-center">
+                                    <span>Arsenal (Armas Equipadas)</span>
+                                </h2>
+                                
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {character.inventory?.filter(i => i.type === 'weapon').map(weapon => (
-                                        <div key={weapon.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center gap-4 hover:border-blue-900/50 transition-colors">
-                                            <div className="w-14 h-14 bg-black rounded-lg border border-gray-700 flex items-center justify-center shrink-0">
-                                                {weapon.image ? <img src={weapon.image} alt={weapon.name} className="w-12 h-12 object-contain" /> : <Sword size={24} className="text-gray-500" />}
+                                    {equippedWeapons.length > 0 ? equippedWeapons.map(weapon => {
+                                        const strMod = getMod(character.stats?.str || 10);
+                                        const dexMod = getMod(character.stats?.dex || 10);
+                                        
+                                        // Deteta se é Finesse ou à Distância pelo nome ou propriedades
+                                        const wName = weapon.name.toLowerCase();
+                                        const isFinesseOrRanged = 
+                                            weapon.stats?.properties?.some(p => p.toLowerCase().includes('finesse') || p.toLowerCase().includes('distância') || p.toLowerCase().includes('ranged')) || 
+                                            wName.includes('arco') || wName.includes('besta') || wName.includes('adaga') || wName.includes('rapieira');
+                                            
+                                        const bestMod = isFinesseOrRanged ? Math.max(strMod, dexMod) : strMod;
+                                        const atkMod = bestMod + profBonus;
+
+                                        return (
+                                            <div key={weapon.id} className="bg-gray-900 border border-blue-900/30 rounded-xl p-4 flex items-center gap-4 hover:border-blue-500/50 transition-colors shadow-[0_0_15px_rgba(30,58,138,0.2)]">
+                                                <div className="w-14 h-14 bg-black rounded-lg border border-gray-700 flex items-center justify-center shrink-0 overflow-hidden relative">
+                                                    {weapon.image ? <img src={weapon.image} alt={weapon.name} className="w-12 h-12 object-contain" /> : <Sword size={24} className="text-gray-500" />}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <h3 className="font-bold text-blue-100 md:text-lg leading-tight">{weapon.name}</h3>
+                                                    <p className="text-[10px] md:text-xs text-blue-300/60 mt-1 uppercase tracking-wider">{weapon.stats?.damage || '1d4'} Dano • {isFinesseOrRanged ? 'DES/FOR' : 'FOR'}</p>
+                                                </div>
+                                                <button onClick={() => onRollAttribute(character.name, `Ataque: ${weapon.name}`, atkMod)} className="w-16 py-3 bg-blue-600 hover:bg-blue-500 shadow-[0_0_15px_rgba(37,99,235,0.4)] text-white rounded-lg font-black active:scale-95 transition-all flex flex-col items-center justify-center gap-1">
+                                                    <span className="text-xs">🎲</span>
+                                                    <span className="text-sm">{formatMod(atkMod)}</span>
+                                                </button>
                                             </div>
-                                            <div className="flex-1">
-                                                <h3 className="font-bold text-blue-100 md:text-lg">{weapon.name}</h3>
-                                                <p className="text-sm text-gray-400">{weapon.stats?.damage || '1d4'} de Dano</p>
-                                            </div>
-                                            <button onClick={() => onRollAttribute(character.name, `Ataque: ${weapon.name}`, getMod(character.stats?.str || 10) + profBonus)} className="px-4 py-3 bg-blue-900/30 hover:bg-blue-800/50 border border-blue-800 text-blue-300 rounded-lg text-xs font-bold uppercase tracking-wider active:scale-95 transition-all">
-                                                Atacar
-                                            </button>
+                                        )
+                                    }) : (
+                                        <div className="col-span-full flex flex-col items-center justify-center py-12 bg-black/40 border border-dashed border-gray-800 rounded-xl">
+                                            <Sword size={32} className="text-gray-700 mb-3" />
+                                            <p className="text-gray-400 text-sm italic">Você está desarmado.</p>
+                                            <p className="text-gray-500 text-[10px] uppercase tracking-widest mt-2">Vá à aba <span className="text-yellow-500 font-bold">Mochila</span> e equipe uma arma!</p>
                                         </div>
-                                    )) || <p className="col-span-full text-center text-gray-500 text-sm py-8 italic">Nenhuma arma equipada.</p>}
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -340,12 +373,21 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                             <h2 className="text-yellow-500/80 uppercase tracking-[0.2em] text-xs font-bold border-b border-yellow-900/30 pb-2 mb-4">Mochila</h2>
                             <div className="grid grid-cols-3 md:grid-cols-5 gap-3 md:gap-5">
                                 {character.inventory?.map(item => (
-                                    <div key={item.id} className="bg-gray-900 border border-gray-800 rounded-xl p-3 md:p-4 flex flex-col items-center text-center relative hover:border-yellow-900/50 transition-colors">
+                                    <div key={item.id} className={`bg-gray-900 border ${item.isEquipped ? 'border-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.2)]' : 'border-gray-800 hover:border-yellow-900/50'} rounded-xl p-3 md:p-4 flex flex-col items-center text-center relative transition-colors`}>
                                         <div className="absolute top-2 right-2 bg-black px-1.5 py-0.5 rounded text-[10px] font-bold text-yellow-500 border border-yellow-900/50 shadow-sm">x{item.quantity}</div>
-                                        <div className="w-12 h-12 md:w-16 md:h-16 bg-black rounded-lg border border-gray-700 flex items-center justify-center mb-2 mt-2">
+                                        <div className="w-12 h-12 md:w-16 md:h-16 bg-black rounded-lg border border-gray-700 flex items-center justify-center mb-2 mt-2 relative">
                                             {item.image ? <img src={item.image} alt={item.name} className="w-10 h-10 md:w-14 md:h-14 object-contain" /> : <Backpack size={24} className="text-gray-500" />}
                                         </div>
-                                        <span className="text-[10px] md:text-sm font-bold text-gray-200 line-clamp-2 w-full">{item.name}</span>
+                                        <span className="text-[10px] md:text-sm font-bold text-gray-200 line-clamp-2 w-full mb-3">{item.name}</span>
+                                        
+                                        {(item.type === 'weapon' || item.type === 'armor') && (
+                                            <button 
+                                                onClick={() => toggleEquip(item.id)} 
+                                                className={`mt-auto text-[9px] md:text-[10px] px-2 py-1.5 rounded font-bold uppercase tracking-wider w-full transition-all active:scale-95 ${item.isEquipped ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-500/50' : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'}`}
+                                            >
+                                                {item.isEquipped ? 'Equipado' : 'Equipar'}
+                                            </button>
+                                        )}
                                     </div>
                                 )) || <p className="col-span-full text-center text-gray-500 text-sm py-8 italic">A mochila está vazia.</p>}
                             </div>

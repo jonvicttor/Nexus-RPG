@@ -195,9 +195,7 @@ function App() {
 
   useEffect(() => {
     if (toastMsg && !toastMsg.sender) {
-        const timer = setTimeout(() => {
-            setToastMsg(null);
-        }, 4500); 
+        const timer = setTimeout(() => { setToastMsg(null); }, 4500); 
         return () => clearTimeout(timer);
     }
     if (toastMsg && toastMsg.sender) {
@@ -436,27 +434,79 @@ function App() {
         }
   };
 
+  // --- NOVA MAGIA DE COMBATE (CARTÃO RICO NO CHAT) ---
   const handleDiceComplete = (total: number, isSuccess: boolean, isCritical: boolean, isSecret: boolean) => {
       const senderName = role === 'DM' ? 'Mestre' : playerName;
       let resultMsg = isCritical ? (total >= 20 ? "CRÍTICO! ⚔️" : "FALHA CRÍTICA! 💀") : (isSuccess ? "SUCESSO! ✅" : "FALHA ❌");
-      let isAttackHit = false; let targetIdForDamage: number | null = null; let targetInfoMsg = "";
+      let isAttackHit = false; 
+      let targetIdForDamage: number | null = null; 
+      let targetInfoMsg = "";
+      let damageExpression = "";
 
-      if (targetEntityIds.length > 0 && diceContext.title.toLowerCase().includes("ataque")) {
+      const isAttack = diceContext.title.toLowerCase().includes("ataque");
+
+      if (targetEntityIds.length > 0 && isAttack) {
           const target = entities.find(e => e.id === targetEntityIds[0]);
           if (target) {
               if (total >= target.ac || (isCritical && total >= 20)) { 
-                  resultMsg = `**ACERTOU!** ⚔️ (vs CA ${target.ac})`; targetInfoMsg = `\n🎯 *${target.name}* foi atingido!`; isAttackHit = true; targetIdForDamage = target.id;
-              } else { resultMsg = `**ERROU!** 🛡️ (vs CA ${target.ac})`; targetInfoMsg = `\n💨 *${target.name}* defendeu o ataque.`; }
+                  resultMsg = `**ACERTOU!** ⚔️ (vs CA ${target.ac})`; 
+                  isAttackHit = true; 
+                  targetIdForDamage = target.id;
+
+                  // 1. Acha o Atacante e a Arma
+                  const attacker = role === 'DM' && attackerId ? entities.find(e => e.id === attackerId) : entities.find(e => e.name === playerName);
+                  const weaponName = diceContext.title.replace(/Ataque:\s*/i, '').trim();
+                  const weapon = attacker?.inventory?.find(i => i.name.toLowerCase() === weaponName.toLowerCase());
+
+                  let baseDmg = weapon?.stats?.damage || '1d4';
+                  let dmgMod = 0;
+                  
+                  // 2. Calcula se usa FOR ou DES para o dano
+                  if (attacker && attacker.stats) {
+                      const strMod = Math.floor((attacker.stats.str - 10) / 2);
+                      const dexMod = Math.floor((attacker.stats.dex - 10) / 2);
+                      const isFinesseOrRanged = weapon?.stats?.properties?.some(p => p.toLowerCase().includes('finesse') || p.toLowerCase().includes('distância') || p.toLowerCase().includes('ranged')) || weaponName.toLowerCase().includes('arco') || weaponName.toLowerCase().includes('besta') || weaponName.toLowerCase().includes('adaga') || weaponName.toLowerCase().includes('rapieira');
+                      dmgMod = isFinesseOrRanged ? Math.max(strMod, dexMod) : strMod;
+                  }
+
+                  // 3. Rola o Dano
+                  const dmgMatch = baseDmg.match(/^(\d+)d(\d+)/i);
+                  if (dmgMatch) {
+                      const count = parseInt(dmgMatch[1]);
+                      const sides = parseInt(dmgMatch[2]);
+                      // Se for Crítico, dobra os dados rolados!
+                      const rollsCount = (isCritical && total >= 20) ? count * 2 : count;
+                      
+                      let dmgTotal = 0;
+                      let dmgRolls = [];
+                      for(let i=0; i<rollsCount; i++) {
+                          const val = Math.floor(Math.random() * sides) + 1;
+                          dmgRolls.push(val);
+                          dmgTotal += val;
+                      }
+                      dmgTotal += dmgMod;
+                      damageExpression = `${rollsCount}d${sides}${dmgMod > 0 ? '+'+dmgMod : (dmgMod < 0 ? dmgMod : '')}`;
+                      
+                      targetInfoMsg = `\n🎯 *${target.name}* foi atingido!\n🩸 Dano: [${dmgRolls.join(', ')}] ${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''} = **${Math.max(1, dmgTotal)}**`;
+                  } else {
+                      targetInfoMsg = `\n🎯 *${target.name}* foi atingido!`;
+                  }
+              } else { 
+                  resultMsg = `**ERROU!** 🛡️ (vs CA ${target.ac})`; 
+                  targetInfoMsg = `\n💨 *${target.name}* defendeu o ataque.`; 
+              }
           }
       }
 
-      const publicText = `🎲 **${senderName}** rolou ${diceContext.title}: **${total}** - ${resultMsg}${targetInfoMsg}`;
+      // Constrói o texto do Cartão de Batalha!
+      const publicText = `🎲 **${senderName}** rolou ${diceContext.title}:\n🎯 Ataque: **${total}** - ${resultMsg}${targetInfoMsg}`;
 
       if (isSecret) {
           const secretText = `👁️ (Secreto) ` + publicText;
-          addLog({ text: role === 'DM' ? secretText : `🎲 **${senderName}** rolou dados misteriosamente...`, type: 'roll', sender: senderName, isSecret: true, secretContent: secretText, targetId: targetIdForDamage, isHit: isAttackHit });
+          // O App injeta { damage: damageExpression } escondido para o Chat criar o botão de [Aplicar Dano]!
+          addLog({ text: role === 'DM' ? secretText : `🎲 **${senderName}** rolou dados misteriosamente...`, type: 'roll', sender: senderName, isSecret: true, secretContent: secretText, targetId: targetIdForDamage, isHit: isAttackHit, damage: damageExpression } as any);
       } else {
-          addLog({ text: publicText, type: 'roll', sender: senderName, targetId: targetIdForDamage, isHit: isAttackHit });
+          addLog({ text: publicText, type: 'roll', sender: senderName, targetId: targetIdForDamage, isHit: isAttackHit, damage: damageExpression } as any);
           ignoreNextDiceSound.current = true;
           setTimeout(() => { ignoreNextDiceSound.current = false; }, 2000);
           socket.emit('rollDice', { sides: 20, result: total, roomId: ROOM_ID, user: senderName });
@@ -501,13 +551,11 @@ function App() {
 
   const handleSendMessage = (text: string) => {
       const senderName = role === 'DM' ? 'MESTRE' : playerName;
-      
       const whisperMatch = text.match(/^\/w\s+"([^"]+)"\s+(.+)$/i) || text.match(/^\/w\s+([^\s]+)\s+(.+)$/i);
       
       if (whisperMatch) {
           const whisperTarget = whisperMatch[1];
           const whisperText = whisperMatch[2];
-          
           addLog({ text: whisperText, type: 'chat', sender: senderName, isWhisper: true, whisperTarget: whisperTarget });
           return;
       }
@@ -653,7 +701,6 @@ function App() {
 
   const handleAddToInitiative = (entity: Entity) => { if (initiativeList.find(i => i.id === entity.id)) return; setInitModalEntity(entity); };
   
-  // --- MAGIA DA SINCRONIZAÇÃO AQUI ---
   const handleSubmitInitiative = (val: number) => { 
       if (!initModalEntity) return; 
       const newItem = { id: initModalEntity.id, name: initModalEntity.name, value: val }; 
@@ -662,7 +709,6 @@ function App() {
       const newActive = activeTurnId === null ? initModalEntity.id : activeTurnId; 
       setActiveTurnId(newActive); 
       
-      // Sincroniza o primeiro atacante da luta se o combate acabou de começar!
       if (activeTurnId === null && newList.length > 0) {
           setAttackerId(newList[0].id);
       }
@@ -679,7 +725,6 @@ function App() {
       const nextId = initiativeList[(initiativeList.findIndex(i => i.id === activeTurnId) + 1) % initiativeList.length].id; 
       setActiveTurnId(nextId); 
       
-      // Passa o bastão de Atacante para o próximo!
       setAttackerId(nextId);
       
       socket.emit('updateInitiative', { list: initiativeList, activeTurnId: nextId, roomId: ROOM_ID }); 
@@ -690,17 +735,20 @@ function App() {
   const handleClearInitiative = () => { 
       setInitiativeList([]); 
       setActiveTurnId(null); 
-      
-      // Limpa os slots da mesa de combate!
       setAttackerId(null);
       setTargetEntityIds([]);
-      
       socket.emit('updateInitiative', { list: [], activeTurnId: null, roomId: ROOM_ID }); 
   };
-  // ------------------------------------
 
   const handleSortInitiative = () => { const newList = [...initiativeList].sort((a, b) => b.value - a.value); setInitiativeList(newList); socket.emit('updateInitiative', { list: newList, activeTurnId, roomId: ROOM_ID }); };
-  const handleSetTarget = (id: number | number[] | null, multiSelect: boolean = false) => { if (role !== 'DM') return; if (id === null) { if (!multiSelect) setTargetEntityIds([]); return; } if (Array.isArray(id)) { setTargetEntityIds(multiSelect ? Array.from(new Set([...targetEntityIds, ...id])) : id); return; } setTargetEntityIds(multiSelect ? (targetEntityIds.includes(id) ? targetEntityIds.filter(tid => tid !== id) : [...targetEntityIds, id]) : [id]); };
+  
+  // --- A MAGIA DE MIRA LIBERADA PARA OS JOGADORES ---
+  const handleSetTarget = (id: number | number[] | null, multiSelect: boolean = false) => { 
+      if (id === null) { if (!multiSelect) setTargetEntityIds([]); return; } 
+      if (Array.isArray(id)) { setTargetEntityIds(multiSelect ? Array.from(new Set([...targetEntityIds, ...id])) : id); return; } 
+      setTargetEntityIds(multiSelect ? (targetEntityIds.includes(id) ? targetEntityIds.filter(tid => tid !== id) : [...targetEntityIds, id]) : [id]); 
+  };
+  
   const handleSetAttacker = (id: number | null) => { if (role !== 'DM') return; setAttackerId(id); };
   const handleSelectEntityForStatus = (entity: Entity) => { setStatusSelectionId(entity.id); };
   

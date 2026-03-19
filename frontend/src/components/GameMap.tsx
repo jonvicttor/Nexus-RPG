@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import CanvasMap, { AoEData } from './CanvasMap'; 
 import TokenLayer from './TokenLayer';
 import { Entity, Item } from '../App';
-import { Keyboard, X } from 'lucide-react'; // NOVO: Ícones para o menu elegante!
+import { Keyboard, X } from 'lucide-react'; 
 
 export interface MapPing {
   id: string;
@@ -69,10 +69,8 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     const [scale, setScale] = useState(1);
     const containerRef = useRef<HTMLDivElement>(null);
     
-    // --- NOVO: Interface de Atalhos ---
     const [showShortcuts, setShowShortcuts] = useState(false);
 
-    // REFERÊNCIAS CORRIGIDAS PARA ATALHOS FUNCIONAREM
     const targetIdsRef = useRef<number[]>([]);
     const attackerIdRef = useRef<number | null>(null);
 
@@ -85,7 +83,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     const isMapMouseDown = useRef(false);
     const mapMouseDownPos = useRef({ x: 0, y: 0 });
 
-    // Mantém as referências atualizadas para os ouvintes do teclado/rato
     useEffect(() => { targetIdsRef.current = targetEntityIds; }, [targetEntityIds]);
     useEffect(() => { attackerIdRef.current = attackerId; }, [attackerId]);
 
@@ -116,7 +113,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         }
     }, [role, onMapChange]);
 
-    // --- NOVO: BLOQUEAR ZOOM NATIVO DO NAVEGADOR ---
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
@@ -127,14 +123,12 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             }
         };
 
-        // O 'passive: false' é obrigatório para conseguirmos bloquear o zoom do Chrome/Edge
         container.addEventListener('wheel', preventBrowserZoom, { passive: false });
         return () => container.removeEventListener('wheel', preventBrowserZoom);
     }, []);
 
     useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
-            // SEGURANÇA: Se estiver a digitar no chat ou inputs, ignora os atalhos do mapa!
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
             if (e.key.toLowerCase() === 'm') isMPressed.current = true;
@@ -151,7 +145,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
 
             if (role !== 'DM') return;
             
-            // CORREÇÃO DO 'F' (VIRAR): Agora funciona se for Alvo (Vermelho) OU Atacante (Azul)
             if (e.key.toLowerCase() === 'f') {
                 const primaryTarget = attackerIdRef.current !== null ? attackerIdRef.current : targetIdsRef.current[0];
                 if (primaryTarget) {
@@ -173,7 +166,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         const handleGlobalWheel = (e: WheelEvent) => {
             if (role !== 'DM') return;
             if (e.shiftKey || e.altKey) {
-                // CORREÇÃO DO ROTACIONAR/REDIMENSIONAR: Funciona no Atacante e no Alvo!
                 const primaryTarget = attackerIdRef.current !== null ? attackerIdRef.current : targetIdsRef.current[0];
                 if (!primaryTarget) return;
 
@@ -425,30 +417,32 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 targetEntityIds={targetEntityIds}
                 onMoveToken={onMoveToken}
                 
+                // --- A MAGIA OCORRE AQUI: Jogadores agora podem selecionar! ---
                 onSelectToken={(entity, multi) => {
                     if (!entity || entity.classType === 'Item') return; 
-                    if (role === 'DM') {
-                        onSelectEntity(entity, 0, 0); 
-                        if (attackerId === entity.id) {
-                            onSetAttacker(null); 
-                        } else {
-                            onSetAttacker(entity.id); 
-                        }
+                    
+                    // Todos (Mestre e Jogador) podem ver os atributos básicos, o Mestre vê tudo.
+                    onSelectEntity(entity, 0, 0); 
+                    
+                    if (attackerId === entity.id) {
+                        onSetAttacker(null); 
+                    } else {
+                        onSetAttacker(entity.id); 
                     }
                 }}
                 
                 onTokenDoubleClick={(entity, multi) => {
                     if (!entity || entity.classType === 'Item') return; 
-                    if (role === 'DM') {
-                        if (targetEntityIds.includes(entity.id)) {
-                            if (multi) { 
-                                onSetTarget(targetEntityIds.filter(id => id !== entity.id));
-                            } else {
-                                onSetTarget(null); 
-                            }
+                    
+                    // MESTRE E JOGADOR AGORA PODEM DEFINIR ALVOS!
+                    if (targetEntityIds.includes(entity.id)) {
+                        if (multi) { 
+                            onSetTarget(targetEntityIds.filter(id => id !== entity.id));
                         } else {
-                            onSetTarget(entity.id, multi); 
+                            onSetTarget(null); 
                         }
+                    } else {
+                        onSetTarget(entity.id, multi); 
                     }
                 }}
                 
@@ -459,7 +453,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 onGiveItemToToken={onGiveItemToToken || (() => {})} 
             />
 
-            {/* --- A NOVA MAGIA: MENU ELEGANTE DE ATALHOS --- */}
             <div className="absolute top-4 right-4 z-[250] flex flex-col items-end">
                 {isFogMode && (
                     <div className="bg-yellow-900/80 border border-yellow-500 text-yellow-300 text-xs font-bold px-3 py-1.5 rounded-full shadow-lg mb-3">
@@ -496,6 +489,19 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                                 <kbd className="bg-white/10 border border-white/5 px-2 py-0.5 rounded text-cyan-300 text-[10px] font-mono shadow-inner">Segure 'M' + Arraste</kbd>
                             </li>
                             
+                            <li className="flex justify-between items-center mt-3 pt-3 border-t border-white/5">
+                                <span className="font-medium">Atacante <span className="text-[10px] text-blue-400 font-bold">(Azul)</span></span> 
+                                <kbd className="bg-blue-900/30 border border-blue-500/30 px-2 py-0.5 rounded text-blue-300 text-[10px] font-mono">1 Clique</kbd>
+                            </li>
+                            <li className="flex justify-between items-center">
+                                <span className="font-medium">Alvo <span className="text-[10px] text-red-400 font-bold">(Vermelho)</span></span> 
+                                <kbd className="bg-red-900/30 border border-red-500/30 px-2 py-0.5 rounded text-red-300 text-[10px] font-mono">2 Cliques</kbd>
+                            </li>
+                            <li className="flex justify-between items-center">
+                                <span className="font-medium">Limpar Seleção</span> 
+                                <kbd className="bg-purple-900/30 border border-purple-500/30 px-2 py-0.5 rounded text-purple-300 text-[10px] font-mono animate-pulse">ESC</kbd>
+                            </li>
+
                             {role === 'DM' && (
                                 <>
                                     <li className="flex justify-between items-center mt-3 pt-3 border-t border-white/5">
@@ -513,19 +519,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                                     <li className="flex justify-between items-center">
                                         <span className="font-medium">Espelhar (Virar)</span> 
                                         <kbd className="bg-white/10 border border-white/5 px-2 py-0.5 rounded text-yellow-400 text-[10px] font-mono shadow-inner">Selecione + 'F'</kbd>
-                                    </li>
-                                    
-                                    <li className="flex justify-between items-center mt-3 pt-3 border-t border-white/5">
-                                        <span className="font-medium">Atacante <span className="text-[10px] text-blue-400 font-bold">(Azul)</span></span> 
-                                        <kbd className="bg-blue-900/30 border border-blue-500/30 px-2 py-0.5 rounded text-blue-300 text-[10px] font-mono">1 Clique</kbd>
-                                    </li>
-                                    <li className="flex justify-between items-center">
-                                        <span className="font-medium">Alvo <span className="text-[10px] text-red-400 font-bold">(Vermelho)</span></span> 
-                                        <kbd className="bg-red-900/30 border border-red-500/30 px-2 py-0.5 rounded text-red-300 text-[10px] font-mono">2 Cliques</kbd>
-                                    </li>
-                                    <li className="flex justify-between items-center">
-                                        <span className="font-medium">Limpar Seleção</span> 
-                                        <kbd className="bg-purple-900/30 border border-purple-500/30 px-2 py-0.5 rounded text-purple-300 text-[10px] font-mono animate-pulse">ESC</kbd>
                                     </li>
                                 </>
                             )}
