@@ -169,6 +169,10 @@ function App() {
   const [showEnemyCreator, setShowEnemyCreator] = useState(false);
   const [showBgDice, setShowBgDice] = useState(false);
   
+  // --- O NOVO ESTADO DA JANELA SECRETA ---
+  const [privateChatTarget, setPrivateChatTarget] = useState<string | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
   const [diceContext, setDiceContext] = useState({
       title: 'Teste Geral',
       subtitle: 'Sorte',
@@ -185,16 +189,22 @@ function App() {
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entity: Entity } | null>(null);
   const [pings, setPings] = useState<MapPing[]>([]);
-  const [toastMsg, setToastMsg] = useState<{text: string, id: number} | null>(null);
+  
+  // A NOTIFICAÇÃO AGORA GUARDA O REMETENTE (SENDER)
+  const [toastMsg, setToastMsg] = useState<{text: string, id: number, sender?: string} | null>(null);
 
   const ignoreNextDiceSound = useRef(false);
 
-  // --- NOVA MAGIA: TEMPORIZADOR GLOBAL DE NOTIFICAÇÕES ---
   useEffect(() => {
-    if (toastMsg) {
+    if (toastMsg && !toastMsg.sender) { // Se não for clicável, some em 4.5s
         const timer = setTimeout(() => {
             setToastMsg(null);
-        }, 4500); // Fica na tela por 4.5 segundos exatos e depois some!
+        }, 4500); 
+        return () => clearTimeout(timer);
+    }
+    // Se for clicável (sussurro), fica até a pessoa clicar (ou sumir após 10 seg)
+    if (toastMsg && toastMsg.sender) {
+        const timer = setTimeout(() => setToastMsg(null), 10000);
         return () => clearTimeout(timer);
     }
   }, [toastMsg]);
@@ -203,6 +213,27 @@ function App() {
     const handleResize = () => setWindowSize({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Faz a janela secreta rolar para o fundo sempre que uma nova mensagem entra
+  useEffect(() => {
+      if (privateChatTarget && chatEndRef.current) {
+          chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
+  }, [chatMessages, privateChatTarget]);
+
+  // AQUI APANHAMOS O CLIQUE DE "SUSSURRAR" DO SIDEBARDM E ABRIMOS A JANELA AQUI!
+  useEffect(() => {
+      const handleOpenDraft = (e: Event) => {
+          const customEvent = e as CustomEvent<string>;
+          // O comando é "/w Nome"
+          const match = customEvent.detail.match(/^\/w\s+"?([^"]+)"?\s*/i);
+          if (match) {
+              setPrivateChatTarget(match[1].trim());
+          }
+      };
+      window.addEventListener('openChatWithDraft', handleOpenDraft);
+      return () => window.removeEventListener('openChatWithDraft', handleOpenDraft);
   }, []);
 
   const handlePlayMusic = useCallback((trackId: string, emit: boolean = true) => {
@@ -289,10 +320,10 @@ function App() {
             
             if (!isSender && !isTarget && !amIDM) return; 
 
-            // Notifica se eu for o alvo!
+            // Notifica o alvo COM BOTÃO CLICÁVEL PARA ABRIR A JANELA
             if (isTarget && !isSender) {
-                setToastMsg({ text: `🤫 Sussurro de ${msg.sender}: Olhe o Chat!`, id: Date.now() });
-                playSound('notificacao'); // <--- AQUI VOCÊ TOCA O NOVO SOM
+                setToastMsg({ text: `🤫 Mensagem de ${msg.sender}. Clique aqui para ler!`, id: Date.now(), sender: msg.sender });
+                playSound('notificacao'); 
             }
         }
 
@@ -577,8 +608,8 @@ function App() {
               else { setToastMsg({ text: `Visualizando ficha de ${entity.name} (Em breve)`, id: Date.now() }); }
               break;
           case 'WHISPER': 
-              const targetName = entity.name.includes(' ') ? `"${entity.name}"` : entity.name;
-              window.dispatchEvent(new CustomEvent('openChatWithDraft', { detail: `/w ${targetName} ` }));
+              // AQUI! Em vez de usar o evento do Sidebar, dizemos ao App para abrir a janela!
+              setPrivateChatTarget(entity.name);
               break;
           case 'SET_ATTACKER': setAttackerId(entity.id); break;
           case 'SET_TARGET': handleSetTarget(entity.id, true); break;
@@ -791,11 +822,58 @@ function App() {
 
   return (
     <div className="flex h-[100dvh] w-screen overflow-hidden bg-rpgBg" onClick={() => { if (Howler.ctx && Howler.ctx.state !== 'running') Howler.ctx.resume(); }}>
+      
+      {/* --- A NOTIFICAÇÃO É CLICÁVEL E ABRE A JANELA SECRETA --- */}
       {toastMsg && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[400] bg-gray-900 border border-cyan-500/50 text-cyan-50 px-6 py-3 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.4)] animate-in slide-in-from-top-5 fade-in duration-300 flex items-center gap-3">
+        <div 
+           onClick={() => {
+               if (toastMsg.sender) setPrivateChatTarget(toastMsg.sender);
+               setToastMsg(null);
+           }}
+           className={`fixed top-5 left-1/2 -translate-x-1/2 z-[400] bg-gray-900 border px-6 py-3 rounded-xl animate-in slide-in-from-top-5 fade-in duration-300 flex items-center gap-3 ${toastMsg.sender ? 'border-pink-500/50 text-pink-50 shadow-[0_0_20px_rgba(236,72,153,0.4)] cursor-pointer hover:bg-gray-800' : 'border-cyan-500/50 text-cyan-50 shadow-[0_0_20px_rgba(6,182,212,0.4)]'}`}
+        >
             <span className="text-xl">🔔</span><span className="font-bold tracking-wider">{toastMsg.text}</span>
         </div>
       )}
+
+      {/* --- A JANELA DE SUSSURROS PRIVADA FLUTUANTE --- */}
+      {privateChatTarget && (
+          <div className="fixed bottom-4 right-[450px] z-[300] w-80 bg-gray-900 border border-pink-500/50 rounded-t-xl rounded-bl-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10">
+              <div className="bg-gradient-to-r from-pink-900 to-purple-900 p-2 flex justify-between items-center border-b border-pink-500/30 shadow-md">
+                  <span className="text-pink-100 font-bold text-xs uppercase tracking-widest flex items-center gap-2">
+                      🤫 {privateChatTarget}
+                  </span>
+                  <button onClick={() => setPrivateChatTarget(null)} className="text-pink-300 hover:text-white transition-colors text-lg">✕</button>
+              </div>
+              
+              <div className="h-64 overflow-y-auto p-3 flex flex-col gap-2 bg-[#111] custom-scrollbar">
+                  {chatMessages.filter(msg => msg.isWhisper && ((msg.sender === (role === 'DM' ? 'Mestre' : playerName) && msg.whisperTarget === privateChatTarget) || (msg.sender === privateChatTarget && msg.whisperTarget === (role === 'DM' ? 'Mestre' : playerName)))).length === 0 && (
+                      <p className="text-gray-600 text-xs italic text-center mt-4">Início da conversa secreta...</p>
+                  )}
+                  {chatMessages.filter(msg => msg.isWhisper && ((msg.sender === (role === 'DM' ? 'Mestre' : playerName) && msg.whisperTarget === privateChatTarget) || (msg.sender === privateChatTarget && msg.whisperTarget === (role === 'DM' ? 'Mestre' : playerName)))).map(msg => (
+                      <div key={msg.id} className={`p-2 rounded max-w-[85%] text-xs shadow-md ${msg.sender === (role === 'DM' ? 'Mestre' : playerName) ? 'bg-pink-900/40 text-pink-100 self-end border border-pink-700/50 rounded-tr-none' : 'bg-gray-800 text-gray-200 self-start border border-gray-600 rounded-tl-none'}`}>
+                          <span className="font-bold opacity-50 text-[9px] block mb-1">{msg.sender}</span>
+                          <span dangerouslySetInnerHTML={{ __html: msg.text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>') }} />
+                      </div>
+                  ))}
+                  <div ref={chatEndRef} />
+              </div>
+
+              <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const input = e.currentTarget.elements.namedItem('msg') as HTMLInputElement;
+                  if(input.value.trim()){
+                      const targetName = privateChatTarget.includes(' ') ? `"${privateChatTarget}"` : privateChatTarget;
+                      handleSendMessage(`/w ${targetName} ${input.value}`);
+                      input.value = '';
+                  }
+              }} className="p-2 bg-gray-900 border-t border-pink-500/30 flex gap-2">
+                  <input name="msg" autoFocus type="text" placeholder="Sussurro secreto..." className="flex-1 bg-black/50 border border-pink-500/30 rounded px-2 py-1.5 text-xs text-white outline-none focus:border-pink-400 transition-colors" />
+                  <button type="submit" className="bg-pink-700 hover:bg-pink-600 text-white px-3 py-1.5 rounded text-xs font-bold transition-colors shadow">Enviar</button>
+              </form>
+          </div>
+      )}
+
       {initModalEntity && (<InitiativeModal entity={initModalEntity} onClose={() => setInitModalEntity(null)} onConfirm={handleSubmitInitiative} />)}
       {editingEntity && (<EditEntityModal entity={editingEntity} onSave={(id, updates) => { handleEditEntity(id, updates); setEditingEntity(null); }} onClose={() => setEditingEntity(null)} />)}
       <BaldursDiceRoller isOpen={showBgDice} onClose={() => setShowBgDice(false)} title={diceContext.title} subtitle={diceContext.subtitle} difficultyClass={diceContext.dc} baseModifier={diceContext.mod || 0} proficiency={diceContext.prof || 0} rollType={diceContext.rollType || 'normal'} extraBonuses={diceContext.bonuses} onComplete={handleDiceComplete} />
@@ -852,9 +930,7 @@ function App() {
 
                 <GameMap 
                     mapUrl={currentMap} gridSize={GRID_SIZE} entities={entities} role={role} fogGrid={fogGrid} isFogMode={isFogMode} fogTool={fogTool} activeTurnId={activeTurnId}
-                    onFogUpdate={handleFogUpdate} 
-                    onFogBulkUpdate={handleFogBulkUpdate} 
-                    fogShape={fogShape}
+                    onFogUpdate={handleFogUpdate} onFogBulkUpdate={handleFogBulkUpdate} fogShape={fogShape}
                     onMoveToken={handleUpdatePosition} onAddToken={handleMapDrop} onRotateToken={handleRotateToken}
                     onResizeToken={handleResizeToken} onTokenDoubleClick={handleAddToInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget}
                     onSetAttacker={handleSetAttacker} onFlipToken={handleFlipToken} activeAoE={activeAoE} onAoEComplete={() => setActiveAoE(null)} aoeColor={aoeColor} onSelectEntity={handleSelectEntityForStatus}
