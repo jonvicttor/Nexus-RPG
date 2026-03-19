@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import CanvasMap, { AoEData } from './CanvasMap'; 
 import TokenLayer from './TokenLayer';
 import { Entity, Item } from '../App';
+import { Keyboard, X } from 'lucide-react'; // NOVO: Ícones para o menu elegante!
 
 export interface MapPing {
   id: string;
@@ -67,7 +68,13 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     const [offset, setOffset] = useState({ x: 0, y: 0 });
     const [scale, setScale] = useState(1);
     const containerRef = useRef<HTMLDivElement>(null);
-    const selectedIdsRef = useRef<number[]>([]);
+    
+    // --- NOVO: Interface de Atalhos ---
+    const [showShortcuts, setShowShortcuts] = useState(false);
+
+    // REFERÊNCIAS CORRIGIDAS PARA ATALHOS FUNCIONAREM
+    const targetIdsRef = useRef<number[]>([]);
+    const attackerIdRef = useRef<number | null>(null);
 
     const [isMeasuring, setIsMeasuring] = useState(false);
     const [rulerStart, setRulerStart] = useState<{ x: number, y: number } | null>(null);
@@ -78,7 +85,9 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     const isMapMouseDown = useRef(false);
     const mapMouseDownPos = useRef({ x: 0, y: 0 });
 
-    useEffect(() => { selectedIdsRef.current = targetEntityIds; }, [targetEntityIds]);
+    // Mantém as referências atualizadas para os ouvintes do teclado/rato
+    useEffect(() => { targetIdsRef.current = targetEntityIds; }, [targetEntityIds]);
+    useEffect(() => { attackerIdRef.current = attackerId; }, [attackerId]);
 
     useEffect(() => {
         if (role === 'PLAYER' && externalOffset && externalScale) {
@@ -95,7 +104,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             const entityY = focusEntity.y * gridSize;
             const newOffsetX = (screenW / 2) - (entityX * scale);
             const newOffsetY = (screenH / 2) - (entityY * scale);
-            // Isso acionará a correção automática do useEffect no CanvasMap
             setOffset({ x: newOffsetX, y: newOffsetY });
         }
     }, [focusEntity, scale, gridSize]);
@@ -108,8 +116,27 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         }
     }, [role, onMapChange]);
 
+    // --- NOVO: BLOQUEAR ZOOM NATIVO DO NAVEGADOR ---
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const preventBrowserZoom = (e: WheelEvent) => {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault(); 
+            }
+        };
+
+        // O 'passive: false' é obrigatório para conseguirmos bloquear o zoom do Chrome/Edge
+        container.addEventListener('wheel', preventBrowserZoom, { passive: false });
+        return () => container.removeEventListener('wheel', preventBrowserZoom);
+    }, []);
+
     useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
+            // SEGURANÇA: Se estiver a digitar no chat ou inputs, ignora os atalhos do mapa!
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
             if (e.key.toLowerCase() === 'm') isMPressed.current = true;
             
             if (e.key === 'Escape') {
@@ -123,8 +150,13 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             }
 
             if (role !== 'DM') return;
-            if (e.key.toLowerCase() === 'f' && selectedIdsRef.current.length > 0) {
-                selectedIdsRef.current.forEach(id => onFlipToken(id));
+            
+            // CORREÇÃO DO 'F' (VIRAR): Agora funciona se for Alvo (Vermelho) OU Atacante (Azul)
+            if (e.key.toLowerCase() === 'f') {
+                const primaryTarget = attackerIdRef.current !== null ? attackerIdRef.current : targetIdsRef.current[0];
+                if (primaryTarget) {
+                    onFlipToken(primaryTarget);
+                }
             }
         };
 
@@ -141,17 +173,19 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         const handleGlobalWheel = (e: WheelEvent) => {
             if (role !== 'DM') return;
             if (e.shiftKey || e.altKey) {
-                if (selectedIdsRef.current.length === 0) return;
-                const targetId = selectedIdsRef.current[0];
-                const entity = entities.find(ent => ent.id === targetId);
+                // CORREÇÃO DO ROTACIONAR/REDIMENSIONAR: Funciona no Atacante e no Alvo!
+                const primaryTarget = attackerIdRef.current !== null ? attackerIdRef.current : targetIdsRef.current[0];
+                if (!primaryTarget) return;
+
+                const entity = entities.find(ent => ent.id === primaryTarget);
                 if (entity) {
-                    if (e.shiftKey) onRotateToken(targetId, (entity.rotation || 0) + (e.deltaY > 0 ? 15 : -15));
-                    if (e.altKey) onResizeToken(targetId, parseFloat(Math.max(0.1, (entity.size || 1) + (e.deltaY > 0 ? -0.1 : 0.1)).toFixed(1)));
+                    if (e.shiftKey) onRotateToken(primaryTarget, (entity.rotation || 0) + (e.deltaY > 0 ? 15 : -15));
+                    if (e.altKey) onResizeToken(primaryTarget, parseFloat(Math.max(0.1, (entity.size || 1) + (e.deltaY > 0 ? -0.1 : 0.1)).toFixed(1)));
                 }
             }
         };
         
-        window.addEventListener('wheel', handleGlobalWheel);
+        window.addEventListener('wheel', handleGlobalWheel, { passive: false });
         window.addEventListener('keydown', handleGlobalKeyDown);
         window.addEventListener('keyup', handleGlobalKeyUp);
         
@@ -425,27 +459,81 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 onGiveItemToToken={onGiveItemToToken || (() => {})} 
             />
 
-            <div className="absolute top-4 right-4 pointer-events-none text-white/20 text-xs font-mono text-right z-[50] drop-shadow-md">
-                {isFogMode ? 
-                    <span className="text-yellow-400 font-bold">NEBLINA: {fogTool === 'reveal' ? 'REVELAR' : 'ESCONDER'}</span> 
-                    : (
-                        <>
-                          <div className="text-cyan-400 font-bold mb-1">PING: ALT + CLIQUE</div>
-                          <div className="text-cyan-400 font-bold mb-2">RÉGUA: SEGURE 'M' E ARRASTE</div>
-                          {role === 'DM' && (
-                            <>
-                              <div>ZOOM: {scale.toFixed(2)}x</div>
-                              <div className="text-yellow-400 font-bold mt-1">MAPA: MOUSE DO MEIO (OU CTRL)</div>
-                              <div className="text-yellow-400 font-bold mt-1">1 CLIQUE: SELECIONAR ATACANTE</div>
-                              <div className="text-yellow-400 font-bold mt-1">2 CLIQUES: SELECIONAR ALVO</div>
-                              <div className="text-yellow-400 font-bold mt-1">VIRAR TOKEN: SELECIONE E APERTE 'F'</div>
-                              <div className="text-purple-400 font-bold mt-1 animate-pulse">LIMPAR SELEÇÃO: ESC</div>
-                            </>
-                          )}
-                        </>
-                    )
-                }
+            {/* --- A NOVA MAGIA: MENU ELEGANTE DE ATALHOS --- */}
+            <div className="absolute top-4 right-4 z-[250] flex flex-col items-end">
+                {isFogMode && (
+                    <div className="bg-yellow-900/80 border border-yellow-500 text-yellow-300 text-xs font-bold px-3 py-1.5 rounded-full shadow-lg mb-3">
+                        Neblina: {fogTool === 'reveal' ? 'REVELAR' : 'ESCONDER'}
+                    </div>
+                )}
+                
+                <button 
+                    onClick={() => setShowShortcuts(!showShortcuts)}
+                    className={`p-2.5 rounded-full transition-all shadow-[0_0_15px_rgba(0,0,0,0.8)] border ${showShortcuts ? 'bg-cyan-900 border-cyan-400 text-white' : 'bg-black/80 hover:bg-black border-white/20 text-gray-400 hover:text-white'}`}
+                    title="Teclas de Atalho"
+                >
+                    <Keyboard size={20} />
+                </button>
+
+                {showShortcuts && (
+                    <div className="mt-3 bg-black/90 border border-white/10 rounded-xl p-5 shadow-2xl backdrop-blur-md animate-in slide-in-from-top-4 fade-in duration-200 w-80 text-sm text-gray-300">
+                        <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-3">
+                            <h4 className="font-black text-cyan-400 uppercase tracking-widest text-xs flex items-center gap-2">
+                                <Keyboard size={14} /> Guia de Comandos
+                            </h4>
+                            <button onClick={() => setShowShortcuts(false)} className="text-gray-500 hover:text-white transition-colors">
+                                <X size={16} />
+                            </button>
+                        </div>
+                        
+                        <ul className="space-y-2.5">
+                            <li className="flex justify-between items-center">
+                                <span className="font-medium">Sinalizar no Mapa</span> 
+                                <kbd className="bg-white/10 border border-white/5 px-2 py-0.5 rounded text-cyan-300 text-[10px] font-mono shadow-inner">Alt + Clique</kbd>
+                            </li>
+                            <li className="flex justify-between items-center">
+                                <span className="font-medium">Régua (Medir)</span> 
+                                <kbd className="bg-white/10 border border-white/5 px-2 py-0.5 rounded text-cyan-300 text-[10px] font-mono shadow-inner">Segure 'M' + Arraste</kbd>
+                            </li>
+                            
+                            {role === 'DM' && (
+                                <>
+                                    <li className="flex justify-between items-center mt-3 pt-3 border-t border-white/5">
+                                        <span className="font-medium">Zoom no Mapa</span> 
+                                        <kbd className="bg-white/10 border border-white/5 px-2 py-0.5 rounded text-yellow-400 text-[10px] font-mono shadow-inner">Ctrl + Scroll</kbd>
+                                    </li>
+                                    <li className="flex justify-between items-center">
+                                        <span className="font-medium">Rotacionar Token</span> 
+                                        <kbd className="bg-white/10 border border-white/5 px-2 py-0.5 rounded text-yellow-400 text-[10px] font-mono shadow-inner">Shift + Scroll</kbd>
+                                    </li>
+                                    <li className="flex justify-between items-center">
+                                        <span className="font-medium">Mudar Tamanho</span> 
+                                        <kbd className="bg-white/10 border border-white/5 px-2 py-0.5 rounded text-yellow-400 text-[10px] font-mono shadow-inner">Alt + Scroll</kbd>
+                                    </li>
+                                    <li className="flex justify-between items-center">
+                                        <span className="font-medium">Espelhar (Virar)</span> 
+                                        <kbd className="bg-white/10 border border-white/5 px-2 py-0.5 rounded text-yellow-400 text-[10px] font-mono shadow-inner">Selecione + 'F'</kbd>
+                                    </li>
+                                    
+                                    <li className="flex justify-between items-center mt-3 pt-3 border-t border-white/5">
+                                        <span className="font-medium">Atacante <span className="text-[10px] text-blue-400 font-bold">(Azul)</span></span> 
+                                        <kbd className="bg-blue-900/30 border border-blue-500/30 px-2 py-0.5 rounded text-blue-300 text-[10px] font-mono">1 Clique</kbd>
+                                    </li>
+                                    <li className="flex justify-between items-center">
+                                        <span className="font-medium">Alvo <span className="text-[10px] text-red-400 font-bold">(Vermelho)</span></span> 
+                                        <kbd className="bg-red-900/30 border border-red-500/30 px-2 py-0.5 rounded text-red-300 text-[10px] font-mono">2 Cliques</kbd>
+                                    </li>
+                                    <li className="flex justify-between items-center">
+                                        <span className="font-medium">Limpar Seleção</span> 
+                                        <kbd className="bg-purple-900/30 border border-purple-500/30 px-2 py-0.5 rounded text-purple-300 text-[10px] font-mono animate-pulse">ESC</kbd>
+                                    </li>
+                                </>
+                            )}
+                        </ul>
+                    </div>
+                )}
             </div>
+
         </div>
     );
 };

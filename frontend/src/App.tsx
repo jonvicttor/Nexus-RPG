@@ -169,7 +169,6 @@ function App() {
   const [showEnemyCreator, setShowEnemyCreator] = useState(false);
   const [showBgDice, setShowBgDice] = useState(false);
   
-  // --- O NOVO ESTADO DA JANELA SECRETA ---
   const [privateChatTarget, setPrivateChatTarget] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -190,19 +189,17 @@ function App() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entity: Entity } | null>(null);
   const [pings, setPings] = useState<MapPing[]>([]);
   
-  // A NOTIFICAÇÃO AGORA GUARDA O REMETENTE (SENDER)
   const [toastMsg, setToastMsg] = useState<{text: string, id: number, sender?: string} | null>(null);
 
   const ignoreNextDiceSound = useRef(false);
 
   useEffect(() => {
-    if (toastMsg && !toastMsg.sender) { // Se não for clicável, some em 4.5s
+    if (toastMsg && !toastMsg.sender) {
         const timer = setTimeout(() => {
             setToastMsg(null);
         }, 4500); 
         return () => clearTimeout(timer);
     }
-    // Se for clicável (sussurro), fica até a pessoa clicar (ou sumir após 10 seg)
     if (toastMsg && toastMsg.sender) {
         const timer = setTimeout(() => setToastMsg(null), 10000);
         return () => clearTimeout(timer);
@@ -215,18 +212,15 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Faz a janela secreta rolar para o fundo sempre que uma nova mensagem entra
   useEffect(() => {
       if (privateChatTarget && chatEndRef.current) {
           chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
       }
   }, [chatMessages, privateChatTarget]);
 
-  // AQUI APANHAMOS O CLIQUE DE "SUSSURRAR" DO SIDEBARDM E ABRIMOS A JANELA AQUI!
   useEffect(() => {
       const handleOpenDraft = (e: Event) => {
           const customEvent = e as CustomEvent<string>;
-          // O comando é "/w Nome"
           const match = customEvent.detail.match(/^\/w\s+"?([^"]+)"?\s*/i);
           if (match) {
               setPrivateChatTarget(match[1].trim());
@@ -313,14 +307,13 @@ function App() {
         const msg = data.message;
         
         if (msg.isWhisper) {
-            const myName = role === 'DM' ? 'Mestre' : playerName;
+            const myName = role === 'DM' ? 'MESTRE' : playerName;
             const isSender = msg.sender.toLowerCase() === myName.toLowerCase();
-            const isTarget = msg.whisperTarget?.toLowerCase() === myName.toLowerCase();
+            const isTarget = msg.whisperTarget?.toLowerCase() === myName.toLowerCase() || (role === 'DM' && msg.whisperTarget?.toLowerCase() === 'mestre');
             const amIDM = role === 'DM'; 
             
             if (!isSender && !isTarget && !amIDM) return; 
 
-            // Notifica o alvo COM BOTÃO CLICÁVEL PARA ABRIR A JANELA
             if (isTarget && !isSender) {
                 setToastMsg({ text: `🤫 Mensagem de ${msg.sender}. Clique aqui para ler!`, id: Date.now(), sender: msg.sender });
                 playSound('notificacao'); 
@@ -603,14 +596,8 @@ function App() {
 
   const handleContextMenuAction = (action: string, entity: Entity) => {
       switch (action) {
-          case 'VIEW_SHEET':
-              if (role === 'DM') setEditingEntity(entity);
-              else { setToastMsg({ text: `Visualizando ficha de ${entity.name} (Em breve)`, id: Date.now() }); }
-              break;
-          case 'WHISPER': 
-              // AQUI! Em vez de usar o evento do Sidebar, dizemos ao App para abrir a janela!
-              setPrivateChatTarget(entity.name);
-              break;
+          case 'VIEW_SHEET': if (role === 'DM') setEditingEntity(entity); else { setToastMsg({ text: `Visualizando ficha de ${entity.name} (Em breve)`, id: Date.now() }); } break;
+          case 'WHISPER': setPrivateChatTarget(entity.name); break;
           case 'SET_ATTACKER': setAttackerId(entity.id); break;
           case 'SET_TARGET': handleSetTarget(entity.id, true); break;
           case 'TOGGLE_VISIBILITY': handleToggleVisibility(entity.id); break;
@@ -621,195 +608,108 @@ function App() {
   };
 
   const handlePingMap = (x: number, y: number) => {
-      const myColor = role === 'DM' ? '#ef4444' : '#3b82f6'; 
-      const newPing: MapPing = { id: Date.now().toString() + Math.random(), x, y, color: myColor };
-      setPings(prev => [...prev, newPing]);
-      socket.emit('pingMap', { ping: newPing, roomId: ROOM_ID });
-      handlePlaySFX('ping', true); 
-      setTimeout(() => { setPings(prev => prev.filter(p => p.id !== newPing.id)); }, 2500);
+      const myColor = role === 'DM' ? '#ef4444' : '#3b82f6'; const newPing: MapPing = { id: Date.now().toString() + Math.random(), x, y, color: myColor };
+      setPings(prev => [...prev, newPing]); socket.emit('pingMap', { ping: newPing, roomId: ROOM_ID }); handlePlaySFX('ping', true); setTimeout(() => { setPings(prev => prev.filter(p => p.id !== newPing.id)); }, 2500);
   };
 
   const handleUpdatePosition = (id: number, newX: number, newY: number) => {
-    let shouldSyncFog = false;
-    let newFogGrid = [...fogGrid.map(row => [...row])];
-
+    let shouldSyncFog = false; let newFogGrid = [...fogGrid.map(row => [...row])];
     setEntities(prev => {
         return prev.map(ent => {
             if (ent.id === id) {
                 const updatedEnt = { ...ent, x: newX, y: newY };
                 if (updatedEnt.type === 'player' && updatedEnt.visionRadius && updatedEnt.visionRadius > 0) {
-                     const radius = updatedEnt.visionRadius;
-                     const startY = Math.max(0, Math.floor(newY - radius));
-                     const endY = Math.min(newFogGrid.length - 1, Math.ceil(newY + radius));
-                     const startX = Math.max(0, Math.floor(newX - radius));
-                     const endX = Math.min(newFogGrid[0].length - 1, Math.ceil(newX + radius));
-
-                     for (let y = startY; y <= endY; y++) {
-                         for (let x = startX; x <= endX; x++) {
-                             const distance = Math.sqrt(Math.pow(x - newX, 2) + Math.pow(y - newY, 2));
-                             if (distance <= radius && newFogGrid[y][x] === false) {
-                                 newFogGrid[y][x] = true;
-                                 shouldSyncFog = true;
-                             }
-                         }
-                     }
+                     const radius = updatedEnt.visionRadius; const startY = Math.max(0, Math.floor(newY - radius)); const endY = Math.min(newFogGrid.length - 1, Math.ceil(newY + radius)); const startX = Math.max(0, Math.floor(newX - radius)); const endX = Math.min(newFogGrid[0].length - 1, Math.ceil(newX + radius));
+                     for (let y = startY; y <= endY; y++) { for (let x = startX; x <= endX; x++) { const distance = Math.sqrt(Math.pow(x - newX, 2) + Math.pow(y - newY, 2)); if (distance <= radius && newFogGrid[y][x] === false) { newFogGrid[y][x] = true; shouldSyncFog = true; } } }
                 }
                 return updatedEnt;
             }
             return ent;
         });
     });
-
     socket.emit('updateEntityPosition', { entityId: id, x: newX, y: newY, roomId: ROOM_ID });
-    if (shouldSyncFog) {
-        setFogGrid(newFogGrid);
-        socket.emit('syncFogGrid', { grid: newFogGrid, roomId: ROOM_ID });
-    }
+    if (shouldSyncFog) { setFogGrid(newFogGrid); socket.emit('syncFogGrid', { grid: newFogGrid, roomId: ROOM_ID }); }
   };
 
   const handleRotateToken = (id: number, angle: number) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, rotation: angle } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { rotation: angle }, roomId: ROOM_ID }); };
   const handleResizeToken = (id: number, size: number) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, size } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { size }, roomId: ROOM_ID }); };
   const handleFlipToken = (id: number) => { const ent = entities.find(e => e.id === id); if (!ent) return; const newMirrored = !ent.mirrored; setEntities(prev => prev.map(e => e.id === id ? { ...e, mirrored: newMirrored } : e)); socket.emit('updateEntityStatus', { entityId: id, updates: { mirrored: newMirrored }, roomId: ROOM_ID }); };
-  const handleToggleCondition = (id: number, condition: string) => {
-    setEntities(prev => prev.map(ent => {
-        if (ent.id !== id) return ent;
-        const hasCondition = ent.conditions.includes(condition);
-        const newConditions = hasCondition ? ent.conditions.filter(c => c !== condition) : [...ent.conditions, condition];
-        if (!hasCondition) addLog({ text: `${ent.name} recebeu condição: ${condition}`, type: 'info', sender: 'Sistema' });
-        socket.emit('updateEntityStatus', { entityId: id, updates: { conditions: newConditions }, roomId: ROOM_ID });
-        return { ...ent, conditions: newConditions };
-    }));
-  };
-
-  const handleToggleVisibility = (id: number) => {
-    setEntities(prev => prev.map(ent => {
-        if (ent.id !== id) return ent;
-        const newVisible = ent.visible === undefined ? false : !ent.visible; 
-        if (role === 'DM') addLog({ text: newVisible ? `👁️ ${ent.name} revelou-se!` : `👻 ${ent.name} desapareceu nas sombras.`, type: 'info', sender: 'Sistema' }, false); 
-        socket.emit('updateEntityStatus', { entityId: id, updates: { visible: newVisible }, roomId: ROOM_ID });
-        return { ...ent, visible: newVisible };
-    }));
-  };
-
+  const handleToggleCondition = (id: number, condition: string) => { setEntities(prev => prev.map(ent => { if (ent.id !== id) return ent; const hasCondition = ent.conditions.includes(condition); const newConditions = hasCondition ? ent.conditions.filter(c => c !== condition) : [...ent.conditions, condition]; if (!hasCondition) addLog({ text: `${ent.name} recebeu condição: ${condition}`, type: 'info', sender: 'Sistema' }); socket.emit('updateEntityStatus', { entityId: id, updates: { conditions: newConditions }, roomId: ROOM_ID }); return { ...ent, conditions: newConditions }; })); };
+  const handleToggleVisibility = (id: number) => { setEntities(prev => prev.map(ent => { if (ent.id !== id) return ent; const newVisible = ent.visible === undefined ? false : !ent.visible; if (role === 'DM') addLog({ text: newVisible ? `👁️ ${ent.name} revelou-se!` : `👻 ${ent.name} desapareceu nas sombras.`, type: 'info', sender: 'Sistema' }, false); socket.emit('updateEntityStatus', { entityId: id, updates: { visible: newVisible }, roomId: ROOM_ID }); return { ...ent, visible: newVisible }; })); };
   const handleEditEntity = (id: number, updates: Partial<Entity>) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, ...updates } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates, roomId: ROOM_ID }); };
   const handleDeleteEntity = (id: number) => { setEntities(prev => prev.filter(ent => ent.id !== id)); socket.emit('deleteEntity', { entityId: id, roomId: ROOM_ID }); if (attackerId === id) setAttackerId(null); };
-  
-  const createEntity = (type: 'enemy' | 'player', name: string, x: number, y: number, customStats?: Partial<Entity>) => {
-    const newId = Date.now(); 
-    const newEntity: Entity = { 
-      id: newId, name, hp: customStats?.hp || 10, maxHp: customStats?.maxHp || customStats?.hp || 10, ac: customStats?.ac || 10, x, y, rotation: 0, mirrored: false, conditions: [], 
-      color: type === 'enemy' ? '#ef4444' : '#3b82f6', type, image: customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), 
-      visionRadius: 9, stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, classType: customStats?.classType || "NPC", size: customStats?.size || 2,
-      xp: customStats?.xp || 0, level: customStats?.level || 1, inventory: customStats?.inventory || [], race: customStats?.race || 'Humano', visible: true,
-      proficiencies: customStats?.proficiencies || {}, deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, inspiration: customStats?.inspiration || false,
-      spellSlots: customStats?.spellSlots || {}, spells: customStats?.spells || [], coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 }
-    };
-    setEntities(prev => [...prev, newEntity]);
-    socket.emit('createEntity', { entity: newEntity, roomId: ROOM_ID });
-    addLog({ text: `${name} entrou na mesa.`, type: 'info', sender: 'Sistema' });
-  };
-
+  const createEntity = (type: 'enemy' | 'player', name: string, x: number, y: number, customStats?: Partial<Entity>) => { const newId = Date.now(); const newEntity: Entity = { id: newId, name, hp: customStats?.hp || 10, maxHp: customStats?.maxHp || customStats?.hp || 10, ac: customStats?.ac || 10, x, y, rotation: 0, mirrored: false, conditions: [], color: type === 'enemy' ? '#ef4444' : '#3b82f6', type, image: customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), visionRadius: 9, stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, classType: customStats?.classType || "NPC", size: customStats?.size || 2, xp: customStats?.xp || 0, level: customStats?.level || 1, inventory: customStats?.inventory || [], race: customStats?.race || 'Humano', visible: true, proficiencies: customStats?.proficiencies || {}, deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, inspiration: customStats?.inspiration || false, spellSlots: customStats?.spellSlots || {}, spells: customStats?.spells || [], coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; setEntities(prev => [...prev, newEntity]); socket.emit('createEntity', { entity: newEntity, roomId: ROOM_ID }); addLog({ text: `${name} entrou na mesa.`, type: 'info', sender: 'Sistema' }); };
   const handleAddEntity = (type: 'enemy' | 'player', name: string, customStats?: MonsterPreset) => { createEntity(type, name, 8, 6, customStats as Partial<Entity>); };
   const handleMapDrop = (type: string, x: number, y: number) => { const entityType = type as 'enemy' | 'player'; const nextNum = entities.filter(e => e.type === entityType).length + 1; createEntity(entityType, entityType === 'enemy' ? `Monstro ${nextNum}` : `Aliado ${nextNum}`, x, y); };
-  const handleFogUpdate = (x: number, y: number, shouldReveal: boolean) => {
-    if (role !== 'DM') return; 
-    setFogGrid(prev => { const newGrid = prev.map(row => [...row]); if (newGrid[y]) newGrid[y][x] = shouldReveal; return newGrid; });
-    socket.emit('updateFog', { x, y, shouldReveal, roomId: ROOM_ID });
-  };
-  const handleFogBulkUpdate = (cells: {x: number, y: number}[], shouldReveal: boolean) => {
-    if (role !== 'DM') return;
-    setFogGrid(prev => {
-        const newGrid = prev.map(row => [...row]);
-        cells.forEach(cell => {
-            if (newGrid[cell.y] && newGrid[cell.y][cell.x] !== undefined) {
-                newGrid[cell.y][cell.x] = shouldReveal;
-            }
-        });
-        socket.emit('syncFogGrid', { grid: newGrid, roomId: ROOM_ID });
-        return newGrid;
-    });
-  };
+  const handleFogUpdate = (x: number, y: number, shouldReveal: boolean) => { if (role !== 'DM') return; setFogGrid(prev => { const newGrid = prev.map(row => [...row]); if (newGrid[y]) newGrid[y][x] = shouldReveal; return newGrid; }); socket.emit('updateFog', { x, y, shouldReveal, roomId: ROOM_ID }); };
+  const handleFogBulkUpdate = (cells: {x: number, y: number}[], shouldReveal: boolean) => { if (role !== 'DM') return; setFogGrid(prev => { const newGrid = prev.map(row => [...row]); cells.forEach(cell => { if (newGrid[cell.y] && newGrid[cell.y][cell.x] !== undefined) { newGrid[cell.y][cell.x] = shouldReveal; } }); socket.emit('syncFogGrid', { grid: newGrid, roomId: ROOM_ID }); return newGrid; }); };
   const handleResetFog = () => { const newGrid = createInitialFog(); setFogGrid(newGrid); socket.emit('syncFogGrid', { grid: newGrid, roomId: ROOM_ID }); };
   const handleRevealAll = () => { const newGrid = fogGrid.map(row => row.map(() => true)); setFogGrid(newGrid); socket.emit('syncFogGrid', { grid: newGrid, roomId: ROOM_ID }); };
   const handleSyncFog = () => { socket.emit('syncFogGrid', { grid: fogGrid, roomId: ROOM_ID }); };
-  
   const handleChangeMap = (mapUrl: string) => { setCurrentMap(mapUrl); setFogGrid(createInitialFog()); socket.emit('changeMap', { mapUrl, roomId: ROOM_ID }); };
-  
-  const handleSaveGame = () => {
-    socket.emit('saveGame', { roomId: ROOM_ID, entities, fogGrid, currentMap, initiativeList, activeTurnId, chatMessages, customMonsters, globalBrightness, currentTrack });
-    addLog({ text: "O Mestre salvou o estado da mesa no servidor.", type: 'info', sender: 'Sistema' });
-  };
-
+  const handleSaveGame = () => { socket.emit('saveGame', { roomId: ROOM_ID, entities, fogGrid, currentMap, initiativeList, activeTurnId, chatMessages, customMonsters, globalBrightness, currentTrack }); addLog({ text: "O Mestre salvou o estado da mesa no servidor.", type: 'info', sender: 'Sistema' }); };
   const handleSaveMonsterPreset = (preset: MonsterPreset) => { setCustomMonsters(prev => [...prev, preset]); addLog({ text: `Novo monstro salvo na lista: ${preset.name}`, type: 'info', sender: 'Sistema' }); };
   const handleUpdateGlobalBrightness = (val: number) => { setGlobalBrightness(val); socket.emit('updateGlobalBrightness', { brightness: val, roomId: ROOM_ID }); };
 
   const handleAddToInitiative = (entity: Entity) => { if (initiativeList.find(i => i.id === entity.id)) return; setInitModalEntity(entity); };
-  const handleSubmitInitiative = (val: number) => {
-    if (!initModalEntity) return;
-    const newItem = { id: initModalEntity.id, name: initModalEntity.name, value: val };
-    const newList = [...initiativeList, newItem].sort((a, b) => b.value - a.value);
-    setInitiativeList(newList);
-    const newActive = activeTurnId === null ? initModalEntity.id : activeTurnId;
-    setActiveTurnId(newActive);
-    socket.emit('updateInitiative', { list: newList, activeTurnId: newActive, roomId: ROOM_ID });
-    addLog({ text: `${initModalEntity.name} rolou Iniciativa: ${val}`, type: 'info', sender: 'Sistema' });
-    handlePlaySFX('dado', true);
-    setInitModalEntity(null);
+  
+  // --- MAGIA DA SINCRONIZAÇÃO AQUI ---
+  const handleSubmitInitiative = (val: number) => { 
+      if (!initModalEntity) return; 
+      const newItem = { id: initModalEntity.id, name: initModalEntity.name, value: val }; 
+      const newList = [...initiativeList, newItem].sort((a, b) => b.value - a.value); 
+      setInitiativeList(newList); 
+      const newActive = activeTurnId === null ? initModalEntity.id : activeTurnId; 
+      setActiveTurnId(newActive); 
+      
+      // Sincroniza o primeiro atacante da luta se o combate acabou de começar!
+      if (activeTurnId === null && newList.length > 0) {
+          setAttackerId(newList[0].id);
+      }
+      
+      socket.emit('updateInitiative', { list: newList, activeTurnId: newActive, roomId: ROOM_ID }); 
+      addLog({ text: `${initModalEntity.name} rolou Iniciativa: ${val}`, type: 'info', sender: 'Sistema' }); 
+      handlePlaySFX('dado', true); 
+      setInitModalEntity(null); 
   };
-
   const handleRemoveFromInitiative = (id: number) => { const newList = initiativeList.filter(i => i.id !== id); setInitiativeList(newList); socket.emit('updateInitiative', { list: newList, activeTurnId, roomId: ROOM_ID }); };
-  const handleNextTurn = () => {
-    if (initiativeList.length === 0) return;
-    const nextId = initiativeList[(initiativeList.findIndex(i => i.id === activeTurnId) + 1) % initiativeList.length].id;
-    setActiveTurnId(nextId);
-    socket.emit('updateInitiative', { list: initiativeList, activeTurnId: nextId, roomId: ROOM_ID });
-    const nextEntity = initiativeList.find(i => i.id === nextId);
-    if(nextEntity) addLog({ text: `Turno de: ${nextEntity.name}`, type: 'info', sender: 'Sistema' });
+  
+  const handleNextTurn = () => { 
+      if (initiativeList.length === 0) return; 
+      const nextId = initiativeList[(initiativeList.findIndex(i => i.id === activeTurnId) + 1) % initiativeList.length].id; 
+      setActiveTurnId(nextId); 
+      
+      // Passa o bastão de Atacante para o próximo!
+      setAttackerId(nextId);
+      
+      socket.emit('updateInitiative', { list: initiativeList, activeTurnId: nextId, roomId: ROOM_ID }); 
+      const nextEntity = initiativeList.find(i => i.id === nextId); 
+      if(nextEntity) addLog({ text: `Turno de: ${nextEntity.name}`, type: 'info', sender: 'Sistema' }); 
   };
-  const handleClearInitiative = () => { setInitiativeList([]); setActiveTurnId(null); socket.emit('updateInitiative', { list: [], activeTurnId: null, roomId: ROOM_ID }); };
+  
+  const handleClearInitiative = () => { 
+      setInitiativeList([]); 
+      setActiveTurnId(null); 
+      
+      // Limpa os slots da mesa de combate!
+      setAttackerId(null);
+      setTargetEntityIds([]);
+      
+      socket.emit('updateInitiative', { list: [], activeTurnId: null, roomId: ROOM_ID }); 
+  };
+  // ------------------------------------
+
   const handleSortInitiative = () => { const newList = [...initiativeList].sort((a, b) => b.value - a.value); setInitiativeList(newList); socket.emit('updateInitiative', { list: newList, activeTurnId, roomId: ROOM_ID }); };
-  
-  const handleSetTarget = (id: number | number[] | null, multiSelect: boolean = false) => {
-    if (role !== 'DM') return;
-    if (id === null) { if (!multiSelect) setTargetEntityIds([]); return; }
-    if (Array.isArray(id)) { setTargetEntityIds(multiSelect ? Array.from(new Set([...targetEntityIds, ...id])) : id); return; }
-    setTargetEntityIds(multiSelect ? (targetEntityIds.includes(id) ? targetEntityIds.filter(tid => tid !== id) : [...targetEntityIds, id]) : [id]);
-  };
-  
+  const handleSetTarget = (id: number | number[] | null, multiSelect: boolean = false) => { if (role !== 'DM') return; if (id === null) { if (!multiSelect) setTargetEntityIds([]); return; } if (Array.isArray(id)) { setTargetEntityIds(multiSelect ? Array.from(new Set([...targetEntityIds, ...id])) : id); return; } setTargetEntityIds(multiSelect ? (targetEntityIds.includes(id) ? targetEntityIds.filter(tid => tid !== id) : [...targetEntityIds, id]) : [id]); };
   const handleSetAttacker = (id: number | null) => { if (role !== 'DM') return; setAttackerId(id); };
   const handleSelectEntityForStatus = (entity: Entity) => { setStatusSelectionId(entity.id); };
   
-  const handleLogin = (selectedRole: 'DM' | 'PLAYER', name: string, charData?: any) => {
-    setRole(selectedRole); setPlayerName(name); setIsLoggedIn(true); setGamePhase('LOBBY'); 
-    socket.emit('joinRoom', ROOM_ID);
-    if (selectedRole === 'PLAYER' && charData) {
-        setTimeout(() => {
-            setEntities(prev => {
-                if (!prev.find(e => e.name.toLowerCase() === name.toLowerCase() && e.type === 'player')) {
-                    const newEntity: Entity = { 
-                        id: charData.id || Date.now(), name, hp: charData.hp, maxHp: charData.maxHp, ac: charData.ac, x: 8, y: 6, rotation: charData.rotation || 0, mirrored: charData.mirrored || false, conditions: charData.conditions || [], color: '#3b82f6', type: 'player', image: charData.image, stats: charData.stats, classType: charData.classType, visionRadius: charData.visionRadius || 9, size: charData.size || 1, xp: charData.xp || 0, level: charData.level || 1, inventory: charData.inventory || [], race: charData.race || 'Humano', visible: charData.visible !== false, proficiencies: charData.proficiencies || {}, deathSaves: charData.deathSaves || { successes: 0, failures: 0 }, inspiration: charData.inspiration || false, spellSlots: charData.spellSlots || {}, spells: charData.spells || [], coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 }
-                    };
-                    socket.emit('createEntity', { entity: newEntity, roomId: ROOM_ID }); return [...prev, newEntity];
-                }
-                return prev;
-            });
-        }, 1500); 
-    }
-  };
-
+  const handleLogin = (selectedRole: 'DM' | 'PLAYER', name: string, charData?: any) => { setRole(selectedRole); setPlayerName(name); setIsLoggedIn(true); setGamePhase('LOBBY'); socket.emit('joinRoom', ROOM_ID); if (selectedRole === 'PLAYER' && charData) { setTimeout(() => { setEntities(prev => { if (!prev.find(e => e.name.toLowerCase() === name.toLowerCase() && e.type === 'player')) { const newEntity: Entity = { id: charData.id || Date.now(), name, hp: charData.hp, maxHp: charData.maxHp, ac: charData.ac, x: 8, y: 6, rotation: charData.rotation || 0, mirrored: charData.mirrored || false, conditions: charData.conditions || [], color: '#3b82f6', type: 'player', image: charData.image, stats: charData.stats, classType: charData.classType, visionRadius: charData.visionRadius || 9, size: charData.size || 1, xp: charData.xp || 0, level: charData.level || 1, inventory: charData.inventory || [], race: charData.race || 'Humano', visible: charData.visible !== false, proficiencies: charData.proficiencies || {}, deathSaves: charData.deathSaves || { successes: 0, failures: 0 }, inspiration: charData.inspiration || false, spellSlots: charData.spellSlots || {}, spells: charData.spells || [], coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; socket.emit('createEntity', { entity: newEntity, roomId: ROOM_ID }); return [...prev, newEntity]; } return prev; }); }, 1500); } };
   const handleStartGame = () => { setGamePhase('GAME'); addLog({ text: "A aventura começou!", type: 'info', sender: 'Sistema' }); };
 
   const selectedStatusEntity = statusSelectionId ? entities.find(e => e.id === statusSelectionId) : null;
   let modalPosition = { top: 0, left: 0 };
-  if (selectedStatusEntity) {
-      const canvasOffsetX = (windowSize.w - CANVAS_WIDTH) / 2; const canvasOffsetY = (windowSize.h - CANVAS_HEIGHT) / 2;
-      const tokenPixelX = (selectedStatusEntity.x * GRID_SIZE * mapScale) + mapOffset.x + canvasOffsetX;
-      const tokenPixelY = (selectedStatusEntity.y * GRID_SIZE * mapScale) + mapOffset.y + canvasOffsetY;
-      modalPosition = { top: tokenPixelY, left: tokenPixelX + ((selectedStatusEntity.size || 1) * GRID_SIZE * mapScale) + 15 };
-      if (modalPosition.left + 330 > windowSize.w - 320) { modalPosition.left = tokenPixelX - 340; }
-      if (modalPosition.top + 400 > windowSize.h) { modalPosition.top = windowSize.h - 410; }
-      if (modalPosition.top < 10) modalPosition.top = 10;
-  }
+  if (selectedStatusEntity) { const canvasOffsetX = (windowSize.w - CANVAS_WIDTH) / 2; const canvasOffsetY = (windowSize.h - CANVAS_HEIGHT) / 2; const tokenPixelX = (selectedStatusEntity.x * GRID_SIZE * mapScale) + mapOffset.x + canvasOffsetX; const tokenPixelY = (selectedStatusEntity.y * GRID_SIZE * mapScale) + mapOffset.y + canvasOffsetY; modalPosition = { top: tokenPixelY, left: tokenPixelX + ((selectedStatusEntity.size || 1) * GRID_SIZE * mapScale) + 15 }; if (modalPosition.left + 330 > windowSize.w - 320) { modalPosition.left = tokenPixelX - 340; } if (modalPosition.top + 400 > windowSize.h) { modalPosition.top = windowSize.h - 410; } if (modalPosition.top < 10) modalPosition.top = 10; }
 
   const handleSaveNewAlly = (id: number, data: Partial<Entity>) => { const nextNum = entities.filter(e => e.type === 'player').length + 1; const finalName = data.name || `Aliado ${nextNum}`; createEntity('player', finalName, 4, 4, { ...data, name: finalName }); setShowAllyCreator(false); };
   const handleSaveNewEnemy = (data: Partial<Entity>) => { const nextNum = entities.filter(e => e.type === 'enemy').length + 1; createEntity('enemy', data.name || `Monstro ${nextNum}`, 8, 6, data); setShowEnemyCreator(false); };
@@ -820,38 +720,44 @@ function App() {
   const isMobilePlayer = role === 'PLAYER' && windowSize.w <= 1024;
   const myCharacter = isMobilePlayer ? entities.find(e => e.name === playerName && e.type === 'player') : null;
 
+  const myName = role === 'DM' ? 'MESTRE' : playerName;
+  const publicChatMessages = chatMessages.filter(msg => !msg.isWhisper);
+  const privateMessages = chatMessages.filter(msg => {
+      if (!msg.isWhisper || !privateChatTarget) return false;
+      const sender = msg.sender.toLowerCase();
+      const target = msg.whisperTarget?.toLowerCase() || '';
+      const me = myName.toLowerCase();
+      const partner = privateChatTarget.toLowerCase();
+      
+      const targetIsMe = target === me || (role === 'DM' && target === 'mestre');
+      const targetIsPartner = target === partner || (role === 'DM' && partner === 'mestre');
+
+      return (sender === me && targetIsPartner) || (sender === partner && targetIsMe);
+  });
+
   return (
     <div className="flex h-[100dvh] w-screen overflow-hidden bg-rpgBg" onClick={() => { if (Howler.ctx && Howler.ctx.state !== 'running') Howler.ctx.resume(); }}>
       
-      {/* --- A NOTIFICAÇÃO É CLICÁVEL E ABRE A JANELA SECRETA --- */}
       {toastMsg && (
         <div 
-           onClick={() => {
-               if (toastMsg.sender) setPrivateChatTarget(toastMsg.sender);
-               setToastMsg(null);
-           }}
+           onClick={() => { if (toastMsg.sender) setPrivateChatTarget(toastMsg.sender); setToastMsg(null); }}
            className={`fixed top-5 left-1/2 -translate-x-1/2 z-[400] bg-gray-900 border px-6 py-3 rounded-xl animate-in slide-in-from-top-5 fade-in duration-300 flex items-center gap-3 ${toastMsg.sender ? 'border-pink-500/50 text-pink-50 shadow-[0_0_20px_rgba(236,72,153,0.4)] cursor-pointer hover:bg-gray-800' : 'border-cyan-500/50 text-cyan-50 shadow-[0_0_20px_rgba(6,182,212,0.4)]'}`}
         >
             <span className="text-xl">🔔</span><span className="font-bold tracking-wider">{toastMsg.text}</span>
         </div>
       )}
 
-      {/* --- A JANELA DE SUSSURROS PRIVADA FLUTUANTE --- */}
       {privateChatTarget && (
           <div className="fixed bottom-4 right-[450px] z-[300] w-80 bg-gray-900 border border-pink-500/50 rounded-t-xl rounded-bl-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10">
               <div className="bg-gradient-to-r from-pink-900 to-purple-900 p-2 flex justify-between items-center border-b border-pink-500/30 shadow-md">
-                  <span className="text-pink-100 font-bold text-xs uppercase tracking-widest flex items-center gap-2">
-                      🤫 {privateChatTarget}
-                  </span>
+                  <span className="text-pink-100 font-bold text-xs uppercase tracking-widest flex items-center gap-2">🤫 {privateChatTarget}</span>
                   <button onClick={() => setPrivateChatTarget(null)} className="text-pink-300 hover:text-white transition-colors text-lg">✕</button>
               </div>
               
               <div className="h-64 overflow-y-auto p-3 flex flex-col gap-2 bg-[#111] custom-scrollbar">
-                  {chatMessages.filter(msg => msg.isWhisper && ((msg.sender === (role === 'DM' ? 'Mestre' : playerName) && msg.whisperTarget === privateChatTarget) || (msg.sender === privateChatTarget && msg.whisperTarget === (role === 'DM' ? 'Mestre' : playerName)))).length === 0 && (
-                      <p className="text-gray-600 text-xs italic text-center mt-4">Início da conversa secreta...</p>
-                  )}
-                  {chatMessages.filter(msg => msg.isWhisper && ((msg.sender === (role === 'DM' ? 'Mestre' : playerName) && msg.whisperTarget === privateChatTarget) || (msg.sender === privateChatTarget && msg.whisperTarget === (role === 'DM' ? 'Mestre' : playerName)))).map(msg => (
-                      <div key={msg.id} className={`p-2 rounded max-w-[85%] text-xs shadow-md ${msg.sender === (role === 'DM' ? 'Mestre' : playerName) ? 'bg-pink-900/40 text-pink-100 self-end border border-pink-700/50 rounded-tr-none' : 'bg-gray-800 text-gray-200 self-start border border-gray-600 rounded-tl-none'}`}>
+                  {privateMessages.length === 0 && (<p className="text-gray-600 text-xs italic text-center mt-4">Início da conversa secreta...</p>)}
+                  {privateMessages.map(msg => (
+                      <div key={msg.id} className={`p-2 rounded max-w-[85%] text-xs shadow-md ${msg.sender.toLowerCase() === myName.toLowerCase() ? 'bg-pink-900/40 text-pink-100 self-end border border-pink-700/50 rounded-tr-none' : 'bg-gray-800 text-gray-200 self-start border border-gray-600 rounded-tl-none'}`}>
                           <span className="font-bold opacity-50 text-[9px] block mb-1">{msg.sender}</span>
                           <span dangerouslySetInnerHTML={{ __html: msg.text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>') }} />
                       </div>
@@ -950,8 +856,8 @@ function App() {
                     isFogMode={isFogMode} onToggleFogMode={() => setIsFogMode(!isFogMode)} fogTool={fogTool} onSetFogTool={setFogTool} 
                     fogShape={fogShape} onSetFogShape={setFogShape}
                     onSyncFog={handleSyncFog} onResetFog={handleResetFog} onRevealAll={handleRevealAll} onSaveGame={handleSaveGame} onChangeMap={handleChangeMap} 
-                    initiativeList={initiativeList} activeTurnId={activeTurnId} onAddToInitiative={handleAddToInitiative} onRemoveFromInitiative={handleRemoveFromInitiative} onNextTurn={handleNextTurn} onClearInitiative={handleClearInitiative} onSortInitiative={handleSortInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget} onToggleCondition={handleToggleCondition} onSetAttacker={handleSetAttacker} activeAoE={activeAoE} onSetAoE={setActiveAoE} chatMessages={chatMessages} onSendMessage={handleSendMessage} aoeColor={aoeColor} onSetAoEColor={setAoEColor} onOpenCreator={(type) => { if (type === 'player') setShowAllyCreator(true); if (type === 'enemy') setShowEnemyCreator(true); }} onAddXP={handleAddXP} customMonsters={customMonsters} globalBrightness={globalBrightness} onSetGlobalBrightness={handleUpdateGlobalBrightness} onRequestRoll={handleDmRequestRoll} onToggleVisibility={handleToggleVisibility} currentTrack={currentTrack} onPlayMusic={handlePlayMusic} onStopMusic={handleStopMusic} onPlaySFX={handlePlaySFX} audioVolume={audioVolume} onSetAudioVolume={setAudioVolume} onResetView={handleResetView} onGiveItem={handleGiveItem} onApplyDamageFromChat={handleApplyDamageFromChat} onDMRoll={handleDMRoll} /> 
-                : <SidebarPlayer entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name === playerName)?.id || 0} initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={chatMessages} onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} onSelectEntity={(entity) => { setFocusEntity(entity); setTimeout(() => setFocusEntity(null), 100); }} onApplyDamageFromChat={handleApplyDamageFromChat} />
+                    initiativeList={initiativeList} activeTurnId={activeTurnId} onAddToInitiative={handleAddToInitiative} onRemoveFromInitiative={handleRemoveFromInitiative} onNextTurn={handleNextTurn} onClearInitiative={handleClearInitiative} onSortInitiative={handleSortInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget} onToggleCondition={handleToggleCondition} onSetAttacker={handleSetAttacker} activeAoE={activeAoE} onSetAoE={setActiveAoE} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} aoeColor={aoeColor} onSetAoEColor={setAoEColor} onOpenCreator={(type) => { if (type === 'player') setShowAllyCreator(true); if (type === 'enemy') setShowEnemyCreator(true); }} onAddXP={handleAddXP} customMonsters={customMonsters} globalBrightness={globalBrightness} onSetGlobalBrightness={handleUpdateGlobalBrightness} onRequestRoll={handleDmRequestRoll} onToggleVisibility={handleToggleVisibility} currentTrack={currentTrack} onPlayMusic={handlePlayMusic} onStopMusic={handleStopMusic} onPlaySFX={handlePlaySFX} audioVolume={audioVolume} onSetAudioVolume={setAudioVolume} onResetView={handleResetView} onGiveItem={handleGiveItem} onApplyDamageFromChat={handleApplyDamageFromChat} onDMRoll={handleDMRoll} /> 
+                : <SidebarPlayer entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name === playerName)?.id || 0} initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} onSelectEntity={(entity) => { setFocusEntity(entity); setTimeout(() => setFocusEntity(null), 100); }} onApplyDamageFromChat={handleApplyDamageFromChat} />
                 }
             </aside>
           </>

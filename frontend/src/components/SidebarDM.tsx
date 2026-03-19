@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef} from 'react';
 import Soundboard from './Soundboard'; 
 import Chat, { ChatMessage } from './Chat'; 
 import { Entity, MonsterPreset } from '../App';
@@ -308,12 +308,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const targetEntity = entities.find(e => e.id === targetId);
   const handleConfirmRequest = () => { if (pendingSkillRequest && targetEntity) { onRequestRoll(targetEntity.id, pendingSkillRequest.skillName, pendingSkillRequest.mod, dcInput); setPendingSkillRequest(null); setDcInput(10); } };
   
-  useEffect(() => {
-      const handleOpenChat = () => setMainTab('chat');
-      window.addEventListener('openChatWithDraft', handleOpenChat);
-      return () => window.removeEventListener('openChatWithDraft', handleOpenChat);
-  }, []);
-
   const handleFileUploadPreview = (e: React.ChangeEvent<HTMLInputElement>) => { 
       const file = e.target.files?.[0]; 
       if (file) { 
@@ -402,7 +396,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                 <button onClick={() => setMainTab('chat')} className={`flex-1 py-3 text-center text-sm font-bold uppercase tracking-wider transition-all ${mainTab === 'chat' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>💬 Chat</button>
             </div>
 
-            {/* ABA DO CHAT (Sempre renderizada para ouvir o evento, mas escondida se não for a aba ativa) */}
             <div className={`flex-grow flex-col h-full overflow-hidden w-full ${mainTab === 'chat' ? 'flex' : 'hidden'}`}>
                 <div className="flex items-center justify-between px-4 py-1 border-b border-white/5 bg-black/20">
                     <p className="text-[8px] text-rpgText/30 font-mono italic">Canal Global</p>
@@ -418,7 +411,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                 </div>
             </div>
 
-            {/* ABA DE FERRAMENTAS */}
             <div className={`flex-col h-full overflow-hidden w-full ${mainTab === 'tools' ? 'flex' : 'hidden'}`}>
                 <div className="flex border-b border-white/10 bg-black/40 flex-shrink-0">
                     <button onClick={() => setActiveTab('combat')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'combat' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Combate">⚔️</button>
@@ -454,6 +446,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                         </div>
                     )}
                     {activeTab === 'campaign' && (<CampaignManager />)}
+                    
                     {activeTab === 'combat' && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                             <CombatVsPanel attacker={attacker} targets={targets} onUpdateHP={onUpdateHP} onSendMessage={onSendMessage} onDMRoll={onDMRoll} />
@@ -461,10 +454,43 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                 <button onClick={() => rollBulkInitiative('npc')} className="flex-1 bg-red-900/30 hover:bg-red-800 border border-red-500/20 text-[10px] text-red-200 py-2 rounded uppercase font-bold tracking-wider">🎲 Rolar NPCs</button>
                                 <button onClick={() => rollBulkInitiative('selected')} className="flex-1 bg-blue-900/30 hover:bg-blue-800 border border-blue-500/20 text-[10px] text-blue-200 py-2 rounded uppercase font-bold tracking-wider">🎲 Rolar Selec.</button>
                             </section>
+                            
                             <section className="mb-6 bg-black/40 border border-yellow-900/30 rounded p-2">
                                 <div className="flex justify-between items-center mb-2"><h3 className="text-yellow-500 font-mono text-[10px] uppercase tracking-widest">Iniciativa</h3><div className="flex gap-1"><button onClick={onSortInitiative} className="text-[9px] bg-gray-700 px-2 rounded hover:bg-gray-600" title="Ordenar">Sort</button><button onClick={onClearInitiative} className="text-[9px] bg-red-900/50 px-2 rounded hover:bg-red-600" title="Limpar">Limpar</button></div></div>
-                                {initiativeList.length > 0 ? (<><div className="flex flex-col gap-1 mb-2 max-h-40 overflow-y-auto">{initiativeList.map((item:any, index:number) => (<div key={index} className={`flex justify-between items-center p-2 rounded text-xs cursor-pointer ${item.id === activeTurnId ? 'bg-yellow-900/40 border border-yellow-500/50' : 'bg-white/5 hover:bg-white/10'}`} onClick={(e) => onSetTarget(item.id, e.shiftKey)}><span className={item.id === activeTurnId ? 'text-yellow-200 font-bold' : 'text-gray-300'}>{item.value} - {item.name}</span><button onClick={(e) => { e.stopPropagation(); onRemoveFromInitiative(item.id); }} className="text-red-500 hover:text-red-300 ml-2">×</button></div>))}</div><button onClick={onNextTurn} className="w-full py-2 bg-yellow-700 hover:bg-yellow-600 text-white text-xs font-bold uppercase rounded shadow-lg border border-yellow-500/30 animate-pulse">Próximo Turno ⏩</button></>) : <p className="text-center text-gray-500 text-xs py-2">Sem iniciativa.</p>}
+                                {initiativeList.length > 0 ? (
+                                    <>
+                                        <div className="flex flex-col gap-1 mb-2 max-h-40 overflow-y-auto custom-scrollbar">
+                                            {initiativeList.map((item:any, index:number) => (
+                                                <div 
+                                                    key={index} 
+                                                    className={`flex justify-between items-center p-2 rounded text-xs cursor-pointer border transition-all ${item.id === activeTurnId ? 'bg-yellow-900/40 border-yellow-500/50' : 'bg-white/5 border-transparent hover:bg-white/10'} ${attackerId === item.id ? 'shadow-[inset_3px_0_0_#3b82f6]' : ''} ${targetEntityIds.includes(item.id) ? 'shadow-[inset_-3px_0_0_#ef4444]' : ''}`} 
+                                                    onClick={() => onSetAttacker(item.id)} 
+                                                    onContextMenu={(e) => { e.preventDefault(); onSetTarget(item.id, e.shiftKey); }} 
+                                                    title="Esquerdo: Selecionar Atacante | Direito: Selecionar Alvo"
+                                                >
+                                                    <span className={item.id === activeTurnId ? 'text-yellow-200 font-bold' : 'text-gray-300'}>{item.value} - {item.name}</span>
+                                                    <button onClick={(e) => { e.stopPropagation(); onRemoveFromInitiative(item.id); }} className="text-red-500 hover:text-red-300 ml-2">×</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <button onClick={onNextTurn} className="w-full py-2 bg-yellow-700 hover:bg-yellow-600 text-white text-xs font-bold uppercase rounded shadow-lg border border-yellow-500/30 animate-pulse">Próximo Turno ⏩</button>
+                                    </>
+                                ) : (
+                                    <p className="text-center text-gray-500 text-xs py-2">Sem iniciativa.</p>
+                                )}
                             </section>
+
+                            <section className="mb-6 border-b border-white/5 pb-4 bg-white/5 rounded p-2">
+                                <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest text-center">Magias & Áreas</h3>
+                                <AoEColorPicker selected={aoeColor} onSelect={onSetAoEColor} />
+                                <div className="flex gap-2 mt-3">
+                                        <button onClick={() => onSetAoE(activeAoE === 'circle' ? null : 'circle')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'circle' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'circle' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">⭕</span> Círculo</button>
+                                        <button onClick={() => onSetAoE(activeAoE === 'cone' ? null : 'cone')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'cone' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'cone' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">🔺</span> Cone</button>
+                                        <button onClick={() => onSetAoE(activeAoE === 'cube' ? null : 'cube')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'cube' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'cube' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">🟥</span> Cubo</button>
+                                </div>
+                                {activeAoE && <p className="text-[9px] mt-2 text-center animate-pulse opacity-80" style={{color: aoeColor}}>🖌️ Clique e arraste no mapa</p>}
+                            </section>
+
                             <section className="mb-4 bg-black/40 border border-white/10 rounded p-2">
                                 <h3 className="text-[10px] text-gray-400 uppercase mb-2 text-center font-bold tracking-widest">Condições</h3>
                                 <div className="grid grid-cols-2 gap-2">
@@ -538,17 +564,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                         </div>
                                         <input type="range" min="0" max="1" step="0.05" value={globalBrightness} onChange={(e) => onSetGlobalBrightness && onSetGlobalBrightness(parseFloat(e.target.value))} className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"/>
                                 </div>
-                            </section>
-                            
-                            <section className="mb-6 border-b border-white/5 pb-4 bg-white/5 rounded p-2">
-                                <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest text-center">Magias & Áreas</h3>
-                                <AoEColorPicker selected={aoeColor} onSelect={onSetAoEColor} />
-                                <div className="flex gap-2 mt-3">
-                                        <button onClick={() => onSetAoE(activeAoE === 'circle' ? null : 'circle')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'circle' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'circle' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">⭕</span> Círculo</button>
-                                        <button onClick={() => onSetAoE(activeAoE === 'cone' ? null : 'cone')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'cone' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'cone' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">🔺</span> Cone</button>
-                                        <button onClick={() => onSetAoE(activeAoE === 'cube' ? null : 'cube')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'cube' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'cube' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">🟥</span> Cubo</button>
-                                </div>
-                                {activeAoE && <p className="text-[9px] mt-2 text-center animate-pulse opacity-80" style={{color: aoeColor}}>🖌️ Clique e arraste no mapa</p>}
                             </section>
                             
                             <section className="mb-6 border-b border-white/5 pb-4 bg-black/20 rounded p-2">
