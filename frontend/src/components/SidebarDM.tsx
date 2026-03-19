@@ -87,6 +87,7 @@ interface SidebarDMProps {
   onResetView: () => void;
   onGiveItem: (targetId: number, item: any) => void;
   onApplyDamageFromChat: (targetId: number, damageExpression: string) => void;
+  onDMRoll: (title: string, subtitle: string, mod: number, rollType?: 'normal' | 'advantage' | 'disadvantage') => void;
 }
 
 const AoEColorPicker = ({ selected, onSelect }: { selected: string, onSelect: (c: string) => void }) => {
@@ -148,8 +149,9 @@ const EntityControlRow = ({ entity, onUpdateHP, onDeleteEntity, onClickEdit, onA
   );
 };
 
-const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage }: { attacker: Entity | null, targets: Entity[], onUpdateHP: (id: number, change: number) => void, onSendMessage: (text: string) => void }) => {
+const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll }: any) => {
     const [amount, setAmount] = useState('');
+    
     const applyToAll = (damage: boolean) => {
         const val = parseInt(amount);
         if (val) {
@@ -158,46 +160,23 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage }: { attac
         }
     };
 
-    const handleAttack = () => {
-        if (!attacker || targets.length === 0) return;
+    // Calcula o modificador de ataque base
+    const getAtkMod = () => {
+        if (!attacker) return 0;
         const str = attacker.stats?.str || 10;
         const dex = attacker.stats?.dex || 10;
-        const mod = Math.floor((Math.max(str, dex) - 10) / 2);
-        const modStr = mod >= 0 ? `+${mod}` : `${mod}`;
+        return Math.floor((Math.max(str, dex) - 10) / 2);
+    };
 
-        targets.forEach(target => {
-            const d20 = Math.floor(Math.random() * 20) + 1;
-            const total = d20 + mod;
-            let resultText = "";
-            let isHit = false;
-            let isCrit = false;
-            let damage = 0;
+    const atkMod = getAtkMod();
+    const modString = atkMod >= 0 ? `+${atkMod}` : `${atkMod}`;
 
-            if (d20 === 20) {
-                resultText = "CRÍTICO! 💥🔥";
-                isHit = true;
-                isCrit = true;
-            } else if (d20 === 1) {
-                resultText = "FALHA CRÍTICA! 💩";
-                isHit = false;
-            } else if (total >= target.ac) {
-                resultText = "ACERTOU! ⚔️";
-                isHit = true;
-            } else {
-                resultText = "ERROU! 🛡️";
-                isHit = false;
-            }
-
-            if (isHit) {
-                const baseDmg = Math.floor(Math.random() * 6) + 1;
-                damage = isCrit ? (baseDmg * 2) + mod : baseDmg + mod;
-                damage = Math.max(1, damage);
-                onUpdateHP(target.id, -damage); 
-                resultText += ` (Dano: ${damage} aplicado)`;
-            }
-
-            onSendMessage(`🎲 **${attacker.name}** ataca **${target.name}**\nRolagem: [${d20}] ${modStr} = **${total}** vs CA ${target.ac}\nResultado: **${resultText}**`);
-        });
+    const handleVisualAttack = (rollType: 'normal' | 'advantage' | 'disadvantage') => {
+        if (!attacker) return;
+        const targetNames = targets.length > 0 ? targets.map((t: Entity) => t.name).join(', ') : 'o vazio';
+        
+        // Dispara o dado 3D na tela do Mestre!
+        onDMRoll(`Ataque de ${attacker.name}`, `Alvo(s): ${targetNames}`, atkMod, rollType);
     };
 
     const renderHpBar = (entity: Entity) => {
@@ -214,46 +193,92 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage }: { attac
             </div>
         );
     };
+
     if (targets.length === 0 && !attacker) return null;
+
     return (
-        <section className="mb-4 bg-gradient-to-r from-blue-900/20 to-red-900/20 border border-white/10 rounded-lg p-3 animate-in fade-in zoom-in duration-200">
-            <h3 className="text-white/50 font-bold text-[10px] uppercase tracking-widest mb-2 text-center">⚔️ RESOLUÇÃO DE COMBATE</h3>
-            <div className="flex items-center justify-between gap-2 mb-3">
-                <div className="flex flex-col items-center w-1/3">
+        <section className="mb-4 bg-gradient-to-r from-blue-950/40 via-purple-900/20 to-red-950/40 border border-white/10 rounded-xl p-4 shadow-xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay pointer-events-none"></div>
+            
+            <h3 className="text-yellow-500/80 font-bold text-[10px] uppercase tracking-widest mb-4 text-center flex items-center justify-center gap-2">
+                <span className="w-8 h-px bg-yellow-500/30"></span>
+                ⚔️ Mesa de Combate
+                <span className="w-8 h-px bg-yellow-500/30"></span>
+            </h3>
+            
+            <div className="flex items-center justify-between gap-4 mb-4 relative z-10">
+                {/* ATACANTE */}
+                <div className="flex flex-col items-center w-[40%]">
                     {attacker ? (
                         <>
-                            <div className="w-12 h-12 rounded-full border-2 border-blue-500 overflow-hidden shadow-lg bg-black relative"><img src={attacker.image || ''} className="w-full h-full object-cover" alt="" /></div>
-                            <span className="text-[10px] text-blue-300 font-bold mt-1 truncate max-w-full text-center leading-tight">{attacker.name}</span>
+                            <div className="w-14 h-14 rounded-full border-2 border-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.4)] overflow-hidden bg-black relative group">
+                                <img src={attacker.image || ''} className="w-full h-full object-cover group-hover:scale-110 transition-transform" alt="" />
+                            </div>
+                            <span className="text-[11px] text-blue-300 font-black mt-2 truncate max-w-full text-center leading-tight drop-shadow-md">{attacker.name}</span>
+                            <div className="bg-black/60 border border-blue-500/30 rounded px-2 py-0.5 mt-1">
+                                <span className="text-[9px] font-bold text-gray-400 uppercase">Mod Atq: </span>
+                                <span className="text-[10px] font-black text-white">{modString}</span>
+                            </div>
                             {renderHpBar(attacker)}
                         </>
-                    ) : (<div className="w-12 h-12 rounded-full border-2 border-dashed border-blue-500/30 flex items-center justify-center text-blue-500/30 text-xs">?</div>)}
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                    <span className="text-white/20 text-xl font-black">VS</span>
-                    {attacker && targets.length > 0 && (
-                        <button onClick={handleAttack} className="bg-yellow-600/80 hover:bg-yellow-500 text-white text-[10px] font-bold px-2 py-1 rounded shadow-lg border border-yellow-400/30 animate-pulse active:scale-95 transition-all">⚔️ ATACAR</button>
+                    ) : (
+                        <div className="w-14 h-14 rounded-full border-2 border-dashed border-blue-500/30 flex items-center justify-center text-blue-500/30 text-xs bg-black/40">Selecione</div>
                     )}
                 </div>
-                <div className="flex flex-col items-center w-1/3">
+
+                {/* VS */}
+                <div className="flex flex-col items-center justify-center gap-2 w-[20%]">
+                    <span className="text-white/20 text-3xl font-black italic" style={{ fontFamily: 'Cinzel Decorative' }}>VS</span>
+                </div>
+
+                {/* ALVOS */}
+                <div className="flex flex-col items-center w-[40%]">
                     {targets.length > 0 ? (
                         <>
-                            <div className="flex -space-x-2 overflow-hidden justify-center w-full">
-                                {targets.slice(0, 3).map(t => (
-                                    <div key={t.id} className="w-8 h-8 rounded-full border border-red-500 overflow-hidden bg-black flex-shrink-0"><img src={t.image || ''} className="w-full h-full object-cover" alt="" /></div>
+                            <div className="flex -space-x-3 overflow-hidden justify-center w-full">
+                                {targets.slice(0, 3).map((t: Entity) => (
+                                    <div key={t.id} className="w-12 h-12 rounded-full border-2 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)] overflow-hidden bg-black flex-shrink-0 relative z-10">
+                                        <img src={t.image || ''} className="w-full h-full object-cover" alt="" />
+                                    </div>
                                 ))}
-                                {targets.length > 3 && (<div className="w-8 h-8 rounded-full border border-red-500 bg-red-900 text-white text-[8px] flex items-center justify-center">+{targets.length - 3}</div>)}
+                                {targets.length > 3 && (<div className="w-12 h-12 rounded-full border-2 border-red-500 bg-red-950 text-white text-[10px] font-bold flex items-center justify-center z-0 relative -ml-4 shadow-lg shadow-red-500/20">+{targets.length - 3}</div>)}
                             </div>
-                            <span className="text-[10px] text-red-400 font-bold mt-1">{targets.length} Alvo(s)</span>
+                            <span className="text-[10px] text-red-400 font-bold mt-2 uppercase tracking-widest">{targets.length} Alvo(s)</span>
+                            {targets.length === 1 && (
+                                <div className="bg-black/60 border border-red-500/30 rounded px-2 py-0.5 mt-1">
+                                    <span className="text-[9px] font-bold text-gray-400 uppercase">CA: </span>
+                                    <span className="text-[10px] font-black text-white">{targets[0].ac}</span>
+                                </div>
+                            )}
                             {targets.length === 1 && renderHpBar(targets[0])}
                         </>
-                    ) : (<div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500/30 flex items-center justify-center text-red-500/30 text-xs">?</div>)}
+                    ) : (
+                        <div className="w-14 h-14 rounded-full border-2 border-dashed border-red-500/30 flex items-center justify-center text-red-500/30 text-xs bg-black/40">Alvo</div>
+                    )}
                 </div>
             </div>
+
+            {/* BOTÕES DE DADO 3D */}
+            {attacker && targets.length > 0 && (
+                <div className="flex gap-2 justify-center mt-4 border-t border-white/10 pt-4 relative z-10">
+                    <button onClick={() => handleVisualAttack('disadvantage')} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-[9px] font-bold py-2 rounded border border-gray-600 transition-colors uppercase" title="Rolar com Desvantagem">
+                        Desvantagem
+                    </button>
+                    <button onClick={() => handleVisualAttack('normal')} className="flex-[2] bg-gradient-to-b from-yellow-600 to-yellow-800 hover:from-yellow-500 hover:to-yellow-700 text-white text-[11px] font-black py-2 rounded shadow-[0_0_15px_rgba(202,138,4,0.4)] border border-yellow-400/50 transition-all active:scale-95 uppercase tracking-widest flex items-center justify-center gap-1">
+                        <span className="text-sm">🎲</span> Rolar Ataque
+                    </button>
+                    <button onClick={() => handleVisualAttack('advantage')} className="flex-1 bg-gray-800 hover:bg-gray-700 text-green-400 text-[9px] font-bold py-2 rounded border border-green-900/50 transition-colors uppercase" title="Rolar com Vantagem">
+                        Vantagem
+                    </button>
+                </div>
+            )}
+
+            {/* APLICAÇÃO MANUAL DE DANO */}
             {targets.length > 0 && (
-                <div className="flex gap-2 border-t border-white/5 pt-3">
-                    <input type="number" placeholder="Valor" className="w-16 bg-black/50 border border-white/20 rounded p-1 text-center text-white text-sm font-bold outline-none focus:border-yellow-500" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') applyToAll(true); }} />
-                    <button onClick={() => applyToAll(true)} className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold rounded shadow-lg uppercase text-[10px] transition-colors">🩸 Dano</button>
-                    <button onClick={() => applyToAll(false)} className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold rounded shadow-lg uppercase text-[10px] transition-colors">💚 Curar</button>
+                <div className="flex gap-2 mt-4 pt-4 border-t border-white/5 relative z-10">
+                    <input type="number" placeholder="HP..." className="w-14 bg-black/80 border border-white/10 rounded p-1 text-center text-white text-xs font-bold outline-none focus:border-red-500" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') applyToAll(true); }} />
+                    <button onClick={() => applyToAll(true)} className="flex-1 bg-red-900/60 hover:bg-red-600 border border-red-700/50 text-red-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1">🩸 Dano Direto</button>
+                    <button onClick={() => applyToAll(false)} className="flex-1 bg-green-900/60 hover:bg-green-600 border border-green-700/50 text-green-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1">💚 Cura</button>
                 </div>
             )}
         </section>
@@ -271,7 +296,8 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   onSetAttacker, aoeColor, onSetAoEColor,
   onOpenCreator, onAddXP, customMonsters, globalBrightness = 1, onSetGlobalBrightness, onRequestRoll, onToggleVisibility,
   currentTrack, onPlayMusic, onStopMusic, onPlaySFX, audioVolume, onSetAudioVolume,
-  onResetView, onGiveItem, onApplyDamageFromChat
+  onResetView, onGiveItem, onApplyDamageFromChat,
+  onDMRoll
 }) => {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>('combat');
@@ -428,7 +454,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                         {activeTab === 'campaign' && (<CampaignManager />)}
                         {activeTab === 'combat' && (
                             <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                                <CombatVsPanel attacker={attacker} targets={targets} onUpdateHP={onUpdateHP} onSendMessage={onSendMessage} />
+                                <CombatVsPanel attacker={attacker} targets={targets} onUpdateHP={onUpdateHP} onSendMessage={onSendMessage} onDMRoll={onDMRoll} />
                                 <section className="mb-4 flex gap-2">
                                     <button onClick={() => rollBulkInitiative('npc')} className="flex-1 bg-red-900/30 hover:bg-red-800 border border-red-500/20 text-[10px] text-red-200 py-2 rounded uppercase font-bold tracking-wider">🎲 Rolar NPCs</button>
                                     <button onClick={() => rollBulkInitiative('selected')} className="flex-1 bg-blue-900/30 hover:bg-blue-800 border border-blue-500/20 text-[10px] text-blue-200 py-2 rounded uppercase font-bold tracking-wider">🎲 Rolar Selec.</button>
@@ -452,7 +478,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                 </section>
                             </div>
                         )}
-                        {/* ... MAPA COM PRÉ-VISUALIZAÇÃO ... */}
                         {activeTab === 'map' && (
                             <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                                 
@@ -524,7 +549,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                     {activeAoE && <p className="text-[9px] mt-2 text-center animate-pulse opacity-80" style={{color: aoeColor}}>🖌️ Clique e arraste no mapa</p>}
                                 </section>
                                 
-                                {/* NOVA NEBLINA DE GUERRA COM GEOMETRIA */}
                                 <section className="mb-6 border-b border-white/5 pb-4 bg-black/20 rounded p-2">
                                     <h3 className="text-rpgText font-mono text-[10px] uppercase mb-3 opacity-50 tracking-widest">Neblina de Guerra</h3>
                                     <div className="flex flex-col gap-3">
@@ -532,14 +556,10 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                             
                                             {isFogMode && (
                                               <div className="flex flex-col gap-2 bg-black/40 p-2 rounded border border-white/10 animate-in fade-in zoom-in-95">
-                                                  
-                                                  {/* Seleção de Ferramenta (Revelar / Esconder) */}
                                                   <div className="flex gap-1 bg-black/40 p-1 rounded border border-white/5">
                                                       <button onClick={() => onSetFogTool('reveal')} className={`flex-1 py-1.5 text-[10px] uppercase font-bold rounded transition-colors ${fogTool === 'reveal' ? 'bg-green-600 text-white shadow-sm' : 'hover:bg-white/10 text-gray-400'}`}>🔦 Revelar</button>
                                                       <button onClick={() => onSetFogTool('hide')} className={`flex-1 py-1.5 text-[10px] uppercase font-bold rounded transition-colors ${fogTool === 'hide' ? 'bg-red-600 text-white shadow-sm' : 'hover:bg-white/10 text-gray-400'}`}>☁️ Esconder</button>
                                                   </div>
-
-                                                  {/* Seleção de Forma Geométrica */}
                                                   <div className="flex gap-1 justify-between">
                                                       <button onClick={() => onSetFogShape && onSetFogShape('brush')} className={`flex-1 py-1.5 flex flex-col items-center gap-1 rounded text-[10px] transition-all border ${fogShape === 'brush' ? 'bg-white/10 border-white text-white shadow-inner' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Pincel Livre">
                                                           <Brush size={16} /> Livre

@@ -522,8 +522,14 @@ function App() {
       setTimeout(() => setShowBgDice(false), 2000);
   };
 
+  // --- ATUALIZAÇÕES DO NOVO SISTEMA DE DADO DO MESTRE ---
   const openDiceRoller = () => {
-      setDiceContext({ title: 'Ataque Básico', subtitle: 'Role para acertar', dc: 10, mod: 0, prof: 0, bonuses: [], rollType: 'normal' });
+      setDiceContext({ title: 'Rolagem Livre', subtitle: 'Sorte', dc: 10, mod: 0, prof: 0, bonuses: [], rollType: 'normal' });
+      setShowBgDice(true);
+  };
+
+  const handleDMRoll = (title: string, subtitle: string, mod: number, rollType: 'normal' | 'advantage' | 'disadvantage' = 'normal') => {
+      setDiceContext({ title, subtitle, dc: 10, mod, prof: 0, bonuses: [], rollType });
       setShowBgDice(true);
   };
 
@@ -653,7 +659,6 @@ function App() {
           }
       }
 
-      // CORREÇÃO: Substituição de Alert por Notificação Flutuante
       if (!receiver) {
           setToastMsg({ text: role === 'DM' ? "Selecione um token (Alvo) para pegar o item." : "Você não tem um personagem para pegar isso.", id: Date.now() });
           setTimeout(() => setToastMsg(null), 4000);
@@ -681,7 +686,6 @@ function App() {
           case 'VIEW_SHEET':
               if (role === 'DM') setEditingEntity(entity);
               else {
-                  // CORREÇÃO: Substituição de Alert por Notificação Flutuante
                   setToastMsg({ text: `Visualizando ficha de ${entity.name} (Em breve)`, id: Date.now() });
                   setTimeout(() => setToastMsg(null), 4000);
               }
@@ -1251,6 +1255,7 @@ function App() {
                     onResetView={handleResetView}
                     onGiveItem={handleGiveItem}
                     onApplyDamageFromChat={handleApplyDamageFromChat}
+                    onDMRoll={handleDMRoll} 
                     /> 
                 : <SidebarPlayer 
                     entities={entities} 
