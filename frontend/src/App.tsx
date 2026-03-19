@@ -129,6 +129,7 @@ const SFX_LIBRARY: Record<string, Howl> = {
   explosion: new Howl({ src: ['/sfx/explosion.mp3'], volume: 0.5, html5: true }),
   roar: new Howl({ src: ['/sfx/roar.mp3'], volume: 0.5, html5: true }),
   ping: new Howl({ src: ['/sfx/danger-ping.mp3'], volume: 0.6, html5: true }), 
+  notificacao: new Howl({ src: ['/sfx/notificacao.mp3'], volume: 0.7, html5: true }), 
 };
 
 function App() {
@@ -188,6 +189,16 @@ function App() {
 
   const ignoreNextDiceSound = useRef(false);
 
+  // --- NOVA MAGIA: TEMPORIZADOR GLOBAL DE NOTIFICAÇÕES ---
+  useEffect(() => {
+    if (toastMsg) {
+        const timer = setTimeout(() => {
+            setToastMsg(null);
+        }, 4500); // Fica na tela por 4.5 segundos exatos e depois some!
+        return () => clearTimeout(timer);
+    }
+  }, [toastMsg]);
+
   useEffect(() => {
     const handleResize = () => setWindowSize({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', handleResize);
@@ -219,7 +230,7 @@ function App() {
       if (emit) socket.emit('playSFX', { sfxId, roomId: ROOM_ID });
   }, [audioVolume]);
 
-  const playSound = useCallback((type: 'dado' | 'levelup') => {
+  const playSound = useCallback((type: 'dado' | 'levelup' | 'magic' | 'notificacao') => { 
     handlePlaySFX(type, false); 
   }, [handlePlaySFX]);
 
@@ -259,7 +270,6 @@ function App() {
 
     socket.on('notification', (data: any) => { 
         setToastMsg({ text: data.message, id: Date.now() });
-        setTimeout(() => setToastMsg(null), 4000);
     });
 
     socket.on('newDiceResult', () => {
@@ -271,16 +281,18 @@ function App() {
     socket.on('chatMessage', (data: any) => {
         const msg = data.message;
         
-        // --- FILTRO DE SUSSURROS (PRIVACIDADE) ---
         if (msg.isWhisper) {
             const myName = role === 'DM' ? 'Mestre' : playerName;
             const isSender = msg.sender.toLowerCase() === myName.toLowerCase();
             const isTarget = msg.whisperTarget?.toLowerCase() === myName.toLowerCase();
-            const amIDM = role === 'DM'; // Mestre vê tudo, sempre!
+            const amIDM = role === 'DM'; 
             
-            // Se eu não enviei, não sou o alvo, nem sou o Mestre, descarto a mensagem!
-            if (!isSender && !isTarget && !amIDM) {
-                return; 
+            if (!isSender && !isTarget && !amIDM) return; 
+
+            // Notifica se eu for o alvo!
+            if (isTarget && !isSender) {
+                setToastMsg({ text: `🤫 Sussurro de ${msg.sender}: Olhe o Chat!`, id: Date.now() });
+                playSound('notificacao'); // <--- AQUI VOCÊ TOCA O NOVO SOM
             }
         }
 
@@ -466,25 +478,16 @@ function App() {
   const handleSendMessage = (text: string) => {
       const senderName = role === 'DM' ? 'MESTRE' : playerName;
       
-      // --- INTERCETOR DE SUSSURROS ---
-      // Aceita /w Nome Mensagem OU /w "Nome com espaços" Mensagem
       const whisperMatch = text.match(/^\/w\s+"([^"]+)"\s+(.+)$/i) || text.match(/^\/w\s+([^\s]+)\s+(.+)$/i);
       
       if (whisperMatch) {
           const whisperTarget = whisperMatch[1];
           const whisperText = whisperMatch[2];
           
-          addLog({ 
-              text: whisperText, 
-              type: 'chat', 
-              sender: senderName,
-              isWhisper: true,
-              whisperTarget: whisperTarget
-          });
+          addLog({ text: whisperText, type: 'chat', sender: senderName, isWhisper: true, whisperTarget: whisperTarget });
           return;
       }
 
-      // --- INTERCETOR DE DADOS ---
       const rollMatch = text.match(/^\/r\s+(\d+)d(\d+)(\+(\d+))?$/i);
       if (rollMatch) {
         const count = parseInt(rollMatch[1]); const sides = parseInt(rollMatch[2]); const mod = rollMatch[4] ? parseInt(rollMatch[4]) : 0;
@@ -493,10 +496,7 @@ function App() {
         const total = sum + mod; const rollString = `[${rolls.join(', ')}]` + (mod > 0 ? ` + ${mod}` : '');
         addLog({ text: `🎲 Rolou ${count}d${sides}${mod ? '+'+mod : ''}: ${rollString} = **${total}**`, type: 'roll', sender: senderName });
         handlePlaySFX('dado', true);
-      } else { 
-          // MENSAGEM NORMAL
-          addLog({ text: text, type: 'chat', sender: senderName }); 
-      }
+      } else { addLog({ text: text, type: 'chat', sender: senderName }); }
   };
 
   const handleGiveItem = (targetId: number, item: any) => {
@@ -554,7 +554,6 @@ function App() {
 
       if (!receiver) {
           setToastMsg({ text: role === 'DM' ? "Selecione um token (Alvo) para pegar o item." : "Você não tem um personagem para pegar isso.", id: Date.now() });
-          setTimeout(() => setToastMsg(null), 4000);
           return;
       }
 
@@ -575,13 +574,11 @@ function App() {
       switch (action) {
           case 'VIEW_SHEET':
               if (role === 'DM') setEditingEntity(entity);
-              else { setToastMsg({ text: `Visualizando ficha de ${entity.name} (Em breve)`, id: Date.now() }); setTimeout(() => setToastMsg(null), 4000); }
+              else { setToastMsg({ text: `Visualizando ficha de ${entity.name} (Em breve)`, id: Date.now() }); }
               break;
           case 'WHISPER': 
-              // Formata o nome com aspas caso ele tenha espaços, para facilitar a vida ao Mestre!
               const targetName = entity.name.includes(' ') ? `"${entity.name}"` : entity.name;
-              // Passamos false no final para que o aviso só apareça para o Mestre
-              addLog({ text: `(Sistema) Use <strong class="text-white">/w ${targetName} mensagem</strong> para sussurrar.`, type: 'info', sender: 'Sistema' }, false); 
+              window.dispatchEvent(new CustomEvent('openChatWithDraft', { detail: `/w ${targetName} ` }));
               break;
           case 'SET_ATTACKER': setAttackerId(entity.id); break;
           case 'SET_TARGET': handleSetTarget(entity.id, true); break;
@@ -683,13 +680,11 @@ function App() {
 
   const handleAddEntity = (type: 'enemy' | 'player', name: string, customStats?: MonsterPreset) => { createEntity(type, name, 8, 6, customStats as Partial<Entity>); };
   const handleMapDrop = (type: string, x: number, y: number) => { const entityType = type as 'enemy' | 'player'; const nextNum = entities.filter(e => e.type === entityType).length + 1; createEntity(entityType, entityType === 'enemy' ? `Monstro ${nextNum}` : `Aliado ${nextNum}`, x, y); };
-  
   const handleFogUpdate = (x: number, y: number, shouldReveal: boolean) => {
     if (role !== 'DM') return; 
     setFogGrid(prev => { const newGrid = prev.map(row => [...row]); if (newGrid[y]) newGrid[y][x] = shouldReveal; return newGrid; });
     socket.emit('updateFog', { x, y, shouldReveal, roomId: ROOM_ID });
   };
-  
   const handleFogBulkUpdate = (cells: {x: number, y: number}[], shouldReveal: boolean) => {
     if (role !== 'DM') return;
     setFogGrid(prev => {
@@ -703,7 +698,6 @@ function App() {
         return newGrid;
     });
   };
-
   const handleResetFog = () => { const newGrid = createInitialFog(); setFogGrid(newGrid); socket.emit('syncFogGrid', { grid: newGrid, roomId: ROOM_ID }); };
   const handleRevealAll = () => { const newGrid = fogGrid.map(row => row.map(() => true)); setFogGrid(newGrid); socket.emit('syncFogGrid', { grid: newGrid, roomId: ROOM_ID }); };
   const handleSyncFog = () => { socket.emit('syncFogGrid', { grid: fogGrid, roomId: ROOM_ID }); };

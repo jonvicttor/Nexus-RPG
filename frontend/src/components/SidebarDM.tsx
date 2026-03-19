@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Soundboard from './Soundboard'; 
 import Chat, { ChatMessage } from './Chat'; 
 import { Entity, MonsterPreset } from '../App';
@@ -160,7 +160,6 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
         }
     };
 
-    // Calcula o modificador de ataque base
     const getAtkMod = () => {
         if (!attacker) return 0;
         const str = attacker.stats?.str || 10;
@@ -174,8 +173,6 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
     const handleVisualAttack = (rollType: 'normal' | 'advantage' | 'disadvantage') => {
         if (!attacker) return;
         const targetNames = targets.length > 0 ? targets.map((t: Entity) => t.name).join(', ') : 'o vazio';
-        
-        // Dispara o dado 3D na tela do Mestre!
         onDMRoll(`Ataque de ${attacker.name}`, `Alvo(s): ${targetNames}`, atkMod, rollType);
     };
 
@@ -207,7 +204,6 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
             </h3>
             
             <div className="flex items-center justify-between gap-4 mb-4 relative z-10">
-                {/* ATACANTE */}
                 <div className="flex flex-col items-center w-[40%]">
                     {attacker ? (
                         <>
@@ -226,12 +222,10 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
                     )}
                 </div>
 
-                {/* VS */}
                 <div className="flex flex-col items-center justify-center gap-2 w-[20%]">
                     <span className="text-white/20 text-3xl font-black italic" style={{ fontFamily: 'Cinzel Decorative' }}>VS</span>
                 </div>
 
-                {/* ALVOS */}
                 <div className="flex flex-col items-center w-[40%]">
                     {targets.length > 0 ? (
                         <>
@@ -258,7 +252,6 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
                 </div>
             </div>
 
-            {/* BOTÕES DE DADO 3D */}
             {attacker && targets.length > 0 && (
                 <div className="flex gap-2 justify-center mt-4 border-t border-white/10 pt-4 relative z-10">
                     <button onClick={() => handleVisualAttack('disadvantage')} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-[9px] font-bold py-2 rounded border border-gray-600 transition-colors uppercase" title="Rolar com Desvantagem">
@@ -273,7 +266,6 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
                 </div>
             )}
 
-            {/* APLICAÇÃO MANUAL DE DANO */}
             {targets.length > 0 && (
                 <div className="flex gap-2 mt-4 pt-4 border-t border-white/5 relative z-10">
                     <input type="number" placeholder="HP..." className="w-14 bg-black/80 border border-white/10 rounded p-1 text-center text-white text-xs font-bold outline-none focus:border-red-500" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') applyToAll(true); }} />
@@ -316,6 +308,12 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const targetEntity = entities.find(e => e.id === targetId);
   const handleConfirmRequest = () => { if (pendingSkillRequest && targetEntity) { onRequestRoll(targetEntity.id, pendingSkillRequest.skillName, pendingSkillRequest.mod, dcInput); setPendingSkillRequest(null); setDcInput(10); } };
   
+  useEffect(() => {
+      const handleOpenChat = () => setMainTab('chat');
+      window.addEventListener('openChatWithDraft', handleOpenChat);
+      return () => window.removeEventListener('openChatWithDraft', handleOpenChat);
+  }, []);
+
   const handleFileUploadPreview = (e: React.ChangeEvent<HTMLInputElement>) => { 
       const file = e.target.files?.[0]; 
       if (file) { 
@@ -404,210 +402,213 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                 <button onClick={() => setMainTab('chat')} className={`flex-1 py-3 text-center text-sm font-bold uppercase tracking-wider transition-all ${mainTab === 'chat' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>💬 Chat</button>
             </div>
 
-            {mainTab === 'chat' ? (
-                <div className="flex-grow flex flex-col h-full overflow-hidden w-full">
-                    <div className="flex items-center justify-between px-4 py-1 border-b border-white/5 bg-black/20"><p className="text-[8px] text-rpgText/30 font-mono italic">Canal Global</p><span className="text-[8px] text-rpgAccent/50 font-mono uppercase">Mestre On-line</span></div>
-                    <div className="flex-1 w-full max-w-full overflow-hidden">
-                        <Chat 
-                            messages={chatMessages} 
-                            onSendMessage={onSendMessage} 
-                            role="DM" 
-                            onApplyDamage={onApplyDamageFromChat} 
-                        />
-                    </div>
+            {/* ABA DO CHAT (Sempre renderizada para ouvir o evento, mas escondida se não for a aba ativa) */}
+            <div className={`flex-grow flex-col h-full overflow-hidden w-full ${mainTab === 'chat' ? 'flex' : 'hidden'}`}>
+                <div className="flex items-center justify-between px-4 py-1 border-b border-white/5 bg-black/20">
+                    <p className="text-[8px] text-rpgText/30 font-mono italic">Canal Global</p>
+                    <span className="text-[8px] text-rpgAccent/50 font-mono uppercase">Mestre On-line</span>
                 </div>
-            ) : (
-                <div className="flex flex-col h-full overflow-hidden w-full">
-                    <div className="flex border-b border-white/10 bg-black/40 flex-shrink-0">
-                        <button onClick={() => setActiveTab('combat')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'combat' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Combate">⚔️</button>
-                        <button onClick={() => setActiveTab('map')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'map' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Mapa">🗺️</button>
-                        <button onClick={() => setActiveTab('tools')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'tools' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Forja e Dados">🔨</button>
-                        <button onClick={() => setActiveTab('campaign')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'campaign' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Campanha">📜</button>
-                        <button onClick={() => setActiveTab('create')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'create' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Criar Entidades">🐉</button>
-                        <button onClick={() => setActiveTab('audio')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'audio' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Áudio">🔊</button>
-                    </div>
+                <div className="flex-1 w-full max-w-full overflow-hidden">
+                    <Chat 
+                        messages={chatMessages} 
+                        onSendMessage={onSendMessage} 
+                        role="DM" 
+                        onApplyDamage={onApplyDamageFromChat} 
+                    />
+                </div>
+            </div>
 
-                    <div className="flex-grow overflow-y-auto p-4 custom-scrollbar w-full">
-                        {activeTab === 'tools' && (
-                            <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-6">
-                                <div className="bg-black/40 p-4 rounded-xl border border-white/5">
-                                    <h3 className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-3">Teste de Perícia</h3>
-                                    {targetEntity ? (
-                                        <>
-                                            <div className="mb-4 flex items-center gap-3 bg-purple-900/20 p-2 rounded">
-                                                <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-700">{targetEntity.image && <img src={targetEntity.image} className="w-full h-full object-cover" alt="" />}</div>
-                                                <div><p className="text-sm font-bold text-white">{targetEntity.name}</p><p className="text-[10px] text-gray-400">Solicitando Teste</p></div>
-                                            </div>
-                                            <SkillList attributes={mapEntityStatsToAttributes(targetEntity)} proficiencyBonus={2} profs={[]} isDmMode={true} onRoll={(skillName, mod) => setPendingSkillRequest({ skillName, mod })}/>
-                                        </>
-                                    ) : (
-                                        <p className="text-gray-500 text-sm italic text-center py-4 bg-white/5 rounded border border-dashed border-white/10">Selecione um token no mapa para rolar perícias.</p>
-                                    )}
+            {/* ABA DE FERRAMENTAS */}
+            <div className={`flex-col h-full overflow-hidden w-full ${mainTab === 'tools' ? 'flex' : 'hidden'}`}>
+                <div className="flex border-b border-white/10 bg-black/40 flex-shrink-0">
+                    <button onClick={() => setActiveTab('combat')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'combat' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Combate">⚔️</button>
+                    <button onClick={() => setActiveTab('map')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'map' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Mapa">🗺️</button>
+                    <button onClick={() => setActiveTab('tools')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'tools' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Forja e Dados">🔨</button>
+                    <button onClick={() => setActiveTab('campaign')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'campaign' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Campanha">📜</button>
+                    <button onClick={() => setActiveTab('create')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'create' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Criar Entidades">🐉</button>
+                    <button onClick={() => setActiveTab('audio')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'audio' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Áudio">🔊</button>
+                </div>
+
+                <div className="flex-grow overflow-y-auto p-4 custom-scrollbar w-full">
+                    {activeTab === 'tools' && (
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-6">
+                            <div className="bg-black/40 p-4 rounded-xl border border-white/5">
+                                <h3 className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-3">Teste de Perícia</h3>
+                                {targetEntity ? (
+                                    <>
+                                        <div className="mb-4 flex items-center gap-3 bg-purple-900/20 p-2 rounded">
+                                            <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-700">{targetEntity.image && <img src={targetEntity.image} className="w-full h-full object-cover" alt="" />}</div>
+                                            <div><p className="text-sm font-bold text-white">{targetEntity.name}</p><p className="text-[10px] text-gray-400">Solicitando Teste</p></div>
+                                        </div>
+                                        <SkillList attributes={mapEntityStatsToAttributes(targetEntity)} proficiencyBonus={2} profs={[]} isDmMode={true} onRoll={(skillName, mod) => setPendingSkillRequest({ skillName, mod })}/>
+                                    </>
+                                ) : (
+                                    <p className="text-gray-500 text-sm italic text-center py-4 bg-white/5 rounded border border-dashed border-white/10">Selecione um token no mapa para rolar perícias.</p>
+                                )}
+                            </div>
+                            <ItemCreator 
+                                onCreateItem={(item) => targetEntity && onGiveItem(targetEntity.id, item)} 
+                                targetName={targetEntity?.name}
+                            />
+                            <Scratchpad />
+                        </div>
+                    )}
+                    {activeTab === 'campaign' && (<CampaignManager />)}
+                    {activeTab === 'combat' && (
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                            <CombatVsPanel attacker={attacker} targets={targets} onUpdateHP={onUpdateHP} onSendMessage={onSendMessage} onDMRoll={onDMRoll} />
+                            <section className="mb-4 flex gap-2">
+                                <button onClick={() => rollBulkInitiative('npc')} className="flex-1 bg-red-900/30 hover:bg-red-800 border border-red-500/20 text-[10px] text-red-200 py-2 rounded uppercase font-bold tracking-wider">🎲 Rolar NPCs</button>
+                                <button onClick={() => rollBulkInitiative('selected')} className="flex-1 bg-blue-900/30 hover:bg-blue-800 border border-blue-500/20 text-[10px] text-blue-200 py-2 rounded uppercase font-bold tracking-wider">🎲 Rolar Selec.</button>
+                            </section>
+                            <section className="mb-6 bg-black/40 border border-yellow-900/30 rounded p-2">
+                                <div className="flex justify-between items-center mb-2"><h3 className="text-yellow-500 font-mono text-[10px] uppercase tracking-widest">Iniciativa</h3><div className="flex gap-1"><button onClick={onSortInitiative} className="text-[9px] bg-gray-700 px-2 rounded hover:bg-gray-600" title="Ordenar">Sort</button><button onClick={onClearInitiative} className="text-[9px] bg-red-900/50 px-2 rounded hover:bg-red-600" title="Limpar">Limpar</button></div></div>
+                                {initiativeList.length > 0 ? (<><div className="flex flex-col gap-1 mb-2 max-h-40 overflow-y-auto">{initiativeList.map((item:any, index:number) => (<div key={index} className={`flex justify-between items-center p-2 rounded text-xs cursor-pointer ${item.id === activeTurnId ? 'bg-yellow-900/40 border border-yellow-500/50' : 'bg-white/5 hover:bg-white/10'}`} onClick={(e) => onSetTarget(item.id, e.shiftKey)}><span className={item.id === activeTurnId ? 'text-yellow-200 font-bold' : 'text-gray-300'}>{item.value} - {item.name}</span><button onClick={(e) => { e.stopPropagation(); onRemoveFromInitiative(item.id); }} className="text-red-500 hover:text-red-300 ml-2">×</button></div>))}</div><button onClick={onNextTurn} className="w-full py-2 bg-yellow-700 hover:bg-yellow-600 text-white text-xs font-bold uppercase rounded shadow-lg border border-yellow-500/30 animate-pulse">Próximo Turno ⏩</button></>) : <p className="text-center text-gray-500 text-xs py-2">Sem iniciativa.</p>}
+                            </section>
+                            <section className="mb-4 bg-black/40 border border-white/10 rounded p-2">
+                                <h3 className="text-[10px] text-gray-400 uppercase mb-2 text-center font-bold tracking-widest">Condições</h3>
+                                <div className="grid grid-cols-2 gap-2">
+                                        <button onClick={() => toggleConditionForAll('poison')} className="flex items-center gap-2 px-3 py-2 bg-green-900/40 hover:bg-green-600/60 border border-green-500/30 hover:border-green-400 rounded transition-all active:scale-95 group" title="Envenenado"><span className="text-lg filter drop-shadow-md group-hover:scale-110 transition-transform">☠️</span><span className="text-[10px] font-bold text-green-100 uppercase tracking-wider">Veneno</span></button>
+                                        <button onClick={() => toggleConditionForAll('stun')} className="flex items-center gap-2 px-3 py-2 bg-yellow-900/40 hover:bg-yellow-600/60 border border-yellow-500/30 hover:border-yellow-400 rounded transition-all active:scale-95 group" title="Atordoado"><span className="text-lg filter drop-shadow-md group-hover:scale-110 transition-transform">💫</span><span className="text-[10px] font-bold text-yellow-100 uppercase tracking-wider">Atordoar</span></button>
+                                        <button onClick={() => toggleConditionForAll('fire')} className="flex items-center gap-2 px-3 py-2 bg-red-900/40 hover:bg-red-600/60 border border-red-500/30 hover:border-red-400 rounded transition-all active:scale-95 group" title="Em Chamas"><span className="text-lg filter drop-shadow-md group-hover:scale-110 transition-transform">🔥</span><span className="text-[10px] font-bold text-red-100 uppercase tracking-wider">Fogo</span></button>
+                                        <button onClick={() => toggleConditionForAll('sleep')} className="flex items-center gap-2 px-3 py-2 bg-purple-900/40 hover:bg-purple-600/60 border border-purple-500/30 hover:border-purple-400 rounded transition-all active:scale-95 group" title="Dormindo"><span className="text-lg filter drop-shadow-md group-hover:scale-110 transition-transform">💤</span><span className="text-[10px] font-bold text-purple-100 uppercase tracking-wider">Sono</span></button>
                                 </div>
-                                <ItemCreator 
-                                    onCreateItem={(item) => targetEntity && onGiveItem(targetEntity.id, item)} 
-                                    targetName={targetEntity?.name}
-                                />
-                                <Scratchpad />
-                            </div>
-                        )}
-                        {activeTab === 'campaign' && (<CampaignManager />)}
-                        {activeTab === 'combat' && (
-                            <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                                <CombatVsPanel attacker={attacker} targets={targets} onUpdateHP={onUpdateHP} onSendMessage={onSendMessage} onDMRoll={onDMRoll} />
-                                <section className="mb-4 flex gap-2">
-                                    <button onClick={() => rollBulkInitiative('npc')} className="flex-1 bg-red-900/30 hover:bg-red-800 border border-red-500/20 text-[10px] text-red-200 py-2 rounded uppercase font-bold tracking-wider">🎲 Rolar NPCs</button>
-                                    <button onClick={() => rollBulkInitiative('selected')} className="flex-1 bg-blue-900/30 hover:bg-blue-800 border border-blue-500/20 text-[10px] text-blue-200 py-2 rounded uppercase font-bold tracking-wider">🎲 Rolar Selec.</button>
-                                </section>
-                                <section className="mb-6 bg-black/40 border border-yellow-900/30 rounded p-2">
-                                    <div className="flex justify-between items-center mb-2"><h3 className="text-yellow-500 font-mono text-[10px] uppercase tracking-widest">Iniciativa</h3><div className="flex gap-1"><button onClick={onSortInitiative} className="text-[9px] bg-gray-700 px-2 rounded hover:bg-gray-600" title="Ordenar">Sort</button><button onClick={onClearInitiative} className="text-[9px] bg-red-900/50 px-2 rounded hover:bg-red-600" title="Limpar">Limpar</button></div></div>
-                                    {initiativeList.length > 0 ? (<><div className="flex flex-col gap-1 mb-2 max-h-40 overflow-y-auto">{initiativeList.map((item:any, index:number) => (<div key={index} className={`flex justify-between items-center p-2 rounded text-xs cursor-pointer ${item.id === activeTurnId ? 'bg-yellow-900/40 border border-yellow-500/50' : 'bg-white/5 hover:bg-white/10'}`} onClick={(e) => onSetTarget(item.id, e.shiftKey)}><span className={item.id === activeTurnId ? 'text-yellow-200 font-bold' : 'text-gray-300'}>{item.value} - {item.name}</span><button onClick={(e) => { e.stopPropagation(); onRemoveFromInitiative(item.id); }} className="text-red-500 hover:text-red-300 ml-2">×</button></div>))}</div><button onClick={onNextTurn} className="w-full py-2 bg-yellow-700 hover:bg-yellow-600 text-white text-xs font-bold uppercase rounded shadow-lg border border-yellow-500/30 animate-pulse">Próximo Turno ⏩</button></>) : <p className="text-center text-gray-500 text-xs py-2">Sem iniciativa.</p>}
-                                </section>
-                                <section className="mb-4 bg-black/40 border border-white/10 rounded p-2">
-                                    <h3 className="text-[10px] text-gray-400 uppercase mb-2 text-center font-bold tracking-widest">Condições</h3>
-                                    <div className="grid grid-cols-2 gap-2">
-                                            <button onClick={() => toggleConditionForAll('poison')} className="flex items-center gap-2 px-3 py-2 bg-green-900/40 hover:bg-green-600/60 border border-green-500/30 hover:border-green-400 rounded transition-all active:scale-95 group" title="Envenenado"><span className="text-lg filter drop-shadow-md group-hover:scale-110 transition-transform">☠️</span><span className="text-[10px] font-bold text-green-100 uppercase tracking-wider">Veneno</span></button>
-                                            <button onClick={() => toggleConditionForAll('stun')} className="flex items-center gap-2 px-3 py-2 bg-yellow-900/40 hover:bg-yellow-600/60 border border-yellow-500/30 hover:border-yellow-400 rounded transition-all active:scale-95 group" title="Atordoado"><span className="text-lg filter drop-shadow-md group-hover:scale-110 transition-transform">💫</span><span className="text-[10px] font-bold text-yellow-100 uppercase tracking-wider">Atordoar</span></button>
-                                            <button onClick={() => toggleConditionForAll('fire')} className="flex items-center gap-2 px-3 py-2 bg-red-900/40 hover:bg-red-600/60 border border-red-500/30 hover:border-red-400 rounded transition-all active:scale-95 group" title="Em Chamas"><span className="text-lg filter drop-shadow-md group-hover:scale-110 transition-transform">🔥</span><span className="text-[10px] font-bold text-red-100 uppercase tracking-wider">Fogo</span></button>
-                                            <button onClick={() => toggleConditionForAll('sleep')} className="flex items-center gap-2 px-3 py-2 bg-purple-900/40 hover:bg-purple-600/60 border border-purple-500/30 hover:border-purple-400 rounded transition-all active:scale-95 group" title="Dormindo"><span className="text-lg filter drop-shadow-md group-hover:scale-110 transition-transform">💤</span><span className="text-[10px] font-bold text-purple-100 uppercase tracking-wider">Sono</span></button>
-                                    </div>
-                                </section>
-                                <section className="mb-8">
-                                    <h3 className="text-rpgText font-mono text-[10px] uppercase mb-3 opacity-50 tracking-widest">Entidades no Mapa</h3>
-                                    <div className="space-y-2">{entities.map((entity) => (<EntityControlRow key={entity.id} entity={entity} onUpdateHP={onUpdateHP} onDeleteEntity={onDeleteEntity} onClickEdit={() => setEditingEntity(entity)} onAddToInit={() => onAddToInitiative(entity)} isTarget={targetEntityIds.includes(entity.id)} isAttacker={attackerId === entity.id} onSetTarget={onSetTarget} onSetAttacker={onSetAttacker} onToggleCondition={onToggleCondition} onAddXP={onAddXP} onToggleVisibility={() => onToggleVisibility(entity.id)} />))}</div>
-                                </section>
-                            </div>
-                        )}
-                        {activeTab === 'map' && (
-                            <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                            </section>
+                            <section className="mb-8">
+                                <h3 className="text-rpgText font-mono text-[10px] uppercase mb-3 opacity-50 tracking-widest">Entidades no Mapa</h3>
+                                <div className="space-y-2">{entities.map((entity) => (<EntityControlRow key={entity.id} entity={entity} onUpdateHP={onUpdateHP} onDeleteEntity={onDeleteEntity} onClickEdit={() => setEditingEntity(entity)} onAddToInit={() => onAddToInitiative(entity)} isTarget={targetEntityIds.includes(entity.id)} isAttacker={attackerId === entity.id} onSetTarget={onSetTarget} onSetAttacker={onSetAttacker} onToggleCondition={onToggleCondition} onAddXP={onAddXP} onToggleVisibility={() => onToggleVisibility(entity.id)} />))}</div>
+                            </section>
+                        </div>
+                    )}
+                    {activeTab === 'map' && (
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                            
+                            <section className="mb-6 pb-4 bg-blue-900/10 p-3 rounded-lg border border-blue-500/20 shadow-inner">
+                                <h3 className="text-blue-400 font-bold text-[11px] uppercase mb-3 tracking-widest flex items-center gap-2"><ImageIcon size={14}/> Carregar Novo Mapa</h3>
                                 
-                                <section className="mb-6 pb-4 bg-blue-900/10 p-3 rounded-lg border border-blue-500/20 shadow-inner">
-                                    <h3 className="text-blue-400 font-bold text-[11px] uppercase mb-3 tracking-widest flex items-center gap-2"><ImageIcon size={14}/> Carregar Novo Mapa</h3>
-                                    
-                                    {!previewMap ? (
-                                        <>
-                                            <div className="flex gap-2">
-                                                <input type="text" placeholder="Cole o link da imagem (URL)..." className="w-full bg-black/60 border border-white/20 rounded p-2 text-xs text-white outline-none focus:border-blue-500" value={customMapUrl} onChange={(e) => setCustomMapUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleUrlPreview()} />
-                                                <button onClick={handleUrlPreview} className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-3 rounded text-xs transition-colors disabled:opacity-50" disabled={!customMapUrl.trim()}>Preview</button>
-                                            </div>
-                                            <div className="mt-3 mb-3 flex items-center justify-center"><span className="text-[9px] text-gray-500 uppercase px-2 font-bold">Ou do seu Computador</span></div>
-                                            <input type="file" ref={fileInputRef} onChange={handleFileUploadPreview} className="hidden" accept="image/*" />
-                                            <button onClick={() => fileInputRef.current?.click()} className="w-full bg-black/60 hover:bg-blue-900/40 border border-blue-500/50 text-blue-200 font-bold py-2.5 rounded uppercase text-xs transition-all flex items-center justify-center gap-2 shadow">📂 Escolher Arquivo Local</button>
-                                        </>
-                                    ) : (
-                                        <div className="animate-in zoom-in-95 duration-200">
-                                            <div className="w-full h-32 rounded-lg overflow-hidden border-2 border-blue-500 mb-3 shadow-[0_0_15px_rgba(59,130,246,0.3)] relative">
-                                                <img src={previewMap.url} alt="Preview" className="w-full h-full object-cover opacity-80" />
-                                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-2">
-                                                    <span className="text-[10px] text-white font-mono tracking-widest">PRÉ-VISUALIZAÇÃO</span>
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="mb-3">
-                                                <label className="text-[9px] text-blue-300 uppercase font-bold mb-1 block">Nome do Botão:</label>
-                                                <input autoFocus type="text" className="w-full bg-black border border-blue-500/50 rounded p-2 text-sm text-white font-bold" value={previewMap.name} onChange={(e) => setPreviewMap({...previewMap, name: e.target.value})} />
-                                            </div>
-
-                                            <div className="flex gap-2">
-                                                <button onClick={() => setPreviewMap(null)} className="flex-1 bg-red-900/50 hover:bg-red-700 text-red-200 text-xs py-2 rounded font-bold flex items-center justify-center gap-1 transition-colors"><X size={14}/> Cancelar</button>
-                                                <button onClick={handleConfirmNewMap} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs py-2 rounded font-bold flex items-center justify-center gap-1 transition-colors shadow-lg"><Check size={14}/> Salvar & Usar</button>
+                                {!previewMap ? (
+                                    <>
+                                        <div className="flex gap-2">
+                                            <input type="text" placeholder="Cole o link da imagem (URL)..." className="w-full bg-black/60 border border-white/20 rounded p-2 text-xs text-white outline-none focus:border-blue-500" value={customMapUrl} onChange={(e) => setCustomMapUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleUrlPreview()} />
+                                            <button onClick={handleUrlPreview} className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-3 rounded text-xs transition-colors disabled:opacity-50" disabled={!customMapUrl.trim()}>Preview</button>
+                                        </div>
+                                        <div className="mt-3 mb-3 flex items-center justify-center"><span className="text-[9px] text-gray-500 uppercase px-2 font-bold">Ou do seu Computador</span></div>
+                                        <input type="file" ref={fileInputRef} onChange={handleFileUploadPreview} className="hidden" accept="image/*" />
+                                        <button onClick={() => fileInputRef.current?.click()} className="w-full bg-black/60 hover:bg-blue-900/40 border border-blue-500/50 text-blue-200 font-bold py-2.5 rounded uppercase text-xs transition-all flex items-center justify-center gap-2 shadow">📂 Escolher Arquivo Local</button>
+                                    </>
+                                ) : (
+                                    <div className="animate-in zoom-in-95 duration-200">
+                                        <div className="w-full h-32 rounded-lg overflow-hidden border-2 border-blue-500 mb-3 shadow-[0_0_15px_rgba(59,130,246,0.3)] relative">
+                                            <img src={previewMap.url} alt="Preview" className="w-full h-full object-cover opacity-80" />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-2">
+                                                <span className="text-[10px] text-white font-mono tracking-widest">PRÉ-VISUALIZAÇÃO</span>
                                             </div>
                                         </div>
-                                    )}
-                                </section>
+                                        
+                                        <div className="mb-3">
+                                            <label className="text-[9px] text-blue-300 uppercase font-bold mb-1 block">Nome do Botão:</label>
+                                            <input autoFocus type="text" className="w-full bg-black border border-blue-500/50 rounded p-2 text-sm text-white font-bold" value={previewMap.name} onChange={(e) => setPreviewMap({...previewMap, name: e.target.value})} />
+                                        </div>
 
-                                <section className="mb-6 border-b border-white/5 pb-4">
-                                    <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest">Mapas Disponíveis</h3>
-                                    <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
-                                        {mapList.map((map, idx) => (
-                                            <button key={idx} onClick={() => onChangeMap(map.url)} className="bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-blue-400 text-gray-300 hover:text-white text-[10px] font-bold py-3 px-2 rounded transition-all active:scale-95 truncate">
-                                                {map.name}
-                                            </button>
-                                        ))}
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setPreviewMap(null)} className="flex-1 bg-red-900/50 hover:bg-red-700 text-red-200 text-xs py-2 rounded font-bold flex items-center justify-center gap-1 transition-colors"><X size={14}/> Cancelar</button>
+                                            <button onClick={handleConfirmNewMap} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs py-2 rounded font-bold flex items-center justify-center gap-1 transition-colors shadow-lg"><Check size={14}/> Salvar & Usar</button>
+                                        </div>
                                     </div>
-                                </section>
+                                )}
+                            </section>
 
-                                <section className="mb-6 border-b border-white/5 pb-4">
-                                    <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest">Ambiente & Luz</h3>
-                                    <div className="bg-black/40 p-2 rounded border border-white/10">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <span className="text-xs font-bold text-yellow-500">{globalBrightness >= 1 ? '☀️ Dia' : globalBrightness <= 0.2 ? '🌑 Noite' : '🌅 Crepúsculo'}</span>
-                                                <span className="text-[10px] text-gray-500">{Math.round(globalBrightness * 100)}%</span>
-                                            </div>
-                                            <input type="range" min="0" max="1" step="0.05" value={globalBrightness} onChange={(e) => onSetGlobalBrightness && onSetGlobalBrightness(parseFloat(e.target.value))} className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"/>
-                                    </div>
-                                </section>
-                                
-                                <section className="mb-6 border-b border-white/5 pb-4 bg-white/5 rounded p-2">
-                                    <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest text-center">Magias & Áreas</h3>
-                                    <AoEColorPicker selected={aoeColor} onSelect={onSetAoEColor} />
-                                    <div className="flex gap-2 mt-3">
-                                            <button onClick={() => onSetAoE(activeAoE === 'circle' ? null : 'circle')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'circle' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'circle' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">⭕</span> Círculo</button>
-                                            <button onClick={() => onSetAoE(activeAoE === 'cone' ? null : 'cone')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'cone' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'cone' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">🔺</span> Cone</button>
-                                            <button onClick={() => onSetAoE(activeAoE === 'cube' ? null : 'cube')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'cube' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'cube' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">🟥</span> Cubo</button>
-                                    </div>
-                                    {activeAoE && <p className="text-[9px] mt-2 text-center animate-pulse opacity-80" style={{color: aoeColor}}>🖌️ Clique e arraste no mapa</p>}
-                                </section>
-                                
-                                <section className="mb-6 border-b border-white/5 pb-4 bg-black/20 rounded p-2">
-                                    <h3 className="text-rpgText font-mono text-[10px] uppercase mb-3 opacity-50 tracking-widest">Neblina de Guerra</h3>
-                                    <div className="flex flex-col gap-3">
-                                            <button onClick={onToggleFogMode} className={`w-full py-2 rounded text-xs font-bold uppercase tracking-wider border transition-all ${isFogMode ? 'bg-yellow-600 border-yellow-400 text-white shadow-sm' : 'bg-gray-800 border-gray-600 text-gray-400 hover:bg-gray-700'}`}>{isFogMode ? '✎ Modo Edição Ativo' : '✎ Editar Neblina'}</button>
-                                            
-                                            {isFogMode && (
-                                              <div className="flex flex-col gap-2 bg-black/40 p-2 rounded border border-white/10 animate-in fade-in zoom-in-95">
-                                                  <div className="flex gap-1 bg-black/40 p-1 rounded border border-white/5">
-                                                      <button onClick={() => onSetFogTool('reveal')} className={`flex-1 py-1.5 text-[10px] uppercase font-bold rounded transition-colors ${fogTool === 'reveal' ? 'bg-green-600 text-white shadow-sm' : 'hover:bg-white/10 text-gray-400'}`}>🔦 Revelar</button>
-                                                      <button onClick={() => onSetFogTool('hide')} className={`flex-1 py-1.5 text-[10px] uppercase font-bold rounded transition-colors ${fogTool === 'hide' ? 'bg-red-600 text-white shadow-sm' : 'hover:bg-white/10 text-gray-400'}`}>☁️ Esconder</button>
-                                                  </div>
-                                                  <div className="flex gap-1 justify-between">
-                                                      <button onClick={() => onSetFogShape && onSetFogShape('brush')} className={`flex-1 py-1.5 flex flex-col items-center gap-1 rounded text-[10px] transition-all border ${fogShape === 'brush' ? 'bg-white/10 border-white text-white shadow-inner' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Pincel Livre">
-                                                          <Brush size={16} /> Livre
-                                                      </button>
-                                                      <button onClick={() => onSetFogShape && onSetFogShape('rect')} className={`flex-1 py-1.5 flex flex-col items-center gap-1 rounded text-[10px] transition-all border ${fogShape === 'rect' ? 'bg-white/10 border-white text-white shadow-inner' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Retângulo">
-                                                          <Square size={16} /> Sala
-                                                      </button>
-                                                      <button onClick={() => onSetFogShape && onSetFogShape('line')} className={`flex-1 py-1.5 flex flex-col items-center gap-1 rounded text-[10px] transition-all border ${fogShape === 'line' ? 'bg-white/10 border-white text-white shadow-inner' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Linha">
-                                                          <Minus size={16} /> Linha
-                                                      </button>
-                                                  </div>
-                                                  <p className="text-center text-[9px] text-yellow-500/70 italic mt-1">Arraste no mapa para pintar.</p>
-                                              </div>
-                                            )}
-
-                                            <div className="flex gap-2 mt-1"><button onClick={onRevealAll} className="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-[10px] font-bold uppercase text-gray-400 rounded border border-gray-700 transition-colors">Limpar Tudo</button><button onClick={onResetFog} className="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-[10px] font-bold uppercase text-gray-400 rounded border border-gray-700 transition-colors">Tudo Preto</button></div>
-                                            <button onClick={onSyncFog} className="w-full py-1.5 mt-1 bg-purple-900/30 hover:bg-purple-600/50 border border-purple-500/30 text-[10px] text-purple-200 uppercase font-bold rounded transition-all flex justify-center items-center gap-2">📡 Sincronizar Jogadores</button>
-                                    </div>
-                                </section>
-                                <div className="px-2">
-                                    <button onClick={onSaveGame} className="w-full py-2 bg-green-900/40 hover:bg-green-600/60 border border-green-500/30 text-green-200 text-xs font-bold uppercase rounded transition-all shadow-lg mb-2">💾 Salvar Estado do Jogo</button>
-                                    <button onClick={onResetView} className="w-full py-2 bg-blue-900/40 hover:bg-blue-600/60 border border-blue-500/30 text-blue-200 text-xs font-bold uppercase rounded transition-all shadow-lg">Recentralizar Câmera 🎯</button>
+                            <section className="mb-6 border-b border-white/5 pb-4">
+                                <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest">Mapas Disponíveis</h3>
+                                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                                    {mapList.map((map, idx) => (
+                                        <button key={idx} onClick={() => onChangeMap(map.url)} className="bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-blue-400 text-gray-300 hover:text-white text-[10px] font-bold py-3 px-2 rounded transition-all active:scale-95 truncate">
+                                            {map.name}
+                                        </button>
+                                    ))}
                                 </div>
+                            </section>
+
+                            <section className="mb-6 border-b border-white/5 pb-4">
+                                <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest">Ambiente & Luz</h3>
+                                <div className="bg-black/40 p-2 rounded border border-white/10">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className="text-xs font-bold text-yellow-500">{globalBrightness >= 1 ? '☀️ Dia' : globalBrightness <= 0.2 ? '🌑 Noite' : '🌅 Crepúsculo'}</span>
+                                            <span className="text-[10px] text-gray-500">{Math.round(globalBrightness * 100)}%</span>
+                                        </div>
+                                        <input type="range" min="0" max="1" step="0.05" value={globalBrightness} onChange={(e) => onSetGlobalBrightness && onSetGlobalBrightness(parseFloat(e.target.value))} className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"/>
+                                </div>
+                            </section>
+                            
+                            <section className="mb-6 border-b border-white/5 pb-4 bg-white/5 rounded p-2">
+                                <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest text-center">Magias & Áreas</h3>
+                                <AoEColorPicker selected={aoeColor} onSelect={onSetAoEColor} />
+                                <div className="flex gap-2 mt-3">
+                                        <button onClick={() => onSetAoE(activeAoE === 'circle' ? null : 'circle')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'circle' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'circle' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">⭕</span> Círculo</button>
+                                        <button onClick={() => onSetAoE(activeAoE === 'cone' ? null : 'cone')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'cone' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'cone' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">🔺</span> Cone</button>
+                                        <button onClick={() => onSetAoE(activeAoE === 'cube' ? null : 'cube')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'cube' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'cube' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">🟥</span> Cubo</button>
+                                </div>
+                                {activeAoE && <p className="text-[9px] mt-2 text-center animate-pulse opacity-80" style={{color: aoeColor}}>🖌️ Clique e arraste no mapa</p>}
+                            </section>
+                            
+                            <section className="mb-6 border-b border-white/5 pb-4 bg-black/20 rounded p-2">
+                                <h3 className="text-rpgText font-mono text-[10px] uppercase mb-3 opacity-50 tracking-widest">Neblina de Guerra</h3>
+                                <div className="flex flex-col gap-3">
+                                        <button onClick={onToggleFogMode} className={`w-full py-2 rounded text-xs font-bold uppercase tracking-wider border transition-all ${isFogMode ? 'bg-yellow-600 border-yellow-400 text-white shadow-sm' : 'bg-gray-800 border-gray-600 text-gray-400 hover:bg-gray-700'}`}>{isFogMode ? '✎ Modo Edição Ativo' : '✎ Editar Neblina'}</button>
+                                        
+                                        {isFogMode && (
+                                          <div className="flex flex-col gap-2 bg-black/40 p-2 rounded border border-white/10 animate-in fade-in zoom-in-95">
+                                              <div className="flex gap-1 bg-black/40 p-1 rounded border border-white/5">
+                                                  <button onClick={() => onSetFogTool('reveal')} className={`flex-1 py-1.5 text-[10px] uppercase font-bold rounded transition-colors ${fogTool === 'reveal' ? 'bg-green-600 text-white shadow-sm' : 'hover:bg-white/10 text-gray-400'}`}>🔦 Revelar</button>
+                                                  <button onClick={() => onSetFogTool('hide')} className={`flex-1 py-1.5 text-[10px] uppercase font-bold rounded transition-colors ${fogTool === 'hide' ? 'bg-red-600 text-white shadow-sm' : 'hover:bg-white/10 text-gray-400'}`}>☁️ Esconder</button>
+                                              </div>
+                                              <div className="flex gap-1 justify-between">
+                                                  <button onClick={() => onSetFogShape && onSetFogShape('brush')} className={`flex-1 py-1.5 flex flex-col items-center gap-1 rounded text-[10px] transition-all border ${fogShape === 'brush' ? 'bg-white/10 border-white text-white shadow-inner' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Pincel Livre">
+                                                      <Brush size={16} /> Livre
+                                                  </button>
+                                                  <button onClick={() => onSetFogShape && onSetFogShape('rect')} className={`flex-1 py-1.5 flex flex-col items-center gap-1 rounded text-[10px] transition-all border ${fogShape === 'rect' ? 'bg-white/10 border-white text-white shadow-inner' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Retângulo">
+                                                      <Square size={16} /> Sala
+                                                  </button>
+                                                  <button onClick={() => onSetFogShape && onSetFogShape('line')} className={`flex-1 py-1.5 flex flex-col items-center gap-1 rounded text-[10px] transition-all border ${fogShape === 'line' ? 'bg-white/10 border-white text-white shadow-inner' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Linha">
+                                                      <Minus size={16} /> Linha
+                                                  </button>
+                                              </div>
+                                              <p className="text-center text-[9px] text-yellow-500/70 italic mt-1">Arraste no mapa para pintar.</p>
+                                          </div>
+                                        )}
+
+                                        <div className="flex gap-2 mt-1"><button onClick={onRevealAll} className="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-[10px] font-bold uppercase text-gray-400 rounded border border-gray-700 transition-colors">Limpar Tudo</button><button onClick={onResetFog} className="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-[10px] font-bold uppercase text-gray-400 rounded border border-gray-700 transition-colors">Tudo Preto</button></div>
+                                        <button onClick={onSyncFog} className="w-full py-1.5 mt-1 bg-purple-900/30 hover:bg-purple-600/50 border border-purple-500/30 text-[10px] text-purple-200 uppercase font-bold rounded transition-all flex justify-center items-center gap-2">📡 Sincronizar Jogadores</button>
+                                </div>
+                            </section>
+                            <div className="px-2">
+                                <button onClick={onSaveGame} className="w-full py-2 bg-green-900/40 hover:bg-green-600/60 border border-green-500/30 text-green-200 text-xs font-bold uppercase rounded transition-all shadow-lg mb-2">💾 Salvar Estado do Jogo</button>
+                                <button onClick={onResetView} className="w-full py-2 bg-blue-900/40 hover:bg-blue-600/60 border border-blue-500/30 text-blue-200 text-xs font-bold uppercase rounded transition-all shadow-lg">Recentralizar Câmera 🎯</button>
                             </div>
-                        )}
-                        {activeTab === 'create' && (
-                            <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                                <h3 className="text-rpgText font-mono text-[10px] uppercase mb-4 opacity-50 tracking-widest text-center">Adicionar Entidades</h3>
-                                <button draggable onDragStart={(e) => handleDragStart(e, 'enemy')} onClick={() => setShowMonsterSelector(true)} className="w-full bg-red-900/50 hover:bg-red-600 border border-red-500/30 text-white text-lg font-bold py-6 rounded uppercase tracking-wider transition-all shadow-lg active:scale-95 cursor-grab mb-4 flex flex-col items-center gap-2"><span className="text-2xl">👹</span> Adicionar Inimigo</button>
-                                <button draggable onDragStart={(e) => handleDragStart(e, 'player')} onClick={() => onOpenCreator('player')} className="w-full bg-blue-900/50 hover:bg-blue-600 border border-blue-500/30 text-white text-lg font-bold py-6 rounded uppercase tracking-wider transition-all shadow-lg active:scale-95 cursor-grab flex flex-col items-center gap-2"><span className="text-2xl">🛡️</span> Adicionar Aliado</button>
-                                <p className="text-gray-500 text-xs text-center mt-6 italic px-4">Dica: Você também pode arrastar esses botões diretamente para o mapa!</p>
-                            </div>
-                        )}
-                        {activeTab === 'audio' && (
-                            <div className="animate-in fade-in slide-in-from-right-4 duration-300 h-full">
-                                <Soundboard 
-                                    currentTrack={currentTrack}
-                                    onPlayMusic={onPlayMusic}
-                                    onStopMusic={onStopMusic}
-                                    onPlaySFX={onPlaySFX}
-                                    globalVolume={audioVolume}
-                                    onVolumeChange={onSetAudioVolume}
-                                />
-                            </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
+                    {activeTab === 'create' && (
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                            <h3 className="text-rpgText font-mono text-[10px] uppercase mb-4 opacity-50 tracking-widest text-center">Adicionar Entidades</h3>
+                            <button draggable onDragStart={(e) => handleDragStart(e, 'enemy')} onClick={() => setShowMonsterSelector(true)} className="w-full bg-red-900/50 hover:bg-red-600 border border-red-500/30 text-white text-lg font-bold py-6 rounded uppercase tracking-wider transition-all shadow-lg active:scale-95 cursor-grab mb-4 flex flex-col items-center gap-2"><span className="text-2xl">👹</span> Adicionar Inimigo</button>
+                            <button draggable onDragStart={(e) => handleDragStart(e, 'player')} onClick={() => onOpenCreator('player')} className="w-full bg-blue-900/50 hover:bg-blue-600 border border-blue-500/30 text-white text-lg font-bold py-6 rounded uppercase tracking-wider transition-all shadow-lg active:scale-95 cursor-grab flex flex-col items-center gap-2"><span className="text-2xl">🛡️</span> Adicionar Aliado</button>
+                            <p className="text-gray-500 text-xs text-center mt-6 italic px-4">Dica: Você também pode arrastar esses botões diretamente para o mapa!</p>
+                        </div>
+                    )}
+                    {activeTab === 'audio' && (
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-300 h-full">
+                            <Soundboard 
+                                currentTrack={currentTrack}
+                                onPlayMusic={onPlayMusic}
+                                onStopMusic={onStopMusic}
+                                onPlaySFX={onPlaySFX}
+                                globalVolume={audioVolume}
+                                onVolumeChange={onSetAudioVolume}
+                            />
+                        </div>
+                    )}
                 </div>
-            )}
+            </div>
         </div>
       </div>
     </>
