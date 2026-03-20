@@ -447,7 +447,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+        {/* --- CORREÇÃO DA ARMADILHA DE ROLAGEM AQUI --- */}
+        <div className="flex flex-col md:flex-row flex-1 overflow-y-auto custom-scrollbar md:overflow-hidden">
             {/* Secção Esquerda: Nome e Preview da Imagem */}
             <div className="w-full md:w-[350px] bg-black/20 md:border-r border-b md:border-b-0 border-white/5 flex flex-row md:flex-col items-center justify-center md:justify-start p-4 md:p-8 gap-4 md:gap-6 flex-shrink-0">
                 
@@ -478,15 +479,15 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 </div>
             </div>
 
-            {/* Secção Direita: Escolha de Raça e Classe (Lado a lado no PC, uma embaixo da outra no Mobile) */}
-            <div className="flex-1 flex flex-col sm:flex-row p-4 md:p-8 gap-4 md:gap-6 overflow-hidden h-full">
+            {/* Secção Direita: Escolha de Raça e Classe */}
+            <div className="flex-1 flex flex-col md:flex-row p-4 md:p-8 gap-4 md:gap-6 h-auto md:h-full md:overflow-hidden">
                 
                 {/* Seleção de Raça */}
-                <div className="flex-1 flex flex-col min-h-0 h-1/2 sm:h-full">
+                <div className="flex flex-col md:flex-1 min-h-0">
                     <h3 className="text-amber-500/80 font-bold uppercase tracking-[0.15em] md:tracking-[0.2em] text-[10px] md:text-xs mb-2 md:mb-3 flex items-center gap-2">
                         <Crown size={14} /> Selecione a Linhagem
                     </h3>
-                    <div ref={raceScrollRef} className="flex-1 overflow-y-auto custom-scrollbar pr-2 bg-black/20 rounded-xl border border-white/5 p-2">
+                    <div ref={raceScrollRef} className="md:flex-1 md:overflow-y-auto custom-scrollbar md:pr-2 bg-black/20 rounded-xl border border-white/5 p-2">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
                             {Object.keys(RACES).map(r => (
                                 <div 
@@ -507,11 +508,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 </div>
 
                 {/* Seleção de Classe */}
-                <div className="flex-1 flex flex-col min-h-0 h-1/2 sm:h-full">
+                <div className="flex flex-col md:flex-1 min-h-0 mt-2 md:mt-0">
                     <h3 className="text-amber-500/80 font-bold uppercase tracking-[0.15em] md:tracking-[0.2em] text-[10px] md:text-xs mb-2 md:mb-3 flex items-center gap-2">
                         <Sword size={14} /> Selecione o Ofício
                     </h3>
-                    <div ref={classScrollRef} className="flex-1 overflow-y-auto custom-scrollbar pr-2 bg-black/20 rounded-xl border border-white/5 p-2">
+                    <div ref={classScrollRef} className="md:flex-1 md:overflow-y-auto custom-scrollbar md:pr-2 bg-black/20 rounded-xl border border-white/5 p-2">
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
                             {Object.keys(CLASSES).map(c => (
                                 <div 
@@ -529,13 +530,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 </div>
 
             </div>
+        </div>
 
-            <div className="pt-3 md:pt-4 border-t border-white/10 flex justify-between items-center px-4 md:px-8 pb-4 md:pb-6 flex-shrink-0">
-                <button type="button" onClick={() => { setStep(1.2); setLoginIntent('CREATE'); }} className="text-white/30 hover:text-white text-[10px] md:text-xs uppercase tracking-widest font-bold px-2 py-2">Cancelar</button>
-                <MetalButton onClick={handleStartCreation} disabled={isChecking} variant="amber" className="px-6 md:px-8 py-2 md:py-3 text-[10px] md:text-xs">
-                    {isChecking ? <Sparkles className="animate-spin" size={16} /> : 'Próximo: Atributos ❯'}
-                </MetalButton>
-            </div>
+        <div className="pt-3 md:pt-4 border-t border-white/10 flex justify-between items-center px-4 md:px-8 pb-4 md:pb-6 flex-shrink-0">
+            <button type="button" onClick={() => { setStep(1.2); setLoginIntent('CREATE'); }} className="text-white/30 hover:text-white text-[10px] md:text-xs uppercase tracking-widest font-bold px-2 py-2">Cancelar</button>
+            <MetalButton onClick={handleStartCreation} disabled={isChecking} variant="amber" className="px-6 md:px-8 py-2 md:py-3 text-[10px] md:text-xs">
+                {isChecking ? <Sparkles className="animate-spin" size={16} /> : 'Próximo: Atributos ❯'}
+            </MetalButton>
         </div>
       </ArcaneContainer>
     </BackgroundWrapper>
@@ -632,7 +633,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         </BackgroundWrapper>
     );
 
-    // --- A NOVA MAGIA: O SALÃO DO MESTRE (STEP 4) ---
     if (step === 4) return (
         <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
             <ArcaneContainer width="w-full max-w-[600px]" className="!p-8 md:!p-12 gap-6 flex flex-col items-center border-red-900/30 mx-4 md:mx-0 animate-in fade-in zoom-in-95 duration-500">
