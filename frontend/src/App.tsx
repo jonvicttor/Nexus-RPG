@@ -220,19 +220,14 @@ function App() {
       const handleOpenDraft = (e: Event) => {
           const customEvent = e as CustomEvent<string>;
           const match = customEvent.detail.match(/^\/w\s+"?([^"]+)"?\s*/i);
-          if (match) {
-              setPrivateChatTarget(match[1].trim());
-          }
+          if (match) setPrivateChatTarget(match[1].trim());
       };
       window.addEventListener('openChatWithDraft', handleOpenDraft);
       return () => window.removeEventListener('openChatWithDraft', handleOpenDraft);
   }, []);
 
   const handlePlayMusic = useCallback((trackId: string, emit: boolean = true) => {
-      if (activeMusicRef.current) {
-          activeMusicRef.current.stop();
-          activeMusicRef.current.unload();
-      }
+      if (activeMusicRef.current) { activeMusicRef.current.stop(); activeMusicRef.current.unload(); }
       const trackPath = `/music/${trackId}.mp3`;
       const sound = new Howl({ src: [trackPath], html5: true, loop: true, volume: audioVolume });
       sound.play();
@@ -327,35 +322,16 @@ function App() {
     socket.on('playMusic', (data: any) => handlePlayMusic(data.trackId, false));
     socket.on('stopMusic', () => handleStopMusic(false));
     socket.on('playSFX', (data: any) => handlePlaySFX(data.sfxId, false));
-
     socket.on('entityPositionUpdated', (data: any) => setEntities(prev => prev.map(ent => ent.id === data.entityId ? { ...ent, x: data.x, y: data.y } : ent)));
     socket.on('entityStatusUpdated', (data: any) => setEntities(prev => prev.map(ent => ent.id === data.entityId ? { ...ent, ...data.updates } : ent)));
     socket.on('entityCreated', (data: any) => setEntities(prev => { if (prev.find(e => e.id === data.entity.id)) return prev; return [...prev, data.entity]; }));
-    
-    socket.on('entityDeleted', (data: any) => {
-        setEntities(prev => prev.filter(ent => ent.id !== data.entityId));
-        setStatusSelectionId(prev => prev === data.entityId ? null : prev);
-    });
-
+    socket.on('entityDeleted', (data: any) => { setEntities(prev => prev.filter(ent => ent.id !== data.entityId)); setStatusSelectionId(prev => prev === data.entityId ? null : prev); });
     socket.on('mapChanged', (data: any) => { setCurrentMap(data.mapUrl); setFogGrid(data.fogGrid); });
-    
-    socket.on('fogUpdated', (data: any) => {
-      setFogGrid(prev => {
-        if (!prev || !prev[data.y]) return prev;
-        const newGrid = prev.map(row => [...row]);
-        newGrid[data.y][data.x] = data.shouldReveal;
-        return newGrid;
-      });
-    });
-
+    socket.on('fogUpdated', (data: any) => { setFogGrid(prev => { if (!prev || !prev[data.y]) return prev; const newGrid = prev.map(row => [...row]); newGrid[data.y][data.x] = data.shouldReveal; return newGrid; }); });
     socket.on('fogGridSynced', (data: any) => setFogGrid(data.grid));
     socket.on('initiativeUpdated', (data: any) => { setInitiativeList(data.list); setActiveTurnId(data.activeTurnId); });
     socket.on('triggerAudio', (data: any) => { if (data.trackId === 'suspense') handlePlayMusic('suspense', false); });
-    
-    socket.on('mapStateUpdated', (data: any) => {
-      if (role === 'PLAYER') { setMapOffset(data.offset); setMapScale(data.scale); }
-    });
-
+    socket.on('mapStateUpdated', (data: any) => { if (role === 'PLAYER') { setMapOffset(data.offset); setMapScale(data.scale); } });
     socket.on('globalBrightnessUpdated', (data: any) => { setGlobalBrightness(data.brightness); });
 
     socket.on('dmRequestRoll', (data: any) => {
@@ -364,23 +340,15 @@ function App() {
                 const myChar = currentEntities.find(e => e.name === playerName && e.id === data.targetId);
                 const isMyChar = myChar || currentEntities.some(e => e.id === data.targetId && e.type === 'player' && e.name === playerName);
                 if (isMyChar) {
-                     setDiceContext({
-                        title: data.skillName, subtitle: `Exigido pelo Mestre (CD ${data.dc})`, dc: data.dc, mod: data.mod, prof: 0, bonuses: [], rollType: 'normal'
-                    });
-                    setShowBgDice(true);
-                    handlePlayMusic('suspense', false); 
-                    addLog({ text: `⚠️ O Mestre exigiu um teste de **${data.skillName}** (CD ${data.dc})!`, type: 'info', sender: 'Sistema' });
+                     setDiceContext({ title: data.skillName, subtitle: `Exigido pelo Mestre (CD ${data.dc})`, dc: data.dc, mod: data.mod, prof: 0, bonuses: [], rollType: 'normal' });
+                    setShowBgDice(true); handlePlayMusic('suspense', false); addLog({ text: `⚠️ O Mestre exigiu um teste de **${data.skillName}** (CD ${data.dc})!`, type: 'info', sender: 'Sistema' });
                 }
                 return currentEntities;
             });
         }
     });
 
-    socket.on('mapPinged', (data: { ping: MapPing }) => {
-        setPings(prev => [...prev, data.ping]);
-        handlePlaySFX('ping', false); 
-        setTimeout(() => { setPings(prev => prev.filter(p => p.id !== data.ping.id)); }, 2500);
-    });
+    socket.on('mapPinged', (data: { ping: MapPing }) => { setPings(prev => [...prev, data.ping]); handlePlaySFX('ping', false); setTimeout(() => { setPings(prev => prev.filter(p => p.id !== data.ping.id)); }, 2500); });
 
     return () => {
       socket.off('gameStateSync'); socket.off('notification'); socket.off('newDiceResult'); socket.off('chatMessage'); 
@@ -393,27 +361,12 @@ function App() {
 
   const handleResetView = () => {
       setMapOffset({ x: 0, y: 0 }); setMapScale(1);
-      if (role === 'DM') {
-          socket.emit('syncMapState', { roomId: ROOM_ID, offset: { x: 0, y: 0 }, scale: 1 });
-          addLog({ text: "🎥 O Mestre recentralizou a câmera de todos.", type: 'info', sender: 'Sistema' });
-      } else { addLog({ text: "🎥 Câmera recentralizada.", type: 'info', sender: 'Sistema' }); }
+      if (role === 'DM') { socket.emit('syncMapState', { roomId: ROOM_ID, offset: { x: 0, y: 0 }, scale: 1 }); addLog({ text: "🎥 O Mestre recentralizou a câmera de todos.", type: 'info', sender: 'Sistema' }); } 
+      else { addLog({ text: "🎥 Câmera recentralizada.", type: 'info', sender: 'Sistema' }); }
   };
-
-  const handleMapSync = (offset: {x: number, y: number}, scale: number) => {
-    setMapOffset(offset); setMapScale(scale);
-    if (role === 'DM') socket.emit('syncMapState', { roomId: ROOM_ID, offset, scale });
-  };
-
-  const handleDmRequestRoll = (targetId: number, skillName: string, mod: number, dc: number) => {
-      const target = entities.find(e => e.id === targetId);
-      addLog({ text: `Mestre solicitou teste de **${skillName}** para **${target ? target.name : 'Alvo'}** (CD ${dc}).`, type: 'info', sender: 'Sistema' });
-      socket.emit('dmRequestRoll', { roomId: ROOM_ID, targetId, skillName, mod, dc });
-  };
-
-  const handleAttributeRoll = (charName: string, attrName: string, mod: number) => {
-      setDiceContext({ title: attrName, subtitle: `Teste de Perícia (${charName})`, dc: 15, mod, prof: 0, bonuses: [], rollType: 'normal' });
-      setShowBgDice(true);
-  };
+  const handleMapSync = (offset: {x: number, y: number}, scale: number) => { setMapOffset(offset); setMapScale(scale); if (role === 'DM') socket.emit('syncMapState', { roomId: ROOM_ID, offset, scale }); };
+  const handleDmRequestRoll = (targetId: number, skillName: string, mod: number, dc: number) => { const target = entities.find(e => e.id === targetId); addLog({ text: `Mestre solicitou teste de **${skillName}** para **${target ? target.name : 'Alvo'}** (CD ${dc}).`, type: 'info', sender: 'Sistema' }); socket.emit('dmRequestRoll', { roomId: ROOM_ID, targetId, skillName, mod, dc }); };
+  const handleAttributeRoll = (charName: string, attrName: string, mod: number) => { setDiceContext({ title: attrName, subtitle: `Teste de Perícia (${charName})`, dc: 15, mod, prof: 0, bonuses: [], rollType: 'normal' }); setShowBgDice(true); };
 
   const handleApplyDamageFromChat = (targetId: number, damageExpression: string) => {
         const rollMatch = damageExpression.match(/^(\d+)d(\d+)(\+(\d+))?$/i);
@@ -422,25 +375,20 @@ function App() {
             const count = parseInt(rollMatch[1]); const sides = parseInt(rollMatch[2]); const mod = rollMatch[4] ? parseInt(rollMatch[4]) : 0;
             let sum = 0; let rolls = [];
             for(let i=0; i<count; i++) { const val = Math.floor(Math.random() * sides) + 1; rolls.push(val); sum += val; }
-            totalDano = sum + mod;
-            rollString = `[${rolls.join(', ')}]${mod > 0 ? `+${mod}` : ''}`;
+            totalDano = sum + mod; rollString = `[${rolls.join(', ')}]${mod > 0 ? `+${mod}` : ''}`;
         } else { totalDano = parseInt(damageExpression) || 0; rollString = "Dano Fixo"; }
 
         const target = entities.find(e => e.id === targetId);
         if (target && totalDano > 0) {
-            handleUpdateHP(targetId, -totalDano);
-            handlePlaySFX('sword', true);
+            handleUpdateHP(targetId, -totalDano); handlePlaySFX('sword', true);
             addLog({ text: `⚔️ **DANO APLICADO:** Rolou ${damageExpression} ${rollString} = **${totalDano} de Dano** no ${target.name}!`, type: 'damage', sender: 'Sistema' });
         }
   };
 
-  // --- NOVA MAGIA DE COMBATE (CARTÃO RICO NO CHAT) ---
   const handleDiceComplete = (total: number, isSuccess: boolean, isCritical: boolean, isSecret: boolean) => {
       const senderName = role === 'DM' ? 'Mestre' : playerName;
       let resultMsg = isCritical ? (total >= 20 ? "CRÍTICO! ⚔️" : "FALHA CRÍTICA! 💀") : (isSuccess ? "SUCESSO! ✅" : "FALHA ❌");
-      let isAttackHit = false; 
-      let targetIdForDamage: number | null = null; 
-      let targetInfoMsg = "";
+      let isAttackHit = false; let targetIdForDamage: number | null = null; let targetInfoMsg = "";
       let damageExpression = "";
 
       const isAttack = diceContext.title.toLowerCase().includes("ataque");
@@ -453,7 +401,6 @@ function App() {
                   isAttackHit = true; 
                   targetIdForDamage = target.id;
 
-                  // 1. Acha o Atacante e a Arma
                   const attacker = role === 'DM' && attackerId ? entities.find(e => e.id === attackerId) : entities.find(e => e.name === playerName);
                   const weaponName = diceContext.title.replace(/Ataque:\s*/i, '').trim();
                   const weapon = attacker?.inventory?.find(i => i.name.toLowerCase() === weaponName.toLowerCase());
@@ -461,7 +408,6 @@ function App() {
                   let baseDmg = weapon?.stats?.damage || '1d4';
                   let dmgMod = 0;
                   
-                  // 2. Calcula se usa FOR ou DES para o dano
                   if (attacker && attacker.stats) {
                       const strMod = Math.floor((attacker.stats.str - 10) / 2);
                       const dexMod = Math.floor((attacker.stats.dex - 10) / 2);
@@ -469,12 +415,10 @@ function App() {
                       dmgMod = isFinesseOrRanged ? Math.max(strMod, dexMod) : strMod;
                   }
 
-                  // 3. Rola o Dano
                   const dmgMatch = baseDmg.match(/^(\d+)d(\d+)/i);
                   if (dmgMatch) {
                       const count = parseInt(dmgMatch[1]);
                       const sides = parseInt(dmgMatch[2]);
-                      // Se for Crítico, dobra os dados rolados!
                       const rollsCount = (isCritical && total >= 20) ? count * 2 : count;
                       
                       let dmgTotal = 0;
@@ -498,12 +442,10 @@ function App() {
           }
       }
 
-      // Constrói o texto do Cartão de Batalha!
       const publicText = `🎲 **${senderName}** rolou ${diceContext.title}:\n🎯 Ataque: **${total}** - ${resultMsg}${targetInfoMsg}`;
 
       if (isSecret) {
           const secretText = `👁️ (Secreto) ` + publicText;
-          // O App injeta { damage: damageExpression } escondido para o Chat criar o botão de [Aplicar Dano]!
           addLog({ text: role === 'DM' ? secretText : `🎲 **${senderName}** rolou dados misteriosamente...`, type: 'roll', sender: senderName, isSecret: true, secretContent: secretText, targetId: targetIdForDamage, isHit: isAttackHit, damage: damageExpression } as any);
       } else {
           addLog({ text: publicText, type: 'roll', sender: senderName, targetId: targetIdForDamage, isHit: isAttackHit, damage: damageExpression } as any);
@@ -514,56 +456,35 @@ function App() {
       setTimeout(() => setShowBgDice(false), 2000);
   };
 
-  const openDiceRoller = () => {
-      setDiceContext({ title: 'Rolagem Livre', subtitle: 'Sorte', dc: 10, mod: 0, prof: 0, bonuses: [], rollType: 'normal' });
-      setShowBgDice(true);
-  };
-
-  const handleDMRoll = (title: string, subtitle: string, mod: number, rollType: 'normal' | 'advantage' | 'disadvantage' = 'normal') => {
-      setDiceContext({ title, subtitle, dc: 10, mod, prof: 0, bonuses: [], rollType });
-      setShowBgDice(true);
-  };
+  const openDiceRoller = () => { setDiceContext({ title: 'Rolagem Livre', subtitle: 'Sorte', dc: 10, mod: 0, prof: 0, bonuses: [], rollType: 'normal' }); setShowBgDice(true); };
+  const handleDMRoll = (title: string, subtitle: string, mod: number, rollType: 'normal' | 'advantage' | 'disadvantage' = 'normal') => { setDiceContext({ title, subtitle, dc: 10, mod, prof: 0, bonuses: [], rollType }); setShowBgDice(true); };
 
   const handleAddXP = (id: number, amount: number) => {
-    const entity = entities.find(e => e.id === id);
-    if (!entity || entity.type !== 'player') return;
-    const oldXP = entity.xp || 0;
-    const newXP = oldXP + amount;
-    const oldLevel = entity.level || 1;
-    const calculatedLevel = getLevelFromXP(newXP);
-    setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, xp: newXP } : ent));
-    socket.emit('updateEntityStatus', { entityId: id, updates: { xp: newXP }, roomId: ROOM_ID });
+    const entity = entities.find(e => e.id === id); if (!entity || entity.type !== 'player') return;
+    const oldXP = entity.xp || 0; const newXP = oldXP + amount; const oldLevel = entity.level || 1; const calculatedLevel = getLevelFromXP(newXP);
+    setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, xp: newXP } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { xp: newXP }, roomId: ROOM_ID });
     addLog({ text: `${entity.name} ganhou ${amount} XP!`, type: 'info', sender: 'Sistema' });
-    if (calculatedLevel > oldLevel) {
-        addLog({ text: `✨ ${entity.name} está pronto para subir de nível!`, type: 'info', sender: 'Sistema' });
-        playSound('levelup'); 
-    }
+    if (calculatedLevel > oldLevel) { addLog({ text: `✨ ${entity.name} está pronto para subir de nível!`, type: 'info', sender: 'Sistema' }); playSound('levelup'); }
   };
 
   const handleUpdateHP = (id: number, change: number) => {
-    const entity = entities.find(e => e.id === id);
-    if (!entity) return;
+    const entity = entities.find(e => e.id === id); if (!entity) return;
     const newHp = Math.min(entity.maxHp, Math.max(0, entity.hp + change));
     if (entity.hp > 0 && newHp <= 0) addLog({ text: `☠️ **${entity.name} caiu inconsciente!**`, type: 'damage', sender: 'Sistema' });
-    setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, hp: newHp } : ent));
-    socket.emit('updateEntityStatus', { entityId: id, updates: { hp: newHp }, roomId: ROOM_ID });
+    setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, hp: newHp } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { hp: newHp }, roomId: ROOM_ID });
   };
 
   const handleSendMessage = (text: string) => {
       const senderName = role === 'DM' ? 'MESTRE' : playerName;
       const whisperMatch = text.match(/^\/w\s+"([^"]+)"\s+(.+)$/i) || text.match(/^\/w\s+([^\s]+)\s+(.+)$/i);
-      
       if (whisperMatch) {
-          const whisperTarget = whisperMatch[1];
-          const whisperText = whisperMatch[2];
+          const whisperTarget = whisperMatch[1]; const whisperText = whisperMatch[2];
           addLog({ text: whisperText, type: 'chat', sender: senderName, isWhisper: true, whisperTarget: whisperTarget });
           return;
       }
-
       const rollMatch = text.match(/^\/r\s+(\d+)d(\d+)(\+(\d+))?$/i);
       if (rollMatch) {
-        const count = parseInt(rollMatch[1]); const sides = parseInt(rollMatch[2]); const mod = rollMatch[4] ? parseInt(rollMatch[4]) : 0;
-        let sum = 0; let rolls = [];
+        const count = parseInt(rollMatch[1]); const sides = parseInt(rollMatch[2]); const mod = rollMatch[4] ? parseInt(rollMatch[4]) : 0; let sum = 0; let rolls = [];
         for(let i=0; i<count; i++) { const val = Math.floor(Math.random() * sides) + 1; rolls.push(val); sum += val; }
         const total = sum + mod; const rollString = `[${rolls.join(', ')}]` + (mod > 0 ? ` + ${mod}` : '');
         addLog({ text: `🎲 Rolou ${count}d${sides}${mod ? '+'+mod : ''}: ${rollString} = **${total}**`, type: 'roll', sender: senderName });
@@ -574,72 +495,37 @@ function App() {
   const handleGiveItem = (targetId: number, item: any) => {
       setEntities(prev => prev.map(ent => {
           if (ent.id !== targetId) return ent;
-          const newInventory = [...(ent.inventory || []), item];
-          socket.emit('updateEntityStatus', { entityId: targetId, updates: { inventory: newInventory }, roomId: ROOM_ID });
-          addLog({ text: `🎁 ${ent.name} recebeu ${item.quantity}x ${item.name}!`, type: 'info', sender: 'Sistema' });
-          return { ...ent, inventory: newInventory };
+          const newInventory = [...(ent.inventory || []), item]; socket.emit('updateEntityStatus', { entityId: targetId, updates: { inventory: newInventory }, roomId: ROOM_ID });
+          addLog({ text: `🎁 ${ent.name} recebeu ${item.quantity}x ${item.name}!`, type: 'info', sender: 'Sistema' }); return { ...ent, inventory: newInventory };
       }));
   };
 
   const handleDropLootOnMap = (item: Item, sourceId: number, x: number, y: number) => {
       setEntities(prev => prev.map(ent => {
           if (ent.id !== sourceId) return ent;
-          const newInv = (ent.inventory || []).filter(i => i.id !== item.id);
-          socket.emit('updateEntityStatus', { entityId: sourceId, updates: { inventory: newInv }, roomId: ROOM_ID });
-          return { ...ent, inventory: newInv };
+          const newInv = (ent.inventory || []).filter(i => i.id !== item.id); socket.emit('updateEntityStatus', { entityId: sourceId, updates: { inventory: newInv }, roomId: ROOM_ID }); return { ...ent, inventory: newInv };
       }));
-      const lootEntity: Entity = {
-          id: Date.now(), name: item.name, hp: 1, maxHp: 1, ac: 10, x: x, y: y, type: 'player', color: '#fbbf24', 
-          image: item.image, size: 0.5, conditions: [], stats: { str:0, dex:0, con:0, int:0, wis:0, cha:0 }, visible: true, inventory: [item], level: 0, classType: 'Item'
-      };
-      setEntities(prev => [...prev, lootEntity]);
-      socket.emit('createEntity', { entity: lootEntity, roomId: ROOM_ID });
-      addLog({ text: `🎒 ${item.name} foi jogado no chão!`, type: 'info', sender: 'Sistema' });
-      handlePlaySFX('dado', true); 
+      const lootEntity: Entity = { id: Date.now(), name: item.name, hp: 1, maxHp: 1, ac: 10, x: x, y: y, type: 'player', color: '#fbbf24', image: item.image, size: 0.5, conditions: [], stats: { str:0, dex:0, con:0, int:0, wis:0, cha:0 }, visible: true, inventory: [item], level: 0, classType: 'Item' };
+      setEntities(prev => [...prev, lootEntity]); socket.emit('createEntity', { entity: lootEntity, roomId: ROOM_ID }); addLog({ text: `🎒 ${item.name} foi jogado no chão!`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true); 
   };
 
   const handleGiveItemToToken = (item: Item, sourceId: number, targetId: number) => {
       if (sourceId === targetId) return; 
-      const sourceEntity = entities.find(e => e.id === sourceId);
-      const targetEntity = entities.find(e => e.id === targetId);
-      if (!sourceEntity || !targetEntity) return;
-
-      const sourceInv = (sourceEntity.inventory || []).filter(i => i.id !== item.id);
-      const targetInv = [...(targetEntity.inventory || []), { ...item, isEquipped: false }]; 
-
-      setEntities(prev => prev.map(ent => {
-          if (ent.id === sourceId) return { ...ent, inventory: sourceInv };
-          if (ent.id === targetId) return { ...ent, inventory: targetInv };
-          return ent;
-      }));
-
-      socket.emit('updateEntityStatus', { entityId: sourceId, updates: { inventory: sourceInv }, roomId: ROOM_ID });
-      socket.emit('updateEntityStatus', { entityId: targetId, updates: { inventory: targetInv }, roomId: ROOM_ID });
-      addLog({ text: `🤝 **${sourceEntity.name}** deu **${item.name}** para **${targetEntity.name}**.`, type: 'info', sender: 'Sistema' });
-      handlePlaySFX('dado', true);
+      const sourceEntity = entities.find(e => e.id === sourceId); const targetEntity = entities.find(e => e.id === targetId); if (!sourceEntity || !targetEntity) return;
+      const sourceInv = (sourceEntity.inventory || []).filter(i => i.id !== item.id); const targetInv = [...(targetEntity.inventory || []), { ...item, isEquipped: false }]; 
+      setEntities(prev => prev.map(ent => { if (ent.id === sourceId) return { ...ent, inventory: sourceInv }; if (ent.id === targetId) return { ...ent, inventory: targetInv }; return ent; }));
+      socket.emit('updateEntityStatus', { entityId: sourceId, updates: { inventory: sourceInv }, roomId: ROOM_ID }); socket.emit('updateEntityStatus', { entityId: targetId, updates: { inventory: targetInv }, roomId: ROOM_ID });
+      addLog({ text: `🤝 **${sourceEntity.name}** deu **${item.name}** para **${targetEntity.name}**.`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true);
   };
 
   const handlePickUpLoot = (lootEntity: Entity) => {
       let receiver: Entity | undefined;
-      if (role === 'PLAYER') { receiver = entities.find(e => e.name === playerName && e.type === 'player'); } 
-      else { if (targetEntityIds.length > 0) receiver = entities.find(e => e.id === targetEntityIds[0]); }
-
-      if (!receiver) {
-          setToastMsg({ text: role === 'DM' ? "Selecione um token (Alvo) para pegar o item." : "Você não tem um personagem para pegar isso.", id: Date.now() });
-          return;
-      }
-
-      const item = lootEntity.inventory && lootEntity.inventory[0];
-      if (!item) { handleDeleteEntity(lootEntity.id); return; }
-
+      if (role === 'PLAYER') { receiver = entities.find(e => e.name === playerName && e.type === 'player'); } else { if (targetEntityIds.length > 0) receiver = entities.find(e => e.id === targetEntityIds[0]); }
+      if (!receiver) { setToastMsg({ text: role === 'DM' ? "Selecione um token (Alvo) para pegar o item." : "Você não tem um personagem para pegar isso.", id: Date.now() }); return; }
+      const item = lootEntity.inventory && lootEntity.inventory[0]; if (!item) { handleDeleteEntity(lootEntity.id); return; }
       const newInventory = [...(receiver.inventory || []), item];
-      setEntities(prev => prev.map(ent => ent.id === receiver!.id ? { ...ent, inventory: newInventory } : ent));
-      socket.emit('updateEntityStatus', { entityId: receiver.id, updates: { inventory: newInventory }, roomId: ROOM_ID });
-
-      handleDeleteEntity(lootEntity.id);
-      setStatusSelectionId(null);
-      addLog({ text: `🎒 ${receiver.name} pegou ${item.name} do chão.`, type: 'info', sender: 'Sistema' });
-      handlePlaySFX('dado', true); 
+      setEntities(prev => prev.map(ent => ent.id === receiver!.id ? { ...ent, inventory: newInventory } : ent)); socket.emit('updateEntityStatus', { entityId: receiver.id, updates: { inventory: newInventory }, roomId: ROOM_ID });
+      handleDeleteEntity(lootEntity.id); setStatusSelectionId(null); addLog({ text: `🎒 ${receiver.name} pegou ${item.name} do chão.`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true); 
   };
 
   const handleContextMenuAction = (action: string, entity: Entity) => {
@@ -742,7 +628,6 @@ function App() {
 
   const handleSortInitiative = () => { const newList = [...initiativeList].sort((a, b) => b.value - a.value); setInitiativeList(newList); socket.emit('updateInitiative', { list: newList, activeTurnId, roomId: ROOM_ID }); };
   
-  // --- A MAGIA DE MIRA LIBERADA PARA OS JOGADORES ---
   const handleSetTarget = (id: number | number[] | null, multiSelect: boolean = false) => { 
       if (id === null) { if (!multiSelect) setTargetEntityIds([]); return; } 
       if (Array.isArray(id)) { setTargetEntityIds(multiSelect ? Array.from(new Set([...targetEntityIds, ...id])) : id); return; } 
@@ -832,8 +717,18 @@ function App() {
       {editingEntity && (<EditEntityModal entity={editingEntity} onSave={(id, updates) => { handleEditEntity(id, updates); setEditingEntity(null); }} onClose={() => setEditingEntity(null)} />)}
       <BaldursDiceRoller isOpen={showBgDice} onClose={() => setShowBgDice(false)} title={diceContext.title} subtitle={diceContext.subtitle} difficultyClass={diceContext.dc} baseModifier={diceContext.mod || 0} proficiency={diceContext.prof || 0} rollType={diceContext.rollType || 'normal'} extraBonuses={diceContext.bonuses} onComplete={handleDiceComplete} />
 
+      {/* --- MOBILE PLAYER SHEET ATUALIZADA (Recebe Chat!) --- */}
       {isMobilePlayer && myCharacter ? (
-          <MobilePlayerSheet character={myCharacter} onUpdateHP={handleUpdateHP} onRollAttribute={handleAttributeRoll} onOpenDiceRoller={openDiceRoller} onUpdateCharacter={handleEditEntity} />
+          <MobilePlayerSheet 
+              character={myCharacter} 
+              onUpdateHP={handleUpdateHP} 
+              onRollAttribute={handleAttributeRoll} 
+              onOpenDiceRoller={openDiceRoller} 
+              onUpdateCharacter={handleEditEntity} 
+              chatMessages={publicChatMessages}
+              onSendMessage={handleSendMessage}
+              onApplyDamageFromChat={handleApplyDamageFromChat}
+          />
       ) : (
           <>
             {selectedStatusEntity && (

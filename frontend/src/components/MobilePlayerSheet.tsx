@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Shield, Heart, Sword, Backpack, Dices, Zap, Circle, CheckCircle2, Star, Skull, Flame, BookOpen } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Shield, Heart, Sword, Backpack, Dices, Zap, Circle, CheckCircle2, Star, Skull, Flame, BookOpen, MessageSquare } from 'lucide-react';
 import { Entity } from '../App';
+import Chat, { ChatMessage } from './Chat';
 
 interface MobileSheetProps {
     character: Entity;
@@ -8,6 +9,9 @@ interface MobileSheetProps {
     onRollAttribute: (charName: string, attrName: string, mod: number) => void;
     onOpenDiceRoller?: () => void;
     onUpdateCharacter: (id: number, updates: Partial<Entity>) => void;
+    chatMessages: ChatMessage[];
+    onSendMessage: (text: string) => void;
+    onApplyDamageFromChat: (targetId: number, damageExpression: string) => void;
 }
 
 const SKILLS = [
@@ -28,8 +32,27 @@ const SAVING_THROWS = [
     { name: 'Sabedoria', attr: 'wis' }, { name: 'Carisma', attr: 'cha' }
 ];
 
-export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribute, onOpenDiceRoller, onUpdateCharacter }: MobileSheetProps) {
-    const [activeTab, setActiveTab] = useState<'STATUS' | 'ACTIONS' | 'INVENTORY' | 'SPELLS'>('STATUS');
+export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribute, onOpenDiceRoller, onUpdateCharacter, chatMessages, onSendMessage, onApplyDamageFromChat }: MobileSheetProps) {
+    const [activeTab, setActiveTab] = useState<'STATUS' | 'ACTIONS' | 'SPELLS' | 'INVENTORY' | 'CHAT'>('STATUS');
+    
+    // Novo estado para mostrar notificação de mensagens não lidas no chat
+    const [unreadMessages, setUnreadMessages] = useState(false);
+    const lastMessageCount = useRef(chatMessages.length);
+
+    useEffect(() => {
+        if (chatMessages.length > lastMessageCount.current) {
+            if (activeTab !== 'CHAT') {
+                setUnreadMessages(true);
+            }
+            lastMessageCount.current = chatMessages.length;
+        }
+    }, [chatMessages, activeTab]);
+
+    useEffect(() => {
+        if (activeTab === 'CHAT') {
+            setUnreadMessages(false);
+        }
+    }, [activeTab]);
 
     const level = character.level || 1;
     const profBonus = Math.ceil(1 + (level / 4)); 
@@ -97,7 +120,6 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
         });
     };
 
-    // --- NOVA MAGIA: Alternar Equipamento ---
     const toggleEquip = (itemId: string) => {
         const newInventory = character.inventory?.map(item => 
             item.id === itemId ? { ...item, isEquipped: !item.isEquipped } : item
@@ -185,7 +207,7 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                     </div>
                 </header>
 
-                <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-32 custom-scrollbar">
+                <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-32 custom-scrollbar relative">
                     
                     {activeTab === 'STATUS' && (
                         <div className="space-y-8 animate-in fade-in duration-300">
@@ -279,7 +301,6 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                                         const strMod = getMod(character.stats?.str || 10);
                                         const dexMod = getMod(character.stats?.dex || 10);
                                         
-                                        // Deteta se é Finesse ou à Distância pelo nome ou propriedades
                                         const wName = weapon.name.toLowerCase();
                                         const isFinesseOrRanged = 
                                             weapon.stats?.properties?.some(p => p.toLowerCase().includes('finesse') || p.toLowerCase().includes('distância') || p.toLowerCase().includes('ranged')) || 
@@ -393,38 +414,67 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                             </div>
                         </div>
                     )}
+
+                    {/* --- NOVA ABA: CHAT --- */}
+                    {activeTab === 'CHAT' && (
+                        <div className="flex flex-col h-full animate-in fade-in duration-300 -m-4 md:-m-8">
+                            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-900/50 sticky top-0 z-10">
+                                <h2 className="text-gray-400 uppercase tracking-[0.2em] text-xs font-bold">Registro de Combate</h2>
+                            </div>
+                            <div className="flex-1 w-full bg-black/60 min-h-[50vh]">
+                                <Chat 
+                                    messages={chatMessages} 
+                                    onSendMessage={onSendMessage} 
+                                    role="PLAYER" 
+                                    onApplyDamage={onApplyDamageFromChat} 
+                                />
+                            </div>
+                        </div>
+                    )}
                 </main>
 
-                <nav className="absolute bottom-0 left-0 w-full bg-black/95 backdrop-blur-xl border-t border-gray-800 flex justify-around items-end pb-6 pt-3 px-2 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] rounded-b-none md:rounded-b-3xl">
-                    <button onClick={() => setActiveTab('STATUS')} className={`flex flex-col items-center w-16 md:w-20 transition-colors hover:scale-105 ${activeTab === 'STATUS' ? 'text-amber-400' : 'text-gray-500'}`}>
-                        <Shield size={24} className={activeTab === 'STATUS' ? 'drop-shadow-[0_0_8px_rgba(251,191,36,0.8)]' : ''} />
-                        <span className="text-[9px] md:text-[10px] mt-1.5 font-bold uppercase tracking-wider">Status</span>
+                <nav className="absolute bottom-0 left-0 w-full bg-black/95 backdrop-blur-xl border-t border-gray-800 flex justify-around items-end pb-6 pt-3 px-1 md:px-2 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] rounded-b-none md:rounded-b-3xl">
+                    <button onClick={() => setActiveTab('STATUS')} className={`flex flex-col items-center w-14 md:w-20 transition-colors hover:scale-105 ${activeTab === 'STATUS' ? 'text-amber-400' : 'text-gray-500'}`}>
+                        <Shield size={22} className={activeTab === 'STATUS' ? 'drop-shadow-[0_0_8px_rgba(251,191,36,0.8)]' : ''} />
+                        <span className="text-[8px] md:text-[10px] mt-1 font-bold uppercase tracking-wider">Status</span>
                     </button>
                     
-                    <button onClick={() => setActiveTab('ACTIONS')} className={`flex flex-col items-center w-16 md:w-20 transition-colors hover:scale-105 ${activeTab === 'ACTIONS' ? 'text-blue-400' : 'text-gray-500'}`}>
-                        <Zap size={24} className={activeTab === 'ACTIONS' ? 'drop-shadow-[0_0_8px_rgba(96,165,250,0.8)]' : ''} />
-                        <span className="text-[9px] md:text-[10px] mt-1.5 font-bold uppercase tracking-wider">Ações</span>
+                    <button onClick={() => setActiveTab('ACTIONS')} className={`flex flex-col items-center w-14 md:w-20 transition-colors hover:scale-105 ${activeTab === 'ACTIONS' ? 'text-blue-400' : 'text-gray-500'}`}>
+                        <Zap size={22} className={activeTab === 'ACTIONS' ? 'drop-shadow-[0_0_8px_rgba(96,165,250,0.8)]' : ''} />
+                        <span className="text-[8px] md:text-[10px] mt-1 font-bold uppercase tracking-wider">Ações</span>
                     </button>
 
-                    <div className="relative -top-6 w-20 flex justify-center">
+                    <div className="relative -top-6 w-16 md:w-20 flex justify-center">
                         <button 
                             onClick={onOpenDiceRoller}
-                            className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-indigo-600 via-purple-700 to-indigo-900 rounded-full border-[4px] border-[#0a0a0a] flex items-center justify-center shadow-[0_0_30px_rgba(79,70,229,0.6)] hover:scale-105 active:scale-95 transition-all"
+                            className="w-14 h-14 md:w-20 md:h-20 bg-gradient-to-br from-indigo-600 via-purple-700 to-indigo-900 rounded-full border-[4px] border-[#0a0a0a] flex items-center justify-center shadow-[0_0_20px_rgba(79,70,229,0.5)] hover:scale-105 active:scale-95 transition-all"
                         >
-                            <Dices size={30} className="text-white drop-shadow-md" />
+                            <Dices size={26} className="text-white drop-shadow-md" />
                         </button>
                     </div>
 
-                    <button onClick={() => setActiveTab('SPELLS')} className={`flex flex-col items-center w-16 md:w-20 transition-colors hover:scale-105 ${activeTab === 'SPELLS' ? 'text-purple-400' : 'text-gray-500'}`}>
-                        <BookOpen size={24} className={activeTab === 'SPELLS' ? 'drop-shadow-[0_0_8px_rgba(192,132,252,0.8)]' : ''} />
-                        <span className="text-[9px] md:text-[10px] mt-1.5 font-bold uppercase tracking-wider">Magias</span>
+                    <button onClick={() => setActiveTab('SPELLS')} className={`flex flex-col items-center w-14 md:w-20 transition-colors hover:scale-105 ${activeTab === 'SPELLS' ? 'text-purple-400' : 'text-gray-500'}`}>
+                        <BookOpen size={22} className={activeTab === 'SPELLS' ? 'drop-shadow-[0_0_8px_rgba(192,132,252,0.8)]' : ''} />
+                        <span className="text-[8px] md:text-[10px] mt-1 font-bold uppercase tracking-wider">Magias</span>
                     </button>
-
-                    <button onClick={() => setActiveTab('INVENTORY')} className={`flex flex-col items-center w-16 md:w-20 transition-colors hover:scale-105 ${activeTab === 'INVENTORY' ? 'text-yellow-400' : 'text-gray-500'}`}>
-                        <Backpack size={24} className={activeTab === 'INVENTORY' ? 'drop-shadow-[0_0_8px_rgba(250,204,21,0.8)]' : ''} />
-                        <span className="text-[9px] md:text-[10px] mt-1.5 font-bold uppercase tracking-wider">Mochila</span>
+                    
+                    {/* Botão do Chat Substituiu a Mochila aqui, mas a mochila subiu para não desaparecer */}
+                    <button onClick={() => setActiveTab('CHAT')} className={`flex flex-col items-center w-14 md:w-20 transition-colors hover:scale-105 relative ${activeTab === 'CHAT' ? 'text-gray-200' : 'text-gray-500'}`}>
+                        <div className="relative">
+                            <MessageSquare size={22} className={activeTab === 'CHAT' ? 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : ''} />
+                            {unreadMessages && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-black animate-pulse"></span>}
+                        </div>
+                        <span className="text-[8px] md:text-[10px] mt-1 font-bold uppercase tracking-wider">Chat</span>
                     </button>
                 </nav>
+
+                {/* Botão flutuante para a Mochila (Inventário) para não perder o acesso */}
+                <button 
+                    onClick={() => setActiveTab('INVENTORY')}
+                    className={`absolute top-20 right-4 p-3 rounded-full shadow-xl transition-all z-20 border ${activeTab === 'INVENTORY' ? 'bg-yellow-600 text-black border-yellow-400' : 'bg-gray-900 border-gray-700 text-yellow-500 hover:scale-105'}`}
+                >
+                    <Backpack size={20} />
+                </button>
 
             </div>
         </div>
