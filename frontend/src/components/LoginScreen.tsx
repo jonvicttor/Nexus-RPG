@@ -37,7 +37,7 @@ interface LoginScreenProps {
   onLogin: (role: 'DM' | 'PLAYER', name: string, charData?: any) => void;
 }
 
-// --- COMPONENTES DE UI MOVIDOS PARA FORA PARA EVITAR BUG DO TECLADO ---
+// --- COMPONENTES DE UI ---
 const ArcaneContainer = ({ children, className = '', width = 'w-full md:w-[500px]' }: { children: React.ReactNode, className?: string, width?: string }) => (
   <div className={`relative ${width} p-1 rounded-3xl overflow-hidden group/container ${className} transition-all duration-500`}>
       <div className="absolute inset-0 bg-gradient-to-br from-amber-600/30 via-transparent to-blue-900/30 opacity-50 group-hover/container:opacity-100 transition-opacity duration-700"></div>
@@ -80,7 +80,7 @@ const StoneInput = (props: any) => (
 );
 
 const BackgroundWrapper = ({ children, isMuted, toggleMute }: { children: React.ReactNode, isMuted: boolean, toggleMute: () => void }) => (
-  <div className="relative w-screen h-[100dvh] flex items-center justify-center overflow-hidden bg-[#050505] font-serif">
+  <div className="relative w-screen h-[100dvh] flex flex-col overflow-hidden bg-[#050505] font-serif">
     <div 
       className="absolute inset-0 bg-cover bg-center opacity-60 animate-in fade-in duration-[2s]"
       style={{ backgroundImage: "url('/login-bg.jpg')" }}
@@ -93,11 +93,13 @@ const BackgroundWrapper = ({ children, isMuted, toggleMute }: { children: React.
       {isMuted ? <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>}
     </button>
     
-    <div className="relative z-10 flex items-center justify-center w-full h-full p-2 md:p-4 animate-in fade-in zoom-in duration-700 overflow-y-auto custom-scrollbar">
-      <div className="w-full max-w-full flex justify-center py-8">
+    {/* A MAGIA ACONTECEU AQUI: A rolagem agora flui lindamente sem travar no topo! */}
+    <div className="relative z-10 w-full h-full overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in duration-700">
+      <div className="m-auto w-full max-w-full flex justify-center py-8 px-2 md:px-4">
           {children}
       </div>
     </div>
+
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@400;600&display=swap');
       .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -433,7 +435,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         </div>
       )}
 
-      <ArcaneContainer width="w-full max-w-[1100px]" className="h-full md:h-[750px] !p-0 flex flex-col mx-4 md:mx-0 my-4 md:my-0">
+      <ArcaneContainer width="w-full max-w-[1100px]" className="h-auto md:h-[750px] !p-0 flex flex-col w-full">
         <div className="px-4 md:px-8 py-3 md:py-5 border-b-2 border-amber-900/30 flex justify-between items-center bg-black/40 flex-shrink-0 relative">
           <div className="flex items-center gap-2 md:gap-4">
               <div className="p-1.5 md:p-2 bg-amber-900/30 rounded-lg border border-amber-500/30 shadow-inner"><Scroll className="text-amber-500 w-5 h-5 md:w-6 md:h-6" /></div>
@@ -448,7 +450,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         </div>
 
         {/* --- CORREÇÃO DA ARMADILHA DE ROLAGEM AQUI --- */}
-        <div className="flex flex-col md:flex-row flex-1 overflow-y-auto custom-scrollbar md:overflow-hidden">
+        <div className="flex flex-col md:flex-row flex-1 md:overflow-hidden">
             {/* Secção Esquerda: Nome e Preview da Imagem */}
             <div className="w-full md:w-[350px] bg-black/20 md:border-r border-b md:border-b-0 border-white/5 flex flex-row md:flex-col items-center justify-center md:justify-start p-4 md:p-8 gap-4 md:gap-6 flex-shrink-0">
                 
@@ -544,7 +546,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
   if (step === 3 && role === 'PLAYER') return (
     <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
-      <ArcaneContainer width="w-full max-w-[900px]" className="h-full md:h-[650px] !p-0 flex flex-col mx-4 md:mx-0 my-4 md:my-0">
+      <ArcaneContainer width="w-full max-w-[900px]" className="h-auto md:h-[650px] !p-0 flex flex-col w-full">
         <div className="p-4 md:p-6 border-b-2 border-amber-900/30 flex justify-between items-center bg-black/40 flex-shrink-0">
           <div className="flex items-center gap-3 md:gap-4">
               <div className="p-1.5 md:p-2 bg-amber-900/30 rounded-lg border border-amber-500/30 shadow-inner"><Crown className="text-amber-500 w-5 h-5 md:w-6 md:h-6" /></div>
@@ -556,7 +558,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           </div>
         </div>
 
-        <div ref={statsScrollRef} className="p-4 md:p-8 flex flex-col h-full items-center justify-start overflow-y-auto custom-scrollbar bg-gradient-to-b from-transparent to-black/30 w-full">
+        <div ref={statsScrollRef} className="p-4 md:p-8 flex flex-col md:h-full items-center justify-start md:overflow-y-auto custom-scrollbar bg-gradient-to-b from-transparent to-black/30 w-full">
             <div className="text-center mb-6 md:mb-8 flex-shrink-0 relative">
               <div className="absolute inset-0 bg-amber-600/20 blur-[30px] md:blur-[50px] rounded-full -z-10"></div>
               <span className="text-[10px] md:text-sm text-amber-300/70 uppercase font-black tracking-[0.2em] md:tracking-[0.4em] drop-shadow-sm border-b border-amber-900/50 pb-1 md:pb-2 px-4 md:px-8">Pontos Restantes</span>
@@ -612,7 +614,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   if (role === 'DM') {
     if (step === 2) return (
         <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
-            <ArcaneContainer width="w-full max-w-[500px]" className="!p-8 md:!p-12 gap-8 md:gap-10 flex flex-col items-center border-red-900/30 mx-4 md:mx-0">
+            <ArcaneContainer width="w-full max-w-[500px]" className="!p-8 md:!p-12 gap-8 md:gap-10 flex flex-col items-center border-red-900/30 w-full">
                 <div className="absolute inset-0 bg-red-900/10 mix-blend-overlay pointer-events-none"></div>
                 <Crown size={60} className="text-red-500/50 drop-shadow-[0_0_15px_rgba(220,38,38,0.4)] w-12 h-12 md:w-[60px] md:h-[60px]" />
                 <div className="text-center space-y-2">
@@ -635,7 +637,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
     if (step === 4) return (
         <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
-            <ArcaneContainer width="w-full max-w-[600px]" className="!p-8 md:!p-12 gap-6 flex flex-col items-center border-red-900/30 mx-4 md:mx-0 animate-in fade-in zoom-in-95 duration-500">
+            <ArcaneContainer width="w-full max-w-[600px]" className="!p-8 md:!p-12 gap-6 flex flex-col items-center border-red-900/30 w-full animate-in fade-in zoom-in-95 duration-500">
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(220,38,38,0.15),transparent_70%)] pointer-events-none"></div>
                 
                 <div className="text-center space-y-2 mb-2 w-full">
