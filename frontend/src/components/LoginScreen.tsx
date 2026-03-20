@@ -374,7 +374,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 <label className="text-[10px] md:text-xs text-blue-300/70 uppercase font-black tracking-[0.15em] md:tracking-[0.25em] mb-2 md:mb-3 block ml-1 drop-shadow-sm">Já tenho um herói</label>
                 <div className="flex flex-col sm:flex-row gap-3 md:gap-4 relative items-stretch w-full">
                     <StoneInput 
-                        autoFocus 
                         placeholder="Nome exato do Personagem" 
                         value={name} 
                         onChange={(e: any) => setName(e.target.value)} 
@@ -444,7 +443,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 <div className="w-full space-y-1 md:space-y-2 flex-1">
                     <label className="text-[9px] md:text-[10px] text-amber-500/60 uppercase font-bold tracking-[0.1em] md:tracking-[0.2em] block text-left md:text-center">Nome da Lenda</label>
                     <input 
-                        autoFocus 
                         type="text" 
                         className="w-full bg-black/40 border-b border-amber-900/50 p-2 md:p-3 text-left md:text-center text-xl md:text-2xl text-amber-100 font-serif placeholder-white/10 outline-none focus:border-amber-500 transition-colors"
                         placeholder="Ex: Valerius" 
@@ -601,7 +599,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
              <div className="w-full h-[2px] bg-gradient-to-r from-transparent via-red-900/50 to-transparent"></div>
             <div className="w-full space-y-4 md:space-y-6 relative">
                 <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] md:tracking-[0.25em] mb-2 md:mb-3 block ml-1 drop-shadow-sm">Palavra de Poder</label>
-                <StoneInput autoFocus type="password" placeholder="••••••••••••" value={dmPass} onChange={(e: any) => setDmPass(e.target.value)} onKeyDown={(e: any) => e.key === 'Enter' && handleFinalSubmit()} className="!text-xl md:!text-3xl !p-3 md:!p-4 !border-red-900/50 focus:!border-red-400/80 !text-red-50 placeholder:!text-red-900/50 rounded-xl text-center tracking-[0.3em] md:tracking-[0.5em]"/>
+                <StoneInput autoFocus={false} type="password" placeholder="••••••••••••" value={dmPass} onChange={(e: any) => setDmPass(e.target.value)} onKeyDown={(e: any) => e.key === 'Enter' && handleFinalSubmit()} className="!text-xl md:!text-3xl !p-3 md:!p-4 !border-red-900/50 focus:!border-red-400/80 !text-red-50 placeholder:!text-red-900/50 rounded-xl text-center tracking-[0.3em] md:tracking-[0.5em]"/>
                 {error && <p className="text-red-300 text-xs md:text-sm animate-in fade-in slide-in-from-top-2 text-center bg-red-950/50 p-2 md:p-3 rounded-lg border border-red-500/30 shadow-md font-bold flex items-center justify-center gap-2"><XCircle size={16}/> {error}</p>}
             </div>
             <MetalButton onClick={handleFinalSubmit} fullWidth variant="red" className="py-4 md:py-6 text-xs md:text-sm bg-gradient-to-r from-red-900 via-red-800 to-red-950 border-red-500/40 shadow-red-900/30 text-red-50">
