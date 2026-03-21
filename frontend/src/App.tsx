@@ -14,7 +14,6 @@ import { getLevelFromXP } from './utils/gameRules';
 import ContextMenu from './components/ContextMenu'; 
 import MobilePlayerSheet from './components/MobilePlayerSheet'; 
 
-// ❌ REMOVIDO: const ROOM_ID = 'mesa-do-victor'; (Agora é dinâmico!)
 const GRID_SIZE = 70; 
 const CANVAS_WIDTH = 1920; 
 const CANVAS_HEIGHT = 1080; 
@@ -136,10 +135,7 @@ function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false); 
   const [role, setRole] = useState<'DM' | 'PLAYER'>('PLAYER'); 
   const [playerName, setPlayerName] = useState('');
-  
-  // ✅ NOVA MAGIA: O Room ID Dinâmico
   const [roomId, setRoomId] = useState<string>('');
-
   const [gamePhase, setGamePhase] = useState<'LOBBY' | 'GAME'>('LOBBY');
 
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -157,6 +153,8 @@ function App() {
   const [aoeColor, setAoEColor] = useState<string>('#ef4444'); 
   const [initModalEntity, setInitModalEntity] = useState<Entity | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  
+  // 👉 Esta variável controla a janela de status que queremos abrir com o Botão Direito!
   const [statusSelectionId, setStatusSelectionId] = useState<number | null>(null);
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
 
@@ -293,6 +291,11 @@ function App() {
         setToastMsg({ text: data.message, id: Date.now() });
     });
 
+    socket.on('gameStarted', () => {
+        setGamePhase('GAME');
+        addLog({ text: "A aventura começou! O Mestre abriu os portões.", type: 'info', sender: 'Sistema' });
+    });
+
     socket.on('newDiceResult', () => {
         if (!ignoreNextDiceSound.current) {
             playSound('dado');
@@ -359,6 +362,7 @@ function App() {
       socket.off('mapChanged'); socket.off('fogUpdated'); socket.off('fogGridSynced'); socket.off('initiativeUpdated'); 
       socket.off('triggerAudio'); socket.off('mapStateUpdated'); socket.off('globalBrightnessUpdated'); socket.off('dmRequestRoll');
       socket.off('playMusic'); socket.off('stopMusic'); socket.off('playSFX'); socket.off('mapPinged'); 
+      socket.off('gameStarted');
     };
   }, [isLoggedIn, addLog, role, playerName, handlePlayMusic, handleStopMusic, handlePlaySFX, playSound]); 
 
@@ -531,9 +535,16 @@ function App() {
       handleDeleteEntity(lootEntity.id); setStatusSelectionId(null); addLog({ text: `🎒 ${receiver.name} pegou ${item.name} do chão.`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true); 
   };
 
+  // 👇 LÓGICA DO MENU DE CONTEXTO ATUALIZADA 👇
   const handleContextMenuAction = (action: string, entity: Entity) => {
       switch (action) {
-          case 'VIEW_SHEET': if (role === 'DM') setEditingEntity(entity); else { setToastMsg({ text: `Visualizando ficha de ${entity.name} (Em breve)`, id: Date.now() }); } break;
+          case 'VIEW_STATUS': 
+              setStatusSelectionId(entity.id); // Abre a ficha de status
+              break;
+          case 'VIEW_SHEET': 
+              if (role === 'DM') setEditingEntity(entity); // DM abre a edição
+              else setStatusSelectionId(entity.id); 
+              break;
           case 'WHISPER': setPrivateChatTarget(entity.name); break;
           case 'SET_ATTACKER': setAttackerId(entity.id); break;
           case 'SET_TARGET': handleSetTarget(entity.id, true); break;
@@ -638,11 +649,8 @@ function App() {
   };
   
   const handleSetAttacker = (id: number | null) => { if (role !== 'DM') return; setAttackerId(id); };
-  const handleSelectEntityForStatus = (entity: Entity) => { setStatusSelectionId(entity.id); };
-  
-  // ✅ LOGICA DE LOGIN ATUALIZADA COM O ROOM_ID DINÂMICO
+
   const handleLogin = (selectedRole: 'DM' | 'PLAYER', name: string, charData?: any) => { 
-      // Extrai o Room ID que veio da tela de login (ou usa mesa-do-victor como último recurso seguro)
       const sessionRoomId = charData?.roomId || 'mesa-do-victor';
       setRoomId(sessionRoomId);
 
@@ -655,18 +663,27 @@ function App() {
       if (selectedRole === 'PLAYER' && charData) { 
           setTimeout(() => { 
               setEntities(prev => { 
-                  if (!prev.find(e => e.name.toLowerCase() === name.toLowerCase() && e.type === 'player')) { 
+                  const existing = prev.find(e => e.name.toLowerCase() === name.toLowerCase() && e.type === 'player');
+                  
+                  if (!existing) { 
                       const newEntity: Entity = { id: charData.id || Date.now(), name, hp: charData.hp, maxHp: charData.maxHp, ac: charData.ac, x: 8, y: 6, rotation: charData.rotation || 0, mirrored: charData.mirrored || false, conditions: charData.conditions || [], color: '#3b82f6', type: 'player', image: charData.image, stats: charData.stats, classType: charData.classType, visionRadius: charData.visionRadius || 9, size: charData.size || 1, xp: charData.xp || 0, level: charData.level || 1, inventory: charData.inventory || [], race: charData.race || 'Humano', visible: charData.visible !== false, proficiencies: charData.proficiencies || {}, deathSaves: charData.deathSaves || { successes: 0, failures: 0 }, inspiration: charData.inspiration || false, spellSlots: charData.spellSlots || {}, spells: charData.spells || [], coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; 
                       socket.emit('createEntity', { entity: newEntity, roomId: sessionRoomId }); 
                       return [...prev, newEntity]; 
-                  } 
+                  } else {
+                      if (charData.id && charData.id !== existing.id) {
+                          charData.id = existing.id;
+                          localStorage.setItem('nexus_last_char', JSON.stringify(charData));
+                      }
+                  }
                   return prev; 
               }); 
           }, 1500); 
       } 
   };
   
-  const handleStartGame = () => { setGamePhase('GAME'); addLog({ text: "A aventura começou!", type: 'info', sender: 'Sistema' }); };
+  const handleStartGame = () => { 
+      socket.emit('startGame', { roomId }); 
+  };
 
   const selectedStatusEntity = statusSelectionId ? entities.find(e => e.id === statusSelectionId) : null;
   let modalPosition = { top: 0, left: 0 };
@@ -677,7 +694,6 @@ function App() {
 
   if (!isLoggedIn) return <LoginScreen onLogin={handleLogin} />;
   
-  // Passamos o roomId pro Lobby exibir!
   if (gamePhase === 'LOBBY') return <Lobby availableCharacters={entities.filter(e => e.type === 'player')} onStartGame={handleStartGame} myPlayerName={playerName} roomCode={roomId} />;
 
   const isMobilePlayer = role === 'PLAYER' && windowSize.w <= 1024;
@@ -747,7 +763,6 @@ function App() {
       {editingEntity && (<EditEntityModal entity={editingEntity} onSave={(id, updates) => { handleEditEntity(id, updates); setEditingEntity(null); }} onClose={() => setEditingEntity(null)} />)}
       <BaldursDiceRoller isOpen={showBgDice} onClose={() => setShowBgDice(false)} title={diceContext.title} subtitle={diceContext.subtitle} difficultyClass={diceContext.dc} baseModifier={diceContext.mod || 0} proficiency={diceContext.prof || 0} rollType={diceContext.rollType || 'normal'} extraBonuses={diceContext.bonuses} onComplete={handleDiceComplete} />
 
-      {/* --- MOBILE PLAYER SHEET ATUALIZADA (Recebe Chat!) --- */}
       {isMobilePlayer && myCharacter ? (
           <MobilePlayerSheet 
               character={myCharacter} 
@@ -811,8 +826,10 @@ function App() {
                     mapUrl={currentMap} gridSize={GRID_SIZE} entities={entities} role={role} fogGrid={fogGrid} isFogMode={isFogMode} fogTool={fogTool} activeTurnId={activeTurnId}
                     onFogUpdate={handleFogUpdate} onFogBulkUpdate={handleFogBulkUpdate} fogShape={fogShape}
                     onMoveToken={handleUpdatePosition} onAddToken={handleMapDrop} onRotateToken={handleRotateToken}
+                    // 👇 AQUI A MAGIA QUE IGNORA O CLIQUE ESQUERDO 👇
+                    onSelectEntity={() => {}} 
                     onResizeToken={handleResizeToken} onTokenDoubleClick={handleAddToInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget}
-                    onSetAttacker={handleSetAttacker} onFlipToken={handleFlipToken} activeAoE={activeAoE} onAoEComplete={() => setActiveAoE(null)} aoeColor={aoeColor} onSelectEntity={handleSelectEntityForStatus}
+                    onSetAttacker={handleSetAttacker} onFlipToken={handleFlipToken} activeAoE={activeAoE} onAoEComplete={() => setActiveAoE(null)} aoeColor={aoeColor} 
                     externalOffset={mapOffset} externalScale={mapScale} onMapChange={handleMapSync} focusEntity={focusEntity} globalBrightness={globalBrightness}
                     onDropItem={handleDropLootOnMap} onGiveItemToToken={handleGiveItemToToken} onContextMenu={(e, entity) => { setContextMenu({ x: e.clientX, y: e.clientY, entity }); }} pings={pings} onPing={handlePingMap}
                 />

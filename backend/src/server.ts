@@ -22,7 +22,7 @@ const GRID_SIZE = 70;
 const COLS = Math.ceil(MAP_LIMIT / GRID_SIZE);
 const ROWS = Math.ceil(MAP_LIMIT / GRID_SIZE);
 
-const createInitialFog = () => Array(ROWS).fill(null).map(() => Array(COLS).fill(false));
+const createInitialFog = (): boolean[][] => Array(ROWS).fill(null).map(() => Array(COLS).fill(false));
 
 // --- 2. ESTADO INICIAL ---
 interface GameState {
@@ -39,51 +39,60 @@ interface GameState {
 
 const DATA_FILE = path.join(process.cwd(), 'savegame_v2.json');
 
-let currentGameState: GameState = {
-  entities: [], 
-  fogGrid: createInitialFog(), 
-  currentMap: '/maps/floresta.jpg',
-  initiativeList: [],
-  activeTurnId: null,
-  chatHistory: [],
-  customMonsters: [], 
-  globalBrightness: 1,
-  weather: 'none'
+// Gestão de estado por Sala
+let roomsState: Record<string, GameState> = {}; 
+
+const getRoomState = (roomId: string): GameState => {
+    if (!roomsState[roomId]) {
+        roomsState[roomId] = {
+            entities: [], 
+            fogGrid: createInitialFog(), 
+            currentMap: '/maps/floresta.jpg',
+            initiativeList: [],
+            activeTurnId: null,
+            chatHistory: [],
+            customMonsters: [],    
+            globalBrightness: 1,
+            weather: 'none'
+        };
+        // Se for a sala principal padrão do save (mesa-do-victor), carregamos os dados do ficheiro
+        if (roomId === 'mesa-do-victor' && fs.existsSync(DATA_FILE)) {
+             try {
+                const rawData = fs.readFileSync(DATA_FILE, 'utf-8');
+                const loadedData = JSON.parse(rawData);
+                roomsState[roomId] = { 
+                    ...roomsState[roomId], 
+                    ...loadedData,
+                    customMonsters: loadedData.customMonsters || [],
+                    weather: loadedData.weather || 'none'
+                };
+                console.log(`✅ SAVE CARREGADO COM SUCESSO PARA A SALA: ${roomId}`);
+              } catch (e) {
+                console.error(`❌ ERRO AO LER SAVE PARA A SALA ${roomId}:`, e);
+              }
+        }
+    }
+    return roomsState[roomId];
 };
 
-// --- 3. CARREGAR SAVE ---
-if (fs.existsSync(DATA_FILE)) {
-  try {
-    const rawData = fs.readFileSync(DATA_FILE, 'utf-8');
-    const loadedData = JSON.parse(rawData);
-    
-    currentGameState = { 
-        ...currentGameState, 
-        ...loadedData,
-        customMonsters: loadedData.customMonsters || [],
-        weather: loadedData.weather || 'none'
-    };
-    console.log('✅ SAVE CARREGADO COM SUCESSO.');
-  } catch (e) {
-    console.error('❌ ERRO AO LER SAVE:', e);
-  }
-}
 
 // --- 4. EVENTOS DO SOCKET ---
 io.on('connection', (socket) => {
   console.log('🔌 Nova conexão:', socket.id);
 
-  // Sincroniza ao entrar
-  socket.on('joinRoom', (roomId) => {
+  // Sincroniza ao entrar na sala específica
+  socket.on('joinRoom', (roomId: string) => {
     socket.join(roomId);
-    socket.emit('gameStateSync', currentGameState);
+    const roomState = getRoomState(roomId);
+    socket.emit('gameStateSync', roomState);
     console.log(`👤 Usuário entrou na sala: ${roomId}`);
   });
 
-  // FIX: VERIFICAÇÃO DE PERSONAGEM (Isso evita o carregamento infinito)
-  socket.on('checkExistingCharacter', (data) => {
-    console.log(`🔎 Verificando existência de: ${data.name}`);
-    const existingChar = currentGameState.entities.find(
+  // VERIFICAÇÃO DE PERSONAGEM
+  socket.on('checkExistingCharacter', (data: any) => {
+    console.log(`🔎 Verificando existência de: ${data.name} na sala ${data.roomId}`);
+    const roomState = getRoomState(data.roomId);
+    const existingChar = roomState.entities.find(
       (e: any) => e.type === 'player' && e.name.toLowerCase() === data.name.toLowerCase()
     );
     if (existingChar) {
@@ -93,31 +102,39 @@ io.on('connection', (socket) => {
     }
   });
 
+  // INICIAR A PARTIDA PARA TODOS DA SALA
+  socket.on('startGame', (data: any) => {
+      io.in(data.roomId).emit('gameStarted');
+  });
+
   // CLIMA E ANIMAÇÕES
-  socket.on('updateWeather', (data) => {
-      currentGameState.weather = data.weather;
+  socket.on('updateWeather', (data: any) => {
+      const roomState = getRoomState(data.roomId);
+      roomState.weather = data.weather;
       io.in(data.roomId).emit('weatherUpdated', { weather: data.weather });
   });
 
-  socket.on('triggerCombatAnimation', (data) => {
+  socket.on('triggerCombatAnimation', (data: any) => {
       io.in(data.roomId).emit('triggerCombatAnimation', data);
   });
 
-  socket.on('pingMap', (data) => {
+  socket.on('pingMap', (data: any) => {
       socket.to(data.roomId).emit('mapPinged', data);
   });
 
   // MAPA E SAVE
-  socket.on('changeMap', (data) => {
+  socket.on('changeMap', (data: any) => {
+    const roomState = getRoomState(data.roomId);
     const newFog = createInitialFog();
-    currentGameState.currentMap = data.mapUrl;
-    currentGameState.fogGrid = newFog;
+    roomState.currentMap = data.mapUrl;
+    roomState.fogGrid = newFog;
     io.in(data.roomId).emit('mapChanged', { mapUrl: data.mapUrl, fogGrid: newFog });
   });
 
-  socket.on('saveGame', (data) => {
-    currentGameState = {
-        ...currentGameState,
+  socket.on('saveGame', (data: any) => {
+    const roomState = getRoomState(data.roomId);
+    roomsState[data.roomId] = {
+        ...roomState,
         entities: data.entities,
         fogGrid: data.fogGrid,
         currentMap: data.currentMap,
@@ -126,100 +143,112 @@ io.on('connection', (socket) => {
         chatHistory: data.chatMessages || [],
         customMonsters: data.customMonsters || [],
         globalBrightness: data.globalBrightness,
-        weather: data.weather || currentGameState.weather
+        weather: data.weather || roomState.weather
     };
 
-    try {
-      fs.writeFileSync(DATA_FILE, JSON.stringify(currentGameState, null, 2));
-      io.in(data.roomId).emit('notification', { message: 'Mundo salvo com sucesso!' });
-    } catch (err) {
-      console.error("❌ ERRO AO GRAVAR ARQUIVO:", err);
+    // Apenas salva no disco a sala principal por enquanto
+    if (data.roomId === 'mesa-do-victor') {
+        try {
+          fs.writeFileSync(DATA_FILE, JSON.stringify(roomsState[data.roomId], null, 2));
+          io.in(data.roomId).emit('notification', { message: 'Mundo salvo com sucesso!' });
+        } catch (err) {
+          console.error("❌ ERRO AO GRAVAR ARQUIVO:", err);
+        }
+    } else {
+        io.in(data.roomId).emit('notification', { message: 'Sessão atualizada (Salas adicionais são apagadas ao reiniciar o servidor).' });
     }
   });
 
   // ENTIDADES E POSIÇÃO
-  socket.on('updateEntityPosition', (data) => {
-    const ent = currentGameState.entities.find((e: any) => e.id === data.entityId);
+  socket.on('updateEntityPosition', (data: any) => {
+    const roomState = getRoomState(data.roomId);
+    const ent = roomState.entities.find((e: any) => e.id === data.entityId);
     if (ent) { ent.x = data.x; ent.y = data.y; }
     socket.to(data.roomId).emit('entityPositionUpdated', data);
   });
 
-  socket.on('updateEntityStatus', (data) => {
-    const index = currentGameState.entities.findIndex((e: any) => e.id === data.entityId);
+  socket.on('updateEntityStatus', (data: any) => {
+    const roomState = getRoomState(data.roomId);
+    const index = roomState.entities.findIndex((e: any) => e.id === data.entityId);
     if (index !== -1) {
-      currentGameState.entities[index] = { ...currentGameState.entities[index], ...data.updates };
+      roomState.entities[index] = { ...roomState.entities[index], ...data.updates };
     }
     socket.to(data.roomId).emit('entityStatusUpdated', data);
   });
 
-  socket.on('createEntity', (data) => {
-    const exists = currentGameState.entities.find((e: any) => e.id === data.entity.id);
+  socket.on('createEntity', (data: any) => {
+    const roomState = getRoomState(data.roomId);
+    const exists = roomState.entities.find((e: any) => e.id === data.entity.id);
     if (!exists) {
-        currentGameState.entities.push(data.entity);
+        roomState.entities.push(data.entity);
         socket.to(data.roomId).emit('entityCreated', data);
     }
   });
 
-  socket.on('deleteEntity', (data) => {
-    currentGameState.entities = currentGameState.entities.filter((e: any) => e.id !== data.entityId);
+  socket.on('deleteEntity', (data: any) => {
+    const roomState = getRoomState(data.roomId);
+    roomState.entities = roomState.entities.filter((e: any) => e.id !== data.entityId);
     socket.to(data.roomId).emit('entityDeleted', data);
   });
 
   // BRILHO, NEBLINA E INICIATIVA
-  socket.on('updateGlobalBrightness', (data) => {
-      currentGameState.globalBrightness = data.brightness;
+  socket.on('updateGlobalBrightness', (data: any) => {
+      const roomState = getRoomState(data.roomId);
+      roomState.globalBrightness = data.brightness;
       io.in(data.roomId).emit('globalBrightnessUpdated', { brightness: data.brightness });
   });
 
-  socket.on('updateFog', (data) => {
-    if (currentGameState.fogGrid[data.y]) {
-      currentGameState.fogGrid[data.y][data.x] = data.shouldReveal;
+  socket.on('updateFog', (data: any) => {
+    const roomState = getRoomState(data.roomId);
+    if (roomState.fogGrid[data.y]) {
+      roomState.fogGrid[data.y][data.x] = data.shouldReveal;
     }
     socket.to(data.roomId).emit('fogUpdated', data);
   });
 
   // SINCRONIZAÇÃO
-  socket.on('syncFogGrid', (data) => {
-    currentGameState.fogGrid = data.grid;
+  socket.on('syncFogGrid', (data: any) => {
+    const roomState = getRoomState(data.roomId);
+    roomState.fogGrid = data.grid;
     socket.to(data.roomId).emit('fogGridSynced', data);
   });
 
-  socket.on('syncMapState', (data) => {
+  socket.on('syncMapState', (data: any) => {
     socket.to(data.roomId).emit('mapStateUpdated', {
       offset: data.offset,
       scale: data.scale
     });
   });
 
-  socket.on('updateInitiative', (data) => {
-    currentGameState.initiativeList = data.list;
-    currentGameState.activeTurnId = data.activeTurnId;
+  socket.on('updateInitiative', (data: any) => {
+    const roomState = getRoomState(data.roomId);
+    roomState.initiativeList = data.list;
+    roomState.activeTurnId = data.activeTurnId;
     socket.to(data.roomId).emit('initiativeUpdated', data);
   });
 
   // --- CHAT, DADOS E ÁUDIO ---
-  socket.on('sendMessage', (data) => {
-    currentGameState.chatHistory.push(data.message);
-    if (currentGameState.chatHistory.length > 50) currentGameState.chatHistory.shift();
+  socket.on('sendMessage', (data: any) => {
+    const roomState = getRoomState(data.roomId);
+    roomState.chatHistory.push(data.message);
+    if (roomState.chatHistory.length > 50) roomState.chatHistory.shift();
     io.in(data.roomId).emit('chatMessage', data);
   });
 
-  // 👇 NOVA MAGIA AQUI: O Chat Exclusivo da Taverna (Lobby) 👇
-  socket.on('sendLobbyMessage', (msgData) => {
-    // Ao receber de um jogador, repassa (broadcast) para todos os outros
-    socket.broadcast.emit('receiveLobbyMessage', msgData);
+  socket.on('sendLobbyMessage', (msgData: any) => {
+    // Repassa (broadcast) apenas para quem está na mesma roomId
+    socket.to(msgData.roomId).emit('receiveLobbyMessage', msgData);
   });
-  // 👆 -------------------------------------------------------- 👆
 
-  socket.on('rollDice', (data) => { 
+  socket.on('rollDice', (data: any) => { 
     io.in(data.roomId).emit('newDiceResult', data); 
   });
 
-  socket.on('triggerAudio', (data) => { 
+  socket.on('triggerAudio', (data: any) => { 
     io.to(data.roomId).emit('triggerAudio', data); 
   });
 
-  socket.on('dmRequestRoll', (data) => {
+  socket.on('dmRequestRoll', (data: any) => {
     io.in(data.roomId).emit('dmRequestRoll', data);
   });
 });

@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { Entity } from '../App';
-import { Skull, MessageSquare, Shield, Sword, User, Eye, EyeOff, Heart } from 'lucide-react';
+import { Shield, Eye, EyeOff, Target, Swords, HeartPulse, Skull, MessageSquare, FileText } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -12,59 +12,49 @@ interface ContextMenuProps {
 }
 
 const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, entity, role, onClose, onAction }) => {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  // Fecha se clicar fora
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
-
-  // Ajusta posição se sair da tela (Básico)
-  const style = {
-    top: Math.min(y, window.innerHeight - 300),
-    left: Math.min(x, window.innerWidth - 200),
-  };
-
-  const MenuItem = ({ icon: Icon, label, action, danger = false, color = "text-gray-300" }: any) => (
-    <button 
-      onClick={() => { onAction(action, entity); onClose(); }}
-      className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold uppercase tracking-wider hover:bg-white/10 transition-colors text-left ${danger ? 'text-red-400 hover:text-red-300' : color}`}
-    >
-      <Icon size={14} />
-      {label}
-    </button>
-  );
+  // Ajusta a posição para o menu não sair da tela
+  const menuX = x + 200 > window.innerWidth ? x - 200 : x;
+  const menuY = y + 300 > window.innerHeight ? y - 300 : y;
 
   return (
     <div 
-      ref={menuRef}
-      className="fixed z-[9999] w-48 bg-[#1a1a1a] border border-[#d4af37]/30 rounded-lg shadow-[0_0_20px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col py-1 animate-in fade-in zoom-in duration-100"
-      style={style}
-      onContextMenu={(e) => e.preventDefault()}
+      className="fixed z-[9999] bg-gray-900/95 backdrop-blur-md border border-cyan-900/50 rounded-xl shadow-2xl py-2 w-56 text-sm text-gray-200 overflow-hidden"
+      style={{ top: menuY, left: menuX }}
+      onMouseLeave={onClose}
     >
-      <div className="px-4 py-2 border-b border-white/10 mb-1">
-        <span className="text-[#d4af37] font-serif font-bold text-sm truncate block">{entity.name}</span>
-        <span className="text-[9px] text-gray-500 uppercase">{entity.classType || 'Desconhecido'}</span>
-      </div>
-
-      <MenuItem icon={User} label="Ver Ficha" action="VIEW_SHEET" color="text-blue-300" />
-      <MenuItem icon={MessageSquare} label="Sussurrar" action="WHISPER" />
+      {/* 👇 NOVA MAGIA AQUI: Botão de Ver Status / Ficha 👇 */}
+      <button onClick={() => onAction('VIEW_STATUS', entity)} className="w-full text-left px-4 py-2.5 hover:bg-cyan-900/40 flex items-center gap-3 transition-colors border-b border-white/5">
+        <FileText size={16} className="text-cyan-400" /> Ver Ficha / Status
+      </button>
       
       {role === 'DM' && (
+        <button onClick={() => onAction('VIEW_SHEET', entity)} className="w-full text-left px-4 py-2.5 hover:bg-yellow-900/40 flex items-center gap-3 transition-colors border-b border-white/5">
+          <Shield size={16} className="text-yellow-500" /> Editar Atributos
+        </button>
+      )}
+      
+      <button onClick={() => onAction('WHISPER', entity)} className="w-full text-left px-4 py-2.5 hover:bg-pink-900/40 flex items-center gap-3 transition-colors border-b border-white/5">
+        <MessageSquare size={16} className="text-pink-400" /> Sussurrar
+      </button>
+
+      <button onClick={() => onAction('SET_TARGET', entity)} className="w-full text-left px-4 py-2.5 hover:bg-red-900/40 flex items-center gap-3 transition-colors border-b border-white/5">
+        <Target size={16} className="text-red-400" /> Marcar como Alvo
+      </button>
+
+      {role === 'DM' && (
         <>
-          <div className="h-px w-full bg-white/10 my-1"></div>
-          <MenuItem icon={Sword} label="Definir Atacante" action="SET_ATTACKER" color="text-blue-400" />
-          <MenuItem icon={Shield} label="Definir Alvo" action="SET_TARGET" color="text-red-400" />
-          <div className="h-px w-full bg-white/10 my-1"></div>
-          <MenuItem icon={entity.visible ? EyeOff : Eye} label={entity.visible ? "Ocultar Token" : "Revelar Token"} action="TOGGLE_VISIBILITY" />
-          <MenuItem icon={Heart} label="Curar Total" action="HEAL_FULL" color="text-green-400" />
-          <MenuItem icon={Skull} label={entity.hp > 0 ? "Matar" : "Reviver"} action="TOGGLE_DEAD" danger={entity.hp > 0} />
+          <button onClick={() => onAction('SET_ATTACKER', entity)} className="w-full text-left px-4 py-2.5 hover:bg-orange-900/40 flex items-center gap-3 transition-colors">
+            <Swords size={16} className="text-orange-400" /> Definir Atacante
+          </button>
+          <button onClick={() => onAction('TOGGLE_VISIBILITY', entity)} className="w-full text-left px-4 py-2.5 hover:bg-gray-800 flex items-center gap-3 transition-colors">
+            {entity.visible ? <EyeOff size={16} className="text-gray-400" /> : <Eye size={16} className="text-gray-300" />} {entity.visible ? 'Ocultar' : 'Revelar'}
+          </button>
+          <button onClick={() => onAction('HEAL_FULL', entity)} className="w-full text-left px-4 py-2.5 hover:bg-green-900/40 flex items-center gap-3 transition-colors">
+            <HeartPulse size={16} className="text-green-400" /> Curar 100%
+          </button>
+          <button onClick={() => onAction('TOGGLE_DEAD', entity)} className="w-full text-left px-4 py-2.5 hover:bg-purple-900/40 flex items-center gap-3 transition-colors">
+            <Skull size={16} className="text-purple-400" /> {entity.hp > 0 ? 'Matar (0 HP)' : 'Ressuscitar (1 HP)'}
+          </button>
         </>
       )}
     </div>
