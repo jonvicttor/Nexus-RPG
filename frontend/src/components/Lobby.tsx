@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Entity } from '../App';
 import { Shield, Crown, CheckCircle2, XCircle, User, Heart, Clipboard, Check, Sparkles, Send, Lock, MessageSquare, Sword, Info } from 'lucide-react';
 import { Howl } from 'howler';
+import socket from '../services/socket'; // 👈 MAGIA DO CHAT RESTAURADA
 
 interface PlayerEntity extends Entity {
     race?: string;
@@ -14,7 +15,7 @@ interface LobbyProps {
   myPlayerName: string;
   chatMessages?: { sender: string; text: string; timestamp?: string }[];
   onSendMessage?: (text: string) => void;
-  roomCode?: string; // NOVO: Recebe a chave da sala real do App.tsx
+  roomCode?: string;
 }
 
 // --- GLASSMORPHISM PANEL REFINADO ---
@@ -67,11 +68,22 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
   const titleFont = { fontFamily: '"Uncial Antiqua", serif' };
   const textFont = { fontFamily: '"Crimson Text", serif' };
   
-  // Exibe o código da sala real (ou um fallback se o App.tsx ainda não o estiver passando)
+  // Utiliza o roomCode real que vem do App, ou um genérico de fallback.
   const displayRoomCode = roomCode || "SALA-SECRETA"; 
 
-  // Verifica se o jogador atual é o Mestre Supremo (ou contém Mestre)
+  // Verifica se o jogador atual é o Mestre
   const isDM = myPlayerName === 'Mestre Supremo' || myPlayerName === 'Mestre' || myPlayerName?.includes('Mestre');
+
+  // --- NOVA MAGIA DO CHAT ATIVADA ---
+  useEffect(() => {
+    socket.on('receiveLobbyMessage', (msgData) => {
+        // Verifica se a mensagem pertence a esta sala
+        if (msgData.roomId === displayRoomCode) {
+            setLocalChat(prev => [...prev, msgData]);
+        }
+    });
+    return () => { socket.off('receiveLobbyMessage'); };
+  }, [displayRoomCode]);
 
   useEffect(() => {
     const sound = new Howl({
@@ -96,10 +108,19 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
   const handleSendChat = (e: React.FormEvent) => {
       e.preventDefault();
       if(!chatInput.trim()) return;
+      
+      const newMsg = { 
+          sender: myPlayerName || 'Jogador', 
+          text: chatInput, 
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          roomId: displayRoomCode // Amarrar mensagem à sala
+      };
+
       if (onSendMessage) {
           onSendMessage(chatInput);
       } else {
-          setLocalChat(prev => [...prev, { sender: myPlayerName || 'Jogador', text: chatInput, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
+          socket.emit('sendLobbyMessage', newMsg);
+          setLocalChat(prev => [...prev, newMsg]);
       }
       setChatInput('');
   };
@@ -113,6 +134,7 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
   const displayChat = chatMessages || localChat;
 
   return (
+    // CORREÇÃO DO SCROLL MOBILE: items-start obriga o topo a ficar no ecrã, libertando a página para rolar!
     <div className="w-full min-h-[100dvh] bg-[#0d0b09] flex items-start lg:items-center justify-center p-4 md:p-6 overflow-y-auto overflow-x-hidden relative custom-scrollbar bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/images/tavern-bg.jpg')" }}>
       
       <TavernSparks />
@@ -122,6 +144,7 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
           <div className="absolute -bottom-1/4 left-1/2 -translate-x-1/2 w-full h-3/4 bg-gradient-to-t from-amber-700/20 via-amber-950/10 to-transparent blur-[100px] opacity-80 z-0"></div>
       </div>
 
+      {/* Margem no topo no mobile (py-8) garante espaço extra */}
       <div className="max-w-[1300px] w-full flex flex-col lg:grid lg:grid-cols-12 gap-5 relative z-10 py-8 lg:py-0 lg:h-[90vh]">
         
         {/* === COLUNA ESQUERDA === */}

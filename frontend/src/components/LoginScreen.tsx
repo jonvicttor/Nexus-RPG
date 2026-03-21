@@ -116,7 +116,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const [loginIntent, setLoginIntent] = useState<'LOGIN' | 'CREATE'>('CREATE'); 
   const [name, setName] = useState('');
   
-  // Código da Sala para o Jogador
+  // Código da Sala
   const [playerRoomId, setPlayerRoomId] = useState('');
 
   const [dmPass, setDmPass] = useState('');
@@ -481,8 +481,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         </div>
       )}
 
-      <ArcaneContainer width="w-full max-w-[1100px]" className="h-auto md:h-[750px] !p-0 flex flex-col w-full">
-        <div className="px-4 md:px-8 py-3 md:py-5 border-b-2 border-amber-900/30 flex justify-between items-center bg-black/40 flex-shrink-0 relative">
+      {/* CORREÇÃO AQUI: Garante que a altura é respeitada e o botão não corta */}
+      <ArcaneContainer width="w-full max-w-[1100px]" className="h-[90vh] md:h-[750px] !p-0 flex flex-col w-full">
+        {/* Cabeçalho */}
+        <div className="px-4 md:px-8 py-3 md:py-5 border-b-2 border-amber-900/30 flex justify-between items-center bg-black/40 shrink-0 relative">
           <div className="flex items-center gap-2 md:gap-4">
               <div className="p-1.5 md:p-2 bg-amber-900/30 rounded-lg border border-amber-500/30 shadow-inner"><Scroll className="text-amber-500 w-5 h-5 md:w-6 md:h-6" /></div>
               <h2 className="text-xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-100 to-amber-500 tracking-[0.1em] md:tracking-[0.2em] drop-shadow-md" style={{ fontFamily: 'Cinzel Decorative' }}>FORJAR HERÓI</h2>
@@ -495,10 +497,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row flex-1 md:overflow-hidden">
-            <div className="w-full md:w-[350px] bg-black/20 md:border-r border-b md:border-b-0 border-white/5 flex flex-row md:flex-col items-center justify-center md:justify-start p-4 md:p-8 gap-4 md:gap-6 flex-shrink-0">
-                
-                <div className="relative group cursor-pointer flex-shrink-0" onClick={() => setShowFullImage(true)}>
+        {/* Meio (Rolável) */}
+        <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-y-auto md:overflow-hidden">
+            <div className="w-full md:w-[350px] bg-black/20 md:border-r border-b md:border-b-0 border-white/5 flex flex-row md:flex-col items-center justify-center md:justify-start p-4 md:p-8 gap-4 md:gap-6 shrink-0">
+                <div className="relative group cursor-pointer shrink-0" onClick={() => setShowFullImage(true)}>
                     <div className="absolute inset-0 bg-amber-500/10 blur-[40px] rounded-full animate-pulse"></div>
                     <div className="w-24 h-24 sm:w-32 sm:h-32 md:w-48 md:h-48 rounded-full border-2 md:border-4 border-amber-600/60 overflow-hidden bg-black shadow-[0_0_40px_rgba(0,0,0,0.8)] relative z-10 hover:border-amber-400 transition-colors">
                         <img src={getDynamicTokenImage(selectedRace, selectedClass)} alt="Token" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = '/tokens/aliado.png')} />
@@ -525,8 +527,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 </div>
             </div>
 
-            <div className="flex-1 flex flex-col md:flex-row p-4 md:p-8 gap-4 md:gap-6 h-auto md:h-full md:overflow-hidden">
-                
+            <div className="flex-1 flex flex-col md:flex-row p-4 md:p-8 gap-4 md:gap-6 min-h-0 md:overflow-hidden">
                 <div className="flex flex-col md:flex-1 min-h-0">
                     <h3 className="text-amber-500/80 font-bold uppercase tracking-[0.15em] md:tracking-[0.2em] text-[10px] md:text-xs mb-2 md:mb-3 flex items-center gap-2">
                         <Crown size={14} /> Selecione a Linhagem
@@ -575,7 +576,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
             </div>
         </div>
 
-        <div className="pt-3 md:pt-4 border-t border-white/10 flex justify-between items-center px-4 md:px-8 pb-4 md:pb-6 flex-shrink-0">
+        {/* Rodapé fixo */}
+        <div className="pt-3 md:pt-4 border-t border-white/10 flex justify-between items-center px-4 md:px-8 pb-4 md:pb-6 shrink-0 bg-black/40">
             <button type="button" onClick={() => { setStep(1.2); setLoginIntent('CREATE'); }} className="text-white/30 hover:text-white text-[10px] md:text-xs uppercase tracking-widest font-bold px-2 py-2">Cancelar</button>
             <MetalButton onClick={handleStartCreation} disabled={isChecking} variant="amber" className="px-6 md:px-8 py-2 md:py-3 text-[10px] md:text-xs">
                 {isChecking ? <Sparkles className="animate-spin" size={16} /> : 'Próximo: Atributos ❯'}
@@ -587,8 +589,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
   if (step === 3 && role === 'PLAYER') return (
     <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
-      <ArcaneContainer width="w-full max-w-[900px]" className="h-auto md:h-[650px] !p-0 flex flex-col w-full">
-        <div className="p-4 md:p-6 border-b-2 border-amber-900/30 flex justify-between items-center bg-black/40 flex-shrink-0">
+      {/* CORREÇÃO AQUI: h-[90vh] em vez de h-auto e flex-1 min-h-0 no meio! */}
+      <ArcaneContainer width="w-full max-w-[900px]" className="h-[90vh] md:h-[650px] !p-0 flex flex-col w-full">
+        
+        {/* Cabeçalho */}
+        <div className="p-4 md:p-6 border-b-2 border-amber-900/30 flex justify-between items-center bg-black/40 shrink-0">
           <div className="flex items-center gap-3 md:gap-4">
               <div className="p-1.5 md:p-2 bg-amber-900/30 rounded-lg border border-amber-500/30 shadow-inner"><Crown className="text-amber-500 w-5 h-5 md:w-6 md:h-6" /></div>
               <h2 className="text-xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-100 to-amber-500 tracking-[0.1em] md:tracking-[0.2em] drop-shadow-md" style={{ fontFamily: 'Cinzel Decorative' }}>DISTRIBUIR PODER</h2>
@@ -599,14 +604,15 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           </div>
         </div>
 
-        <div ref={statsScrollRef} className="p-4 md:p-8 flex flex-col md:h-full items-center justify-start md:overflow-y-auto custom-scrollbar bg-gradient-to-b from-transparent to-black/30 w-full shrink-0">
-            <div className="text-center mb-6 md:mb-8 flex-shrink-0 relative">
+        {/* Meio (Rolável no Mobile, sem empurrar o botão para fora!) */}
+        <div ref={statsScrollRef} className="p-4 md:p-8 flex flex-col flex-1 min-h-0 items-center justify-start overflow-y-auto custom-scrollbar bg-gradient-to-b from-transparent to-black/30 w-full">
+            <div className="text-center mb-6 md:mb-8 shrink-0 relative">
               <div className="absolute inset-0 bg-amber-600/20 blur-[30px] md:blur-[50px] rounded-full -z-10"></div>
               <span className="text-[10px] md:text-sm text-amber-300/70 uppercase font-black tracking-[0.2em] md:tracking-[0.4em] drop-shadow-sm border-b border-amber-900/50 pb-1 md:pb-2 px-4 md:px-8">Pontos Restantes</span>
               <div className={`text-6xl md:text-8xl font-black mt-2 md:mt-4 transition-all duration-500 drop-shadow-[0_5px_15px_rgba(0,0,0,0.8)] ${pointsLeft < 0 ? 'text-red-500 scale-110' : pointsLeft === 0 ? 'text-green-400' : 'text-amber-400'}`} style={{ fontFamily: 'Cinzel Decorative' }}>{pointsLeft}</div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-5 w-full max-w-3xl mb-4 md:mb-6 content-center p-3 md:p-6 bg-black/40 rounded-2xl md:rounded-3xl border border-amber-900/30 shadow-inner">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-5 w-full max-w-3xl mb-4 md:mb-6 content-center p-3 md:p-6 bg-black/40 rounded-2xl md:rounded-3xl border border-amber-900/30 shadow-inner shrink-0">
               {Object.keys(stats).map((key) => {
                 const attr = key as keyof typeof stats;
                 const racial = (RACES as any)[selectedRace].bonus[attr];
@@ -641,7 +647,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
             </div>
         </div>
 
-        <div className="mt-auto w-full flex justify-between items-center border-t-2 border-amber-900/30 p-4 md:p-6 bg-black/60 flex-shrink-0">
+        {/* Rodapé Fixo */}
+        <div className="w-full flex justify-between items-center border-t-2 border-amber-900/30 p-4 md:p-6 bg-black/60 shrink-0">
            {error && <p className="text-red-400 text-xs animate-bounce mr-2 md:mr-4 absolute -top-8 left-1/2 -translate-x-1/2 bg-black px-3 py-1 rounded border border-red-500 w-max max-w-[90%] text-center">{error}</p>}
            <button onClick={() => setStep(2)} className="text-amber-500/50 hover:text-amber-200 font-bold uppercase tracking-[0.1em] md:tracking-[0.3em] text-[10px] md:text-xs">❮ Voltar</button>
            <MetalButton onClick={handleFinalSubmit} disabled={isChecking || pointsLeft < 0} variant="amber" className="px-6 md:px-12 py-3 md:py-4 text-[10px] md:text-sm">

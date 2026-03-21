@@ -14,7 +14,7 @@ import { getLevelFromXP } from './utils/gameRules';
 import ContextMenu from './components/ContextMenu'; 
 import MobilePlayerSheet from './components/MobilePlayerSheet'; 
 
-const ROOM_ID = 'mesa-do-victor'; 
+// ❌ REMOVIDO: const ROOM_ID = 'mesa-do-victor'; (Agora é dinâmico!)
 const GRID_SIZE = 70; 
 const CANVAS_WIDTH = 1920; 
 const CANVAS_HEIGHT = 1080; 
@@ -137,6 +137,9 @@ function App() {
   const [role, setRole] = useState<'DM' | 'PLAYER'>('PLAYER'); 
   const [playerName, setPlayerName] = useState('');
   
+  // ✅ NOVA MAGIA: O Room ID Dinâmico
+  const [roomId, setRoomId] = useState<string>('');
+
   const [gamePhase, setGamePhase] = useState<'LOBBY' | 'GAME'>('LOBBY');
 
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -233,20 +236,20 @@ function App() {
       sound.play();
       activeMusicRef.current = sound;
       setCurrentTrack(trackId);
-      if (emit) socket.emit('playMusic', { trackId, roomId: ROOM_ID });
-  }, [audioVolume]);
+      if (emit) socket.emit('playMusic', { trackId, roomId });
+  }, [audioVolume, roomId]);
 
   const handleStopMusic = useCallback((emit: boolean = true) => {
       if (activeMusicRef.current) { activeMusicRef.current.stop(); activeMusicRef.current.unload(); activeMusicRef.current = null; }
       setCurrentTrack(null);
-      if (emit) socket.emit('stopMusic', { roomId: ROOM_ID });
-  }, []);
+      if (emit) socket.emit('stopMusic', { roomId });
+  }, [roomId]);
 
   const handlePlaySFX = useCallback((sfxId: string, emit: boolean = true) => {
       const sound = SFX_LIBRARY[sfxId];
       if (sound) { sound.volume(audioVolume); sound.play(); }
-      if (emit) socket.emit('playSFX', { sfxId, roomId: ROOM_ID });
-  }, [audioVolume]);
+      if (emit) socket.emit('playSFX', { sfxId, roomId });
+  }, [audioVolume, roomId]);
 
   const playSound = useCallback((type: 'dado' | 'levelup' | 'magic' | 'notificacao') => { 
     handlePlaySFX(type, false); 
@@ -260,16 +263,16 @@ function App() {
   const addLog = useCallback((messageData: Omit<ChatMessage, 'id' | 'timestamp'>, shouldEmit: boolean = true) => {
     const newMessage: ChatMessage = { id: Date.now().toString() + Math.random(), timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), ...messageData };
     setChatMessages(prev => [...prev, newMessage]);
-    if (shouldEmit) socket.emit('sendMessage', { roomId: ROOM_ID, message: newMessage });
-  }, []);
+    if (shouldEmit) socket.emit('sendMessage', { roomId, message: newMessage });
+  }, [roomId]);
 
   useEffect(() => {
-    if (!isLoggedIn) return;
-    socket.emit('joinRoom', ROOM_ID);
-    const handleConnect = () => { socket.emit('joinRoom', ROOM_ID); };
+    if (!isLoggedIn || !roomId) return;
+    socket.emit('joinRoom', roomId);
+    const handleConnect = () => { socket.emit('joinRoom', roomId); };
     socket.on('connect', handleConnect);
     return () => { socket.off('connect', handleConnect); };
-  }, [isLoggedIn]);
+  }, [isLoggedIn, roomId]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -361,11 +364,11 @@ function App() {
 
   const handleResetView = () => {
       setMapOffset({ x: 0, y: 0 }); setMapScale(1);
-      if (role === 'DM') { socket.emit('syncMapState', { roomId: ROOM_ID, offset: { x: 0, y: 0 }, scale: 1 }); addLog({ text: "🎥 O Mestre recentralizou a câmera de todos.", type: 'info', sender: 'Sistema' }); } 
+      if (role === 'DM') { socket.emit('syncMapState', { roomId, offset: { x: 0, y: 0 }, scale: 1 }); addLog({ text: "🎥 O Mestre recentralizou a câmera de todos.", type: 'info', sender: 'Sistema' }); } 
       else { addLog({ text: "🎥 Câmera recentralizada.", type: 'info', sender: 'Sistema' }); }
   };
-  const handleMapSync = (offset: {x: number, y: number}, scale: number) => { setMapOffset(offset); setMapScale(scale); if (role === 'DM') socket.emit('syncMapState', { roomId: ROOM_ID, offset, scale }); };
-  const handleDmRequestRoll = (targetId: number, skillName: string, mod: number, dc: number) => { const target = entities.find(e => e.id === targetId); addLog({ text: `Mestre solicitou teste de **${skillName}** para **${target ? target.name : 'Alvo'}** (CD ${dc}).`, type: 'info', sender: 'Sistema' }); socket.emit('dmRequestRoll', { roomId: ROOM_ID, targetId, skillName, mod, dc }); };
+  const handleMapSync = (offset: {x: number, y: number}, scale: number) => { setMapOffset(offset); setMapScale(scale); if (role === 'DM') socket.emit('syncMapState', { roomId, offset, scale }); };
+  const handleDmRequestRoll = (targetId: number, skillName: string, mod: number, dc: number) => { const target = entities.find(e => e.id === targetId); addLog({ text: `Mestre solicitou teste de **${skillName}** para **${target ? target.name : 'Alvo'}** (CD ${dc}).`, type: 'info', sender: 'Sistema' }); socket.emit('dmRequestRoll', { roomId, targetId, skillName, mod, dc }); };
   const handleAttributeRoll = (charName: string, attrName: string, mod: number) => { setDiceContext({ title: attrName, subtitle: `Teste de Perícia (${charName})`, dc: 15, mod, prof: 0, bonuses: [], rollType: 'normal' }); setShowBgDice(true); };
 
   const handleApplyDamageFromChat = (targetId: number, damageExpression: string) => {
@@ -451,7 +454,7 @@ function App() {
           addLog({ text: publicText, type: 'roll', sender: senderName, targetId: targetIdForDamage, isHit: isAttackHit, damage: damageExpression } as any);
           ignoreNextDiceSound.current = true;
           setTimeout(() => { ignoreNextDiceSound.current = false; }, 2000);
-          socket.emit('rollDice', { sides: 20, result: total, roomId: ROOM_ID, user: senderName });
+          socket.emit('rollDice', { sides: 20, result: total, roomId, user: senderName });
       }
       setTimeout(() => setShowBgDice(false), 2000);
   };
@@ -462,7 +465,7 @@ function App() {
   const handleAddXP = (id: number, amount: number) => {
     const entity = entities.find(e => e.id === id); if (!entity || entity.type !== 'player') return;
     const oldXP = entity.xp || 0; const newXP = oldXP + amount; const oldLevel = entity.level || 1; const calculatedLevel = getLevelFromXP(newXP);
-    setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, xp: newXP } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { xp: newXP }, roomId: ROOM_ID });
+    setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, xp: newXP } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { xp: newXP }, roomId });
     addLog({ text: `${entity.name} ganhou ${amount} XP!`, type: 'info', sender: 'Sistema' });
     if (calculatedLevel > oldLevel) { addLog({ text: `✨ ${entity.name} está pronto para subir de nível!`, type: 'info', sender: 'Sistema' }); playSound('levelup'); }
   };
@@ -471,7 +474,7 @@ function App() {
     const entity = entities.find(e => e.id === id); if (!entity) return;
     const newHp = Math.min(entity.maxHp, Math.max(0, entity.hp + change));
     if (entity.hp > 0 && newHp <= 0) addLog({ text: `☠️ **${entity.name} caiu inconsciente!**`, type: 'damage', sender: 'Sistema' });
-    setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, hp: newHp } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { hp: newHp }, roomId: ROOM_ID });
+    setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, hp: newHp } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { hp: newHp }, roomId });
   };
 
   const handleSendMessage = (text: string) => {
@@ -495,7 +498,7 @@ function App() {
   const handleGiveItem = (targetId: number, item: any) => {
       setEntities(prev => prev.map(ent => {
           if (ent.id !== targetId) return ent;
-          const newInventory = [...(ent.inventory || []), item]; socket.emit('updateEntityStatus', { entityId: targetId, updates: { inventory: newInventory }, roomId: ROOM_ID });
+          const newInventory = [...(ent.inventory || []), item]; socket.emit('updateEntityStatus', { entityId: targetId, updates: { inventory: newInventory }, roomId });
           addLog({ text: `🎁 ${ent.name} recebeu ${item.quantity}x ${item.name}!`, type: 'info', sender: 'Sistema' }); return { ...ent, inventory: newInventory };
       }));
   };
@@ -503,10 +506,10 @@ function App() {
   const handleDropLootOnMap = (item: Item, sourceId: number, x: number, y: number) => {
       setEntities(prev => prev.map(ent => {
           if (ent.id !== sourceId) return ent;
-          const newInv = (ent.inventory || []).filter(i => i.id !== item.id); socket.emit('updateEntityStatus', { entityId: sourceId, updates: { inventory: newInv }, roomId: ROOM_ID }); return { ...ent, inventory: newInv };
+          const newInv = (ent.inventory || []).filter(i => i.id !== item.id); socket.emit('updateEntityStatus', { entityId: sourceId, updates: { inventory: newInv }, roomId }); return { ...ent, inventory: newInv };
       }));
       const lootEntity: Entity = { id: Date.now(), name: item.name, hp: 1, maxHp: 1, ac: 10, x: x, y: y, type: 'player', color: '#fbbf24', image: item.image, size: 0.5, conditions: [], stats: { str:0, dex:0, con:0, int:0, wis:0, cha:0 }, visible: true, inventory: [item], level: 0, classType: 'Item' };
-      setEntities(prev => [...prev, lootEntity]); socket.emit('createEntity', { entity: lootEntity, roomId: ROOM_ID }); addLog({ text: `🎒 ${item.name} foi jogado no chão!`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true); 
+      setEntities(prev => [...prev, lootEntity]); socket.emit('createEntity', { entity: lootEntity, roomId }); addLog({ text: `🎒 ${item.name} foi jogado no chão!`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true); 
   };
 
   const handleGiveItemToToken = (item: Item, sourceId: number, targetId: number) => {
@@ -514,7 +517,7 @@ function App() {
       const sourceEntity = entities.find(e => e.id === sourceId); const targetEntity = entities.find(e => e.id === targetId); if (!sourceEntity || !targetEntity) return;
       const sourceInv = (sourceEntity.inventory || []).filter(i => i.id !== item.id); const targetInv = [...(targetEntity.inventory || []), { ...item, isEquipped: false }]; 
       setEntities(prev => prev.map(ent => { if (ent.id === sourceId) return { ...ent, inventory: sourceInv }; if (ent.id === targetId) return { ...ent, inventory: targetInv }; return ent; }));
-      socket.emit('updateEntityStatus', { entityId: sourceId, updates: { inventory: sourceInv }, roomId: ROOM_ID }); socket.emit('updateEntityStatus', { entityId: targetId, updates: { inventory: targetInv }, roomId: ROOM_ID });
+      socket.emit('updateEntityStatus', { entityId: sourceId, updates: { inventory: sourceInv }, roomId }); socket.emit('updateEntityStatus', { entityId: targetId, updates: { inventory: targetInv }, roomId });
       addLog({ text: `🤝 **${sourceEntity.name}** deu **${item.name}** para **${targetEntity.name}**.`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true);
   };
 
@@ -524,7 +527,7 @@ function App() {
       if (!receiver) { setToastMsg({ text: role === 'DM' ? "Selecione um token (Alvo) para pegar o item." : "Você não tem um personagem para pegar isso.", id: Date.now() }); return; }
       const item = lootEntity.inventory && lootEntity.inventory[0]; if (!item) { handleDeleteEntity(lootEntity.id); return; }
       const newInventory = [...(receiver.inventory || []), item];
-      setEntities(prev => prev.map(ent => ent.id === receiver!.id ? { ...ent, inventory: newInventory } : ent)); socket.emit('updateEntityStatus', { entityId: receiver.id, updates: { inventory: newInventory }, roomId: ROOM_ID });
+      setEntities(prev => prev.map(ent => ent.id === receiver!.id ? { ...ent, inventory: newInventory } : ent)); socket.emit('updateEntityStatus', { entityId: receiver.id, updates: { inventory: newInventory }, roomId });
       handleDeleteEntity(lootEntity.id); setStatusSelectionId(null); addLog({ text: `🎒 ${receiver.name} pegou ${item.name} do chão.`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true); 
   };
 
@@ -543,7 +546,7 @@ function App() {
 
   const handlePingMap = (x: number, y: number) => {
       const myColor = role === 'DM' ? '#ef4444' : '#3b82f6'; const newPing: MapPing = { id: Date.now().toString() + Math.random(), x, y, color: myColor };
-      setPings(prev => [...prev, newPing]); socket.emit('pingMap', { ping: newPing, roomId: ROOM_ID }); handlePlaySFX('ping', true); setTimeout(() => { setPings(prev => prev.filter(p => p.id !== newPing.id)); }, 2500);
+      setPings(prev => [...prev, newPing]); socket.emit('pingMap', { ping: newPing, roomId }); handlePlaySFX('ping', true); setTimeout(() => { setPings(prev => prev.filter(p => p.id !== newPing.id)); }, 2500);
   };
 
   const handleUpdatePosition = (id: number, newX: number, newY: number) => {
@@ -561,29 +564,29 @@ function App() {
             return ent;
         });
     });
-    socket.emit('updateEntityPosition', { entityId: id, x: newX, y: newY, roomId: ROOM_ID });
-    if (shouldSyncFog) { setFogGrid(newFogGrid); socket.emit('syncFogGrid', { grid: newFogGrid, roomId: ROOM_ID }); }
+    socket.emit('updateEntityPosition', { entityId: id, x: newX, y: newY, roomId });
+    if (shouldSyncFog) { setFogGrid(newFogGrid); socket.emit('syncFogGrid', { grid: newFogGrid, roomId }); }
   };
 
-  const handleRotateToken = (id: number, angle: number) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, rotation: angle } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { rotation: angle }, roomId: ROOM_ID }); };
-  const handleResizeToken = (id: number, size: number) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, size } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { size }, roomId: ROOM_ID }); };
-  const handleFlipToken = (id: number) => { const ent = entities.find(e => e.id === id); if (!ent) return; const newMirrored = !ent.mirrored; setEntities(prev => prev.map(e => e.id === id ? { ...e, mirrored: newMirrored } : e)); socket.emit('updateEntityStatus', { entityId: id, updates: { mirrored: newMirrored }, roomId: ROOM_ID }); };
-  const handleToggleCondition = (id: number, condition: string) => { setEntities(prev => prev.map(ent => { if (ent.id !== id) return ent; const hasCondition = ent.conditions.includes(condition); const newConditions = hasCondition ? ent.conditions.filter(c => c !== condition) : [...ent.conditions, condition]; if (!hasCondition) addLog({ text: `${ent.name} recebeu condição: ${condition}`, type: 'info', sender: 'Sistema' }); socket.emit('updateEntityStatus', { entityId: id, updates: { conditions: newConditions }, roomId: ROOM_ID }); return { ...ent, conditions: newConditions }; })); };
-  const handleToggleVisibility = (id: number) => { setEntities(prev => prev.map(ent => { if (ent.id !== id) return ent; const newVisible = ent.visible === undefined ? false : !ent.visible; if (role === 'DM') addLog({ text: newVisible ? `👁️ ${ent.name} revelou-se!` : `👻 ${ent.name} desapareceu nas sombras.`, type: 'info', sender: 'Sistema' }, false); socket.emit('updateEntityStatus', { entityId: id, updates: { visible: newVisible }, roomId: ROOM_ID }); return { ...ent, visible: newVisible }; })); };
-  const handleEditEntity = (id: number, updates: Partial<Entity>) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, ...updates } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates, roomId: ROOM_ID }); };
-  const handleDeleteEntity = (id: number) => { setEntities(prev => prev.filter(ent => ent.id !== id)); socket.emit('deleteEntity', { entityId: id, roomId: ROOM_ID }); if (attackerId === id) setAttackerId(null); };
-  const createEntity = (type: 'enemy' | 'player', name: string, x: number, y: number, customStats?: Partial<Entity>) => { const newId = Date.now(); const newEntity: Entity = { id: newId, name, hp: customStats?.hp || 10, maxHp: customStats?.maxHp || customStats?.hp || 10, ac: customStats?.ac || 10, x, y, rotation: 0, mirrored: false, conditions: [], color: type === 'enemy' ? '#ef4444' : '#3b82f6', type, image: customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), visionRadius: 9, stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, classType: customStats?.classType || "NPC", size: customStats?.size || 2, xp: customStats?.xp || 0, level: customStats?.level || 1, inventory: customStats?.inventory || [], race: customStats?.race || 'Humano', visible: true, proficiencies: customStats?.proficiencies || {}, deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, inspiration: customStats?.inspiration || false, spellSlots: customStats?.spellSlots || {}, spells: customStats?.spells || [], coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; setEntities(prev => [...prev, newEntity]); socket.emit('createEntity', { entity: newEntity, roomId: ROOM_ID }); addLog({ text: `${name} entrou na mesa.`, type: 'info', sender: 'Sistema' }); };
+  const handleRotateToken = (id: number, angle: number) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, rotation: angle } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { rotation: angle }, roomId }); };
+  const handleResizeToken = (id: number, size: number) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, size } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { size }, roomId }); };
+  const handleFlipToken = (id: number) => { const ent = entities.find(e => e.id === id); if (!ent) return; const newMirrored = !ent.mirrored; setEntities(prev => prev.map(e => e.id === id ? { ...e, mirrored: newMirrored } : e)); socket.emit('updateEntityStatus', { entityId: id, updates: { mirrored: newMirrored }, roomId }); };
+  const handleToggleCondition = (id: number, condition: string) => { setEntities(prev => prev.map(ent => { if (ent.id !== id) return ent; const hasCondition = ent.conditions.includes(condition); const newConditions = hasCondition ? ent.conditions.filter(c => c !== condition) : [...ent.conditions, condition]; if (!hasCondition) addLog({ text: `${ent.name} recebeu condição: ${condition}`, type: 'info', sender: 'Sistema' }); socket.emit('updateEntityStatus', { entityId: id, updates: { conditions: newConditions }, roomId }); return { ...ent, conditions: newConditions }; })); };
+  const handleToggleVisibility = (id: number) => { setEntities(prev => prev.map(ent => { if (ent.id !== id) return ent; const newVisible = ent.visible === undefined ? false : !ent.visible; if (role === 'DM') addLog({ text: newVisible ? `👁️ ${ent.name} revelou-se!` : `👻 ${ent.name} desapareceu nas sombras.`, type: 'info', sender: 'Sistema' }, false); socket.emit('updateEntityStatus', { entityId: id, updates: { visible: newVisible }, roomId }); return { ...ent, visible: newVisible }; })); };
+  const handleEditEntity = (id: number, updates: Partial<Entity>) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, ...updates } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates, roomId }); };
+  const handleDeleteEntity = (id: number) => { setEntities(prev => prev.filter(ent => ent.id !== id)); socket.emit('deleteEntity', { entityId: id, roomId }); if (attackerId === id) setAttackerId(null); };
+  const createEntity = (type: 'enemy' | 'player', name: string, x: number, y: number, customStats?: Partial<Entity>) => { const newId = Date.now(); const newEntity: Entity = { id: newId, name, hp: customStats?.hp || 10, maxHp: customStats?.maxHp || customStats?.hp || 10, ac: customStats?.ac || 10, x, y, rotation: 0, mirrored: false, conditions: [], color: type === 'enemy' ? '#ef4444' : '#3b82f6', type, image: customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), visionRadius: 9, stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, classType: customStats?.classType || "NPC", size: customStats?.size || 2, xp: customStats?.xp || 0, level: customStats?.level || 1, inventory: customStats?.inventory || [], race: customStats?.race || 'Humano', visible: true, proficiencies: customStats?.proficiencies || {}, deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, inspiration: customStats?.inspiration || false, spellSlots: customStats?.spellSlots || {}, spells: customStats?.spells || [], coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; setEntities(prev => [...prev, newEntity]); socket.emit('createEntity', { entity: newEntity, roomId }); addLog({ text: `${name} entrou na mesa.`, type: 'info', sender: 'Sistema' }); };
   const handleAddEntity = (type: 'enemy' | 'player', name: string, customStats?: MonsterPreset) => { createEntity(type, name, 8, 6, customStats as Partial<Entity>); };
   const handleMapDrop = (type: string, x: number, y: number) => { const entityType = type as 'enemy' | 'player'; const nextNum = entities.filter(e => e.type === entityType).length + 1; createEntity(entityType, entityType === 'enemy' ? `Monstro ${nextNum}` : `Aliado ${nextNum}`, x, y); };
-  const handleFogUpdate = (x: number, y: number, shouldReveal: boolean) => { if (role !== 'DM') return; setFogGrid(prev => { const newGrid = prev.map(row => [...row]); if (newGrid[y]) newGrid[y][x] = shouldReveal; return newGrid; }); socket.emit('updateFog', { x, y, shouldReveal, roomId: ROOM_ID }); };
-  const handleFogBulkUpdate = (cells: {x: number, y: number}[], shouldReveal: boolean) => { if (role !== 'DM') return; setFogGrid(prev => { const newGrid = prev.map(row => [...row]); cells.forEach(cell => { if (newGrid[cell.y] && newGrid[cell.y][cell.x] !== undefined) { newGrid[cell.y][cell.x] = shouldReveal; } }); socket.emit('syncFogGrid', { grid: newGrid, roomId: ROOM_ID }); return newGrid; }); };
-  const handleResetFog = () => { const newGrid = createInitialFog(); setFogGrid(newGrid); socket.emit('syncFogGrid', { grid: newGrid, roomId: ROOM_ID }); };
-  const handleRevealAll = () => { const newGrid = fogGrid.map(row => row.map(() => true)); setFogGrid(newGrid); socket.emit('syncFogGrid', { grid: newGrid, roomId: ROOM_ID }); };
-  const handleSyncFog = () => { socket.emit('syncFogGrid', { grid: fogGrid, roomId: ROOM_ID }); };
-  const handleChangeMap = (mapUrl: string) => { setCurrentMap(mapUrl); setFogGrid(createInitialFog()); socket.emit('changeMap', { mapUrl, roomId: ROOM_ID }); };
-  const handleSaveGame = () => { socket.emit('saveGame', { roomId: ROOM_ID, entities, fogGrid, currentMap, initiativeList, activeTurnId, chatMessages, customMonsters, globalBrightness, currentTrack }); addLog({ text: "O Mestre salvou o estado da mesa no servidor.", type: 'info', sender: 'Sistema' }); };
+  const handleFogUpdate = (x: number, y: number, shouldReveal: boolean) => { if (role !== 'DM') return; setFogGrid(prev => { const newGrid = prev.map(row => [...row]); if (newGrid[y]) newGrid[y][x] = shouldReveal; return newGrid; }); socket.emit('updateFog', { x, y, shouldReveal, roomId }); };
+  const handleFogBulkUpdate = (cells: {x: number, y: number}[], shouldReveal: boolean) => { if (role !== 'DM') return; setFogGrid(prev => { const newGrid = prev.map(row => [...row]); cells.forEach(cell => { if (newGrid[cell.y] && newGrid[cell.y][cell.x] !== undefined) { newGrid[cell.y][cell.x] = shouldReveal; } }); socket.emit('syncFogGrid', { grid: newGrid, roomId }); return newGrid; }); };
+  const handleResetFog = () => { const newGrid = createInitialFog(); setFogGrid(newGrid); socket.emit('syncFogGrid', { grid: newGrid, roomId }); };
+  const handleRevealAll = () => { const newGrid = fogGrid.map(row => row.map(() => true)); setFogGrid(newGrid); socket.emit('syncFogGrid', { grid: newGrid, roomId }); };
+  const handleSyncFog = () => { socket.emit('syncFogGrid', { grid: fogGrid, roomId }); };
+  const handleChangeMap = (mapUrl: string) => { setCurrentMap(mapUrl); setFogGrid(createInitialFog()); socket.emit('changeMap', { mapUrl, roomId }); };
+  const handleSaveGame = () => { socket.emit('saveGame', { roomId, entities, fogGrid, currentMap, initiativeList, activeTurnId, chatMessages, customMonsters, globalBrightness, currentTrack }); addLog({ text: "O Mestre salvou o estado da mesa no servidor.", type: 'info', sender: 'Sistema' }); };
   const handleSaveMonsterPreset = (preset: MonsterPreset) => { setCustomMonsters(prev => [...prev, preset]); addLog({ text: `Novo monstro salvo na lista: ${preset.name}`, type: 'info', sender: 'Sistema' }); };
-  const handleUpdateGlobalBrightness = (val: number) => { setGlobalBrightness(val); socket.emit('updateGlobalBrightness', { brightness: val, roomId: ROOM_ID }); };
+  const handleUpdateGlobalBrightness = (val: number) => { setGlobalBrightness(val); socket.emit('updateGlobalBrightness', { brightness: val, roomId }); };
 
   const handleAddToInitiative = (entity: Entity) => { if (initiativeList.find(i => i.id === entity.id)) return; setInitModalEntity(entity); };
   
@@ -599,12 +602,12 @@ function App() {
           setAttackerId(newList[0].id);
       }
       
-      socket.emit('updateInitiative', { list: newList, activeTurnId: newActive, roomId: ROOM_ID }); 
+      socket.emit('updateInitiative', { list: newList, activeTurnId: newActive, roomId }); 
       addLog({ text: `${initModalEntity.name} rolou Iniciativa: ${val}`, type: 'info', sender: 'Sistema' }); 
       handlePlaySFX('dado', true); 
       setInitModalEntity(null); 
   };
-  const handleRemoveFromInitiative = (id: number) => { const newList = initiativeList.filter(i => i.id !== id); setInitiativeList(newList); socket.emit('updateInitiative', { list: newList, activeTurnId, roomId: ROOM_ID }); };
+  const handleRemoveFromInitiative = (id: number) => { const newList = initiativeList.filter(i => i.id !== id); setInitiativeList(newList); socket.emit('updateInitiative', { list: newList, activeTurnId, roomId }); };
   
   const handleNextTurn = () => { 
       if (initiativeList.length === 0) return; 
@@ -613,7 +616,7 @@ function App() {
       
       setAttackerId(nextId);
       
-      socket.emit('updateInitiative', { list: initiativeList, activeTurnId: nextId, roomId: ROOM_ID }); 
+      socket.emit('updateInitiative', { list: initiativeList, activeTurnId: nextId, roomId }); 
       const nextEntity = initiativeList.find(i => i.id === nextId); 
       if(nextEntity) addLog({ text: `Turno de: ${nextEntity.name}`, type: 'info', sender: 'Sistema' }); 
   };
@@ -623,10 +626,10 @@ function App() {
       setActiveTurnId(null); 
       setAttackerId(null);
       setTargetEntityIds([]);
-      socket.emit('updateInitiative', { list: [], activeTurnId: null, roomId: ROOM_ID }); 
+      socket.emit('updateInitiative', { list: [], activeTurnId: null, roomId }); 
   };
 
-  const handleSortInitiative = () => { const newList = [...initiativeList].sort((a, b) => b.value - a.value); setInitiativeList(newList); socket.emit('updateInitiative', { list: newList, activeTurnId, roomId: ROOM_ID }); };
+  const handleSortInitiative = () => { const newList = [...initiativeList].sort((a, b) => b.value - a.value); setInitiativeList(newList); socket.emit('updateInitiative', { list: newList, activeTurnId, roomId }); };
   
   const handleSetTarget = (id: number | number[] | null, multiSelect: boolean = false) => { 
       if (id === null) { if (!multiSelect) setTargetEntityIds([]); return; } 
@@ -637,7 +640,32 @@ function App() {
   const handleSetAttacker = (id: number | null) => { if (role !== 'DM') return; setAttackerId(id); };
   const handleSelectEntityForStatus = (entity: Entity) => { setStatusSelectionId(entity.id); };
   
-  const handleLogin = (selectedRole: 'DM' | 'PLAYER', name: string, charData?: any) => { setRole(selectedRole); setPlayerName(name); setIsLoggedIn(true); setGamePhase('LOBBY'); socket.emit('joinRoom', ROOM_ID); if (selectedRole === 'PLAYER' && charData) { setTimeout(() => { setEntities(prev => { if (!prev.find(e => e.name.toLowerCase() === name.toLowerCase() && e.type === 'player')) { const newEntity: Entity = { id: charData.id || Date.now(), name, hp: charData.hp, maxHp: charData.maxHp, ac: charData.ac, x: 8, y: 6, rotation: charData.rotation || 0, mirrored: charData.mirrored || false, conditions: charData.conditions || [], color: '#3b82f6', type: 'player', image: charData.image, stats: charData.stats, classType: charData.classType, visionRadius: charData.visionRadius || 9, size: charData.size || 1, xp: charData.xp || 0, level: charData.level || 1, inventory: charData.inventory || [], race: charData.race || 'Humano', visible: charData.visible !== false, proficiencies: charData.proficiencies || {}, deathSaves: charData.deathSaves || { successes: 0, failures: 0 }, inspiration: charData.inspiration || false, spellSlots: charData.spellSlots || {}, spells: charData.spells || [], coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; socket.emit('createEntity', { entity: newEntity, roomId: ROOM_ID }); return [...prev, newEntity]; } return prev; }); }, 1500); } };
+  // ✅ LOGICA DE LOGIN ATUALIZADA COM O ROOM_ID DINÂMICO
+  const handleLogin = (selectedRole: 'DM' | 'PLAYER', name: string, charData?: any) => { 
+      // Extrai o Room ID que veio da tela de login (ou usa mesa-do-victor como último recurso seguro)
+      const sessionRoomId = charData?.roomId || 'mesa-do-victor';
+      setRoomId(sessionRoomId);
+
+      setRole(selectedRole); 
+      setPlayerName(name); 
+      setIsLoggedIn(true); 
+      setGamePhase('LOBBY'); 
+      socket.emit('joinRoom', sessionRoomId); 
+      
+      if (selectedRole === 'PLAYER' && charData) { 
+          setTimeout(() => { 
+              setEntities(prev => { 
+                  if (!prev.find(e => e.name.toLowerCase() === name.toLowerCase() && e.type === 'player')) { 
+                      const newEntity: Entity = { id: charData.id || Date.now(), name, hp: charData.hp, maxHp: charData.maxHp, ac: charData.ac, x: 8, y: 6, rotation: charData.rotation || 0, mirrored: charData.mirrored || false, conditions: charData.conditions || [], color: '#3b82f6', type: 'player', image: charData.image, stats: charData.stats, classType: charData.classType, visionRadius: charData.visionRadius || 9, size: charData.size || 1, xp: charData.xp || 0, level: charData.level || 1, inventory: charData.inventory || [], race: charData.race || 'Humano', visible: charData.visible !== false, proficiencies: charData.proficiencies || {}, deathSaves: charData.deathSaves || { successes: 0, failures: 0 }, inspiration: charData.inspiration || false, spellSlots: charData.spellSlots || {}, spells: charData.spells || [], coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; 
+                      socket.emit('createEntity', { entity: newEntity, roomId: sessionRoomId }); 
+                      return [...prev, newEntity]; 
+                  } 
+                  return prev; 
+              }); 
+          }, 1500); 
+      } 
+  };
+  
   const handleStartGame = () => { setGamePhase('GAME'); addLog({ text: "A aventura começou!", type: 'info', sender: 'Sistema' }); };
 
   const selectedStatusEntity = statusSelectionId ? entities.find(e => e.id === statusSelectionId) : null;
@@ -648,7 +676,9 @@ function App() {
   const handleSaveNewEnemy = (data: Partial<Entity>) => { const nextNum = entities.filter(e => e.type === 'enemy').length + 1; createEntity('enemy', data.name || `Monstro ${nextNum}`, 8, 6, data); setShowEnemyCreator(false); };
 
   if (!isLoggedIn) return <LoginScreen onLogin={handleLogin} />;
-  if (gamePhase === 'LOBBY') return <Lobby availableCharacters={entities.filter(e => e.type === 'player')} onStartGame={handleStartGame} myPlayerName={playerName} />;
+  
+  // Passamos o roomId pro Lobby exibir!
+  if (gamePhase === 'LOBBY') return <Lobby availableCharacters={entities.filter(e => e.type === 'player')} onStartGame={handleStartGame} myPlayerName={playerName} roomCode={roomId} />;
 
   const isMobilePlayer = role === 'PLAYER' && windowSize.w <= 1024;
   const myCharacter = isMobilePlayer ? entities.find(e => e.name === playerName && e.type === 'player') : null;
