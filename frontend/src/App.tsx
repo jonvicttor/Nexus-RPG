@@ -153,8 +153,6 @@ function App() {
   const [aoeColor, setAoEColor] = useState<string>('#ef4444'); 
   const [initModalEntity, setInitModalEntity] = useState<Entity | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  
-  // 👉 Esta variável controla a janela de status que queremos abrir com o Botão Direito!
   const [statusSelectionId, setStatusSelectionId] = useState<number | null>(null);
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
 
@@ -193,6 +191,16 @@ function App() {
   const [toastMsg, setToastMsg] = useState<{text: string, id: number, sender?: string} | null>(null);
 
   const ignoreNextDiceSound = useRef(false);
+
+  // Calcula o centro da tela para invocar os tokens onde o Mestre está a olhar
+  const getCenterGridPosition = () => {
+    const centerPixelX = (CANVAS_WIDTH / 2) - mapOffset.x;
+    const centerPixelY = (CANVAS_HEIGHT / 2) - mapOffset.y;
+    return { 
+        x: Math.max(0, Math.floor(centerPixelX / (GRID_SIZE * mapScale))), 
+        y: Math.max(0, Math.floor(centerPixelY / (GRID_SIZE * mapScale))) 
+    };
+  };
 
   useEffect(() => {
     if (toastMsg && !toastMsg.sender) {
@@ -535,14 +543,13 @@ function App() {
       handleDeleteEntity(lootEntity.id); setStatusSelectionId(null); addLog({ text: `🎒 ${receiver.name} pegou ${item.name} do chão.`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true); 
   };
 
-  // 👇 LÓGICA DO MENU DE CONTEXTO ATUALIZADA 👇
   const handleContextMenuAction = (action: string, entity: Entity) => {
       switch (action) {
           case 'VIEW_STATUS': 
-              setStatusSelectionId(entity.id); // Abre a ficha de status
+              setStatusSelectionId(entity.id); 
               break;
           case 'VIEW_SHEET': 
-              if (role === 'DM') setEditingEntity(entity); // DM abre a edição
+              if (role === 'DM') setEditingEntity(entity); 
               else setStatusSelectionId(entity.id); 
               break;
           case 'WHISPER': setPrivateChatTarget(entity.name); break;
@@ -586,9 +593,28 @@ function App() {
   const handleToggleVisibility = (id: number) => { setEntities(prev => prev.map(ent => { if (ent.id !== id) return ent; const newVisible = ent.visible === undefined ? false : !ent.visible; if (role === 'DM') addLog({ text: newVisible ? `👁️ ${ent.name} revelou-se!` : `👻 ${ent.name} desapareceu nas sombras.`, type: 'info', sender: 'Sistema' }, false); socket.emit('updateEntityStatus', { entityId: id, updates: { visible: newVisible }, roomId }); return { ...ent, visible: newVisible }; })); };
   const handleEditEntity = (id: number, updates: Partial<Entity>) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, ...updates } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates, roomId }); };
   const handleDeleteEntity = (id: number) => { setEntities(prev => prev.filter(ent => ent.id !== id)); socket.emit('deleteEntity', { entityId: id, roomId }); if (attackerId === id) setAttackerId(null); };
-  const createEntity = (type: 'enemy' | 'player', name: string, x: number, y: number, customStats?: Partial<Entity>) => { const newId = Date.now(); const newEntity: Entity = { id: newId, name, hp: customStats?.hp || 10, maxHp: customStats?.maxHp || customStats?.hp || 10, ac: customStats?.ac || 10, x, y, rotation: 0, mirrored: false, conditions: [], color: type === 'enemy' ? '#ef4444' : '#3b82f6', type, image: customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), visionRadius: 9, stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, classType: customStats?.classType || "NPC", size: customStats?.size || 2, xp: customStats?.xp || 0, level: customStats?.level || 1, inventory: customStats?.inventory || [], race: customStats?.race || 'Humano', visible: true, proficiencies: customStats?.proficiencies || {}, deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, inspiration: customStats?.inspiration || false, spellSlots: customStats?.spellSlots || {}, spells: customStats?.spells || [], coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; setEntities(prev => [...prev, newEntity]); socket.emit('createEntity', { entity: newEntity, roomId }); addLog({ text: `${name} entrou na mesa.`, type: 'info', sender: 'Sistema' }); };
-  const handleAddEntity = (type: 'enemy' | 'player', name: string, customStats?: MonsterPreset) => { createEntity(type, name, 8, 6, customStats as Partial<Entity>); };
-  const handleMapDrop = (type: string, x: number, y: number) => { const entityType = type as 'enemy' | 'player'; const nextNum = entities.filter(e => e.type === entityType).length + 1; createEntity(entityType, entityType === 'enemy' ? `Monstro ${nextNum}` : `Aliado ${nextNum}`, x, y); };
+  
+  const createEntity = (type: 'enemy' | 'player', name: string, x: number, y: number, customStats?: Partial<Entity>) => { 
+      const newId = Date.now(); 
+      const newEntity: Entity = { id: newId, name, hp: customStats?.hp || 10, maxHp: customStats?.maxHp || customStats?.hp || 10, ac: customStats?.ac || 10, x, y, rotation: 0, mirrored: false, conditions: [], color: type === 'enemy' ? '#ef4444' : '#3b82f6', type, image: customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), visionRadius: 9, stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, classType: customStats?.classType || "NPC", size: customStats?.size || 2, xp: customStats?.xp || 0, level: customStats?.level || 1, inventory: customStats?.inventory || [], race: customStats?.race || 'Humano', visible: true, proficiencies: customStats?.proficiencies || {}, deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, inspiration: customStats?.inspiration || false, spellSlots: customStats?.spellSlots || {}, spells: customStats?.spells || [], coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; 
+      setEntities(prev => [...prev, newEntity]); 
+      socket.emit('createEntity', { entity: newEntity, roomId }); 
+      addLog({ text: `${name} entrou na mesa.`, type: 'info', sender: 'Sistema' }); 
+      
+      if (role === 'DM') setStatusSelectionId(newId);
+  };
+
+  const handleAddEntity = (type: 'enemy' | 'player', name: string, customStats?: MonsterPreset) => { 
+      const pos = getCenterGridPosition();
+      createEntity(type, name, pos.x, pos.y, customStats as Partial<Entity>); 
+  };
+  
+  const handleMapDrop = (type: string, x: number, y: number) => { 
+      const entityType = type as 'enemy' | 'player'; 
+      const nextNum = entities.filter(e => e.type === entityType).length + 1; 
+      createEntity(entityType, entityType === 'enemy' ? `Monstro ${nextNum}` : `Aliado ${nextNum}`, x, y); 
+  };
+
   const handleFogUpdate = (x: number, y: number, shouldReveal: boolean) => { if (role !== 'DM') return; setFogGrid(prev => { const newGrid = prev.map(row => [...row]); if (newGrid[y]) newGrid[y][x] = shouldReveal; return newGrid; }); socket.emit('updateFog', { x, y, shouldReveal, roomId }); };
   const handleFogBulkUpdate = (cells: {x: number, y: number}[], shouldReveal: boolean) => { if (role !== 'DM') return; setFogGrid(prev => { const newGrid = prev.map(row => [...row]); cells.forEach(cell => { if (newGrid[cell.y] && newGrid[cell.y][cell.x] !== undefined) { newGrid[cell.y][cell.x] = shouldReveal; } }); socket.emit('syncFogGrid', { grid: newGrid, roomId }); return newGrid; }); };
   const handleResetFog = () => { const newGrid = createInitialFog(); setFogGrid(newGrid); socket.emit('syncFogGrid', { grid: newGrid, roomId }); };
@@ -666,7 +692,8 @@ function App() {
                   const existing = prev.find(e => e.name.toLowerCase() === name.toLowerCase() && e.type === 'player');
                   
                   if (!existing) { 
-                      const newEntity: Entity = { id: charData.id || Date.now(), name, hp: charData.hp, maxHp: charData.maxHp, ac: charData.ac, x: 8, y: 6, rotation: charData.rotation || 0, mirrored: charData.mirrored || false, conditions: charData.conditions || [], color: '#3b82f6', type: 'player', image: charData.image, stats: charData.stats, classType: charData.classType, visionRadius: charData.visionRadius || 9, size: charData.size || 1, xp: charData.xp || 0, level: charData.level || 1, inventory: charData.inventory || [], race: charData.race || 'Humano', visible: charData.visible !== false, proficiencies: charData.proficiencies || {}, deathSaves: charData.deathSaves || { successes: 0, failures: 0 }, inspiration: charData.inspiration || false, spellSlots: charData.spellSlots || {}, spells: charData.spells || [], coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; 
+                      // 👉 MAGIA DO TAMANHO APLICADA (size: charData.size || 2)
+                      const newEntity: Entity = { id: charData.id || Date.now(), name, hp: charData.hp, maxHp: charData.maxHp, ac: charData.ac, x: 8, y: 6, rotation: charData.rotation || 0, mirrored: charData.mirrored || false, conditions: charData.conditions || [], color: '#3b82f6', type: 'player', image: charData.image, stats: charData.stats, classType: charData.classType, visionRadius: charData.visionRadius || 9, size: charData.size || 2, xp: charData.xp || 0, level: charData.level || 1, inventory: charData.inventory || [], race: charData.race || 'Humano', visible: charData.visible !== false, proficiencies: charData.proficiencies || {}, deathSaves: charData.deathSaves || { successes: 0, failures: 0 }, inspiration: charData.inspiration || false, spellSlots: charData.spellSlots || {}, spells: charData.spells || [], coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; 
                       socket.emit('createEntity', { entity: newEntity, roomId: sessionRoomId }); 
                       return [...prev, newEntity]; 
                   } else {
@@ -689,8 +716,20 @@ function App() {
   let modalPosition = { top: 0, left: 0 };
   if (selectedStatusEntity) { const canvasOffsetX = (windowSize.w - CANVAS_WIDTH) / 2; const canvasOffsetY = (windowSize.h - CANVAS_HEIGHT) / 2; const tokenPixelX = (selectedStatusEntity.x * GRID_SIZE * mapScale) + mapOffset.x + canvasOffsetX; const tokenPixelY = (selectedStatusEntity.y * GRID_SIZE * mapScale) + mapOffset.y + canvasOffsetY; modalPosition = { top: tokenPixelY, left: tokenPixelX + ((selectedStatusEntity.size || 1) * GRID_SIZE * mapScale) + 15 }; if (modalPosition.left + 330 > windowSize.w - 320) { modalPosition.left = tokenPixelX - 340; } if (modalPosition.top + 400 > windowSize.h) { modalPosition.top = windowSize.h - 410; } if (modalPosition.top < 10) modalPosition.top = 10; }
 
-  const handleSaveNewAlly = (id: number, data: Partial<Entity>) => { const nextNum = entities.filter(e => e.type === 'player').length + 1; const finalName = data.name || `Aliado ${nextNum}`; createEntity('player', finalName, 4, 4, { ...data, name: finalName }); setShowAllyCreator(false); };
-  const handleSaveNewEnemy = (data: Partial<Entity>) => { const nextNum = entities.filter(e => e.type === 'enemy').length + 1; createEntity('enemy', data.name || `Monstro ${nextNum}`, 8, 6, data); setShowEnemyCreator(false); };
+  // 👉 MAGIA DO TAMANHO APLICADA PARA NOVOS ALIADOS CRIADOS (size: 2)
+  const handleSaveNewAlly = (id: number, data: Partial<Entity>) => { 
+      const nextNum = entities.filter(e => e.type === 'player').length + 1; 
+      const finalName = data.name || `Aliado ${nextNum}`; 
+      const pos = getCenterGridPosition();
+      createEntity('player', finalName, pos.x, pos.y, { ...data, name: finalName, size: data.size || 2 }); 
+      setShowAllyCreator(false); 
+  };
+  const handleSaveNewEnemy = (data: Partial<Entity>) => { 
+      const nextNum = entities.filter(e => e.type === 'enemy').length + 1; 
+      const pos = getCenterGridPosition();
+      createEntity('enemy', data.name || `Monstro ${nextNum}`, pos.x, pos.y, data); 
+      setShowEnemyCreator(false); 
+  };
 
   if (!isLoggedIn) return <LoginScreen onLogin={handleLogin} />;
   
@@ -815,7 +854,9 @@ function App() {
                 )}
                 </div>
             )}
-            {showAllyCreator && (<EditEntityModal entity={{ id: 0, name: '', hp: 20, maxHp: 20, ac: 12, x:0, y:0, type: 'player', color: '', conditions: [], mirrored: false, size: 1, inventory: [] }} onSave={(id, updates) => handleSaveNewAlly(id, updates)} onClose={() => setShowAllyCreator(false)} />)}
+            
+            {/* 👉 MAGIA DO TAMANHO NA CRIAÇÃO DE ALIADOS NO MODAL (size: 2 em vez de 1) */}
+            {showAllyCreator && (<EditEntityModal entity={{ id: 0, name: '', hp: 20, maxHp: 20, ac: 12, x:0, y:0, type: 'player', color: '', conditions: [], mirrored: false, size: 2, inventory: [] }} onSave={(id, updates) => handleSaveNewAlly(id, updates)} onClose={() => setShowAllyCreator(false)} />)}
             {showEnemyCreator && (<MonsterCreatorModal onSave={handleSaveNewEnemy} onSavePreset={handleSaveMonsterPreset} onClose={() => setShowEnemyCreator(false)} />)}
             {contextMenu && (<ContextMenu x={contextMenu.x} y={contextMenu.y} entity={contextMenu.entity} role={role} onClose={() => setContextMenu(null)} onAction={handleContextMenuAction} />)}
             
@@ -826,7 +867,6 @@ function App() {
                     mapUrl={currentMap} gridSize={GRID_SIZE} entities={entities} role={role} fogGrid={fogGrid} isFogMode={isFogMode} fogTool={fogTool} activeTurnId={activeTurnId}
                     onFogUpdate={handleFogUpdate} onFogBulkUpdate={handleFogBulkUpdate} fogShape={fogShape}
                     onMoveToken={handleUpdatePosition} onAddToken={handleMapDrop} onRotateToken={handleRotateToken}
-                    // 👇 AQUI A MAGIA QUE IGNORA O CLIQUE ESQUERDO 👇
                     onSelectEntity={() => {}} 
                     onResizeToken={handleResizeToken} onTokenDoubleClick={handleAddToInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget}
                     onSetAttacker={handleSetAttacker} onFlipToken={handleFlipToken} activeAoE={activeAoE} onAoEComplete={() => setActiveAoE(null)} aoeColor={aoeColor} 
