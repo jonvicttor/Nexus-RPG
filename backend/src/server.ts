@@ -178,8 +178,7 @@ io.on('connection', (socket) => {
     socket.to(data.roomId).emit('fogUpdated', data);
   });
 
-  // 👇 --- EVENTOS DE SINCRONIZAÇÃO ADICIONADOS AQUI --- 👇
-
+  // SINCRONIZAÇÃO
   socket.on('syncFogGrid', (data) => {
     currentGameState.fogGrid = data.grid;
     socket.to(data.roomId).emit('fogGridSynced', data);
@@ -192,20 +191,25 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 👆 ------------------------------------------------ 👆
-
   socket.on('updateInitiative', (data) => {
     currentGameState.initiativeList = data.list;
     currentGameState.activeTurnId = data.activeTurnId;
     socket.to(data.roomId).emit('initiativeUpdated', data);
   });
 
-  // CHAT, DADOS E ÁUDIO
+  // --- CHAT, DADOS E ÁUDIO ---
   socket.on('sendMessage', (data) => {
     currentGameState.chatHistory.push(data.message);
     if (currentGameState.chatHistory.length > 50) currentGameState.chatHistory.shift();
     io.in(data.roomId).emit('chatMessage', data);
   });
+
+  // 👇 NOVA MAGIA AQUI: O Chat Exclusivo da Taverna (Lobby) 👇
+  socket.on('sendLobbyMessage', (msgData) => {
+    // Ao receber de um jogador, repassa (broadcast) para todos os outros
+    socket.broadcast.emit('receiveLobbyMessage', msgData);
+  });
+  // 👆 -------------------------------------------------------- 👆
 
   socket.on('rollDice', (data) => { 
     io.in(data.roomId).emit('newDiceResult', data); 

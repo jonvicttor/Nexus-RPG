@@ -14,6 +14,7 @@ interface LobbyProps {
   myPlayerName: string;
   chatMessages?: { sender: string; text: string; timestamp?: string }[];
   onSendMessage?: (text: string) => void;
+  roomCode?: string; // NOVO: Recebe a chave da sala real do App.tsx
 }
 
 // --- GLASSMORPHISM PANEL REFINADO ---
@@ -53,7 +54,7 @@ const TavernSparks = () => {
     );
 };
 
-const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlayerName, chatMessages, onSendMessage }) => {
+const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlayerName, chatMessages, onSendMessage, roomCode }) => {
   const [selectedCharId, setSelectedCharId] = useState<number | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -65,7 +66,12 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
 
   const titleFont = { fontFamily: '"Uncial Antiqua", serif' };
   const textFont = { fontFamily: '"Crimson Text", serif' };
-  const roomCode = "X7B-99"; 
+  
+  // Exibe o código da sala real (ou um fallback se o App.tsx ainda não o estiver passando)
+  const displayRoomCode = roomCode || "SALA-SECRETA"; 
+
+  // Verifica se o jogador atual é o Mestre Supremo (ou contém Mestre)
+  const isDM = myPlayerName === 'Mestre Supremo' || myPlayerName === 'Mestre' || myPlayerName?.includes('Mestre');
 
   useEffect(() => {
     const sound = new Howl({
@@ -83,7 +89,7 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
   }, [localChat, chatMessages]);
 
   const handleCopyCode = () => {
-    navigator.clipboard.writeText(roomCode);
+    navigator.clipboard.writeText(displayRoomCode);
     setCopiedCode(true); setTimeout(() => setCopiedCode(false), 2000);
   };
 
@@ -101,13 +107,13 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
   const uniqueCharacters = Array.from(new Map(availableCharacters.filter(e => e.type === 'player').map(item => [item.name, item])).values()) as PlayerEntity[];
 
   const currentPlayers = [
-    { id: 99, name: myPlayerName || 'Jogador', role: myPlayerName === 'Mestre' ? 'DM' : 'PLAYER', ready: isReady, selectedCharId: selectedCharId }
+    { id: 99, name: myPlayerName || 'Jogador', role: isDM ? 'DM' : 'PLAYER', ready: isReady, selectedCharId: selectedCharId }
   ];
 
   const displayChat = chatMessages || localChat;
 
   return (
-    <div className="w-full min-h-[100dvh] bg-[#0d0b09] flex items-center justify-center p-4 md:p-6 overflow-y-auto overflow-x-hidden relative custom-scrollbar bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/images/tavern-bg.jpg')" }}>
+    <div className="w-full min-h-[100dvh] bg-[#0d0b09] flex items-start lg:items-center justify-center p-4 md:p-6 overflow-y-auto overflow-x-hidden relative custom-scrollbar bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/images/tavern-bg.jpg')" }}>
       
       <TavernSparks />
       <div className="fixed inset-0 pointer-events-none z-0">
@@ -116,7 +122,7 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
           <div className="absolute -bottom-1/4 left-1/2 -translate-x-1/2 w-full h-3/4 bg-gradient-to-t from-amber-700/20 via-amber-950/10 to-transparent blur-[100px] opacity-80 z-0"></div>
       </div>
 
-      <div className="max-w-[1300px] w-full flex flex-col lg:grid lg:grid-cols-12 gap-5 relative z-10 py-6 lg:py-0 lg:h-[90vh]">
+      <div className="max-w-[1300px] w-full flex flex-col lg:grid lg:grid-cols-12 gap-5 relative z-10 py-8 lg:py-0 lg:h-[90vh]">
         
         {/* === COLUNA ESQUERDA === */}
         <div className="lg:col-span-8 flex flex-col gap-5 lg:h-full">
@@ -129,7 +135,7 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
               </div>
               <div className="flex items-center gap-3 bg-black/50 px-5 py-3 rounded-xl border border-white/10 w-full sm:w-auto shadow-inner">
                 <span className="text-gray-400 text-[10px] md:text-xs uppercase tracking-[0.2em] font-bold">Código:</span>
-                <span className="text-amber-400 font-mono font-black tracking-widest text-lg md:text-xl drop-shadow-[0_0_5px_rgba(251,191,36,0.5)]">{roomCode}</span>
+                <span className="text-amber-400 font-mono font-black tracking-widest text-lg md:text-xl drop-shadow-[0_0_5px_rgba(251,191,36,0.5)]">{displayRoomCode}</span>
                 <button onClick={handleCopyCode} className={`p-2 rounded-lg transition-colors flex gap-1 items-center ${copiedCode ? 'bg-green-900/50 text-green-400 border border-green-500/30' : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5'}`}>
                   {copiedCode ? <Check size={16}/> : <Clipboard size={16}/>}
                 </button>
@@ -155,15 +161,23 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
                   return (
                     <div 
                       key={char.id}
-                      onClick={() => !isLockedByOther && setSelectedCharId(char.id)}
-                      /* GEOMETRIA PERFEITA: Borda exata de 2px, box-border garante simetria absoluta horizontal/vertical */
+                      onClick={() => {
+                        if (!isLockedByOther && !isDM) {
+                            if (selectedCharId === char.id) {
+                                setSelectedCharId(null);
+                                setIsReady(false);
+                            } else {
+                                setSelectedCharId(char.id);
+                                setIsReady(true);
+                            }
+                        }
+                      }}
                       className={`relative group rounded-[16px] transition-all duration-300 h-[260px] flex flex-col border-[2px] box-border
                         ${isLockedByOther ? 'border-gray-800 bg-gray-900 grayscale opacity-60 cursor-not-allowed z-0' : 
                           isMine ? 'border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.5)] -translate-y-2 cursor-pointer z-10' : 
-                          'border-white/10 bg-black/60 hover:border-white/30 hover:-translate-y-1 cursor-pointer shadow-lg z-0 hover:shadow-[0_10px_20px_rgba(0,0,0,0.5)]'
+                          isDM ? 'border-white/10 bg-black/60 opacity-80 z-0' : 'border-white/10 bg-black/60 hover:border-white/30 hover:-translate-y-1 cursor-pointer shadow-lg z-0 hover:shadow-[0_10px_20px_rgba(0,0,0,0.5)]'
                         }`}
                     >
-                      {/* O rounded interno (14px) subtrai os 2px da borda externa (16px), encaixando matematicamente! */}
                       <div className="absolute inset-0 rounded-[14px] overflow-hidden">
                         <img src={char.image || '/assets/card-template.png'} className={`w-full h-full object-cover transition-transform duration-700 ${isMine ? 'opacity-100 scale-105' : 'opacity-60 group-hover:opacity-90 group-hover:scale-105'}`} alt={char.name} />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent"></div>
@@ -233,7 +247,11 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
                       </div>
                     </div>
                     <div>
-                      {player.ready ? (
+                      {player.role === 'DM' ? (
+                        <div className="flex items-center gap-1.5 text-[9px] text-purple-300 bg-purple-950/50 px-2.5 py-1.5 rounded-lg border border-purple-800/60 font-black uppercase tracking-[0.1em] shadow-[0_0_10px_rgba(168,85,247,0.1)]">
+                          <Crown size={12} strokeWidth={3}/> Administrando
+                        </div>
+                      ) : player.ready ? (
                         <div className="flex items-center gap-1.5 text-[9px] text-green-300 bg-green-950/50 px-2.5 py-1.5 rounded-lg border border-green-800/60 font-black uppercase tracking-[0.1em] shadow-[0_0_10px_rgba(34,197,94,0.1)]">
                           <CheckCircle2 size={12} strokeWidth={3}/> Pronto
                         </div>
@@ -295,36 +313,48 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
           </TavernPanel>
 
           <div className="flex flex-col gap-3 shrink-0">
-            <button 
-              onClick={() => {
-                  if (!selectedCharId) {
-                      setLocalChat(prev => [...prev, { sender: 'Sistema', text: '⚠️ Escolha um herói primeiro!', time: new Date().toLocaleTimeString() }]);
-                      return;
-                  }
-                  setIsReady(!isReady);
-              }}
-              className={`w-full py-4 text-base md:text-lg font-black uppercase tracking-[0.25em] rounded-2xl border transition-all duration-300 shadow-xl flex items-center justify-center gap-3 active:scale-95 group overflow-hidden relative
-                ${isReady 
-                  ? 'bg-green-900/80 border-green-500 text-green-50 hover:bg-green-800 shadow-[0_0_30px_rgba(34,197,94,0.25)]' 
-                  : 'bg-gradient-to-r from-amber-800 via-amber-700 to-amber-800 border-amber-500 text-black hover:brightness-110 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
-                }`}
-              style={titleFont}
-            >
-              {!isReady && <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 z-0"></div>}
-              <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity z-0"></div>
-              
-              <span className="relative z-10 flex items-center gap-3">
-                 {isReady ? <><CheckCircle2 size={24}/> Estou Pronto</> : <><Sword size={24}/> Preparar Batalha</>}
-              </span>
-            </button>
+            {isDM ? (
+              <button 
+                onClick={onStartGame}
+                className={`w-full py-4 text-base md:text-lg font-black uppercase tracking-[0.25em] rounded-2xl border transition-all duration-300 flex items-center justify-center gap-3 active:scale-95 group overflow-hidden relative bg-gradient-to-r from-purple-900 via-purple-700 to-purple-900 border-purple-500 text-white hover:brightness-110 shadow-[0_0_25px_rgba(168,85,247,0.4)]`}
+                style={titleFont}
+              >
+                <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 z-0"></div>
+                <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity z-0"></div>
+                <span className="relative z-10 flex items-center gap-3">
+                   <Crown size={24}/> Iniciar Aventura
+                </span>
+              </button>
+            ) : (
+              <>
+                <button 
+                  onClick={() => {
+                      if (!selectedCharId) {
+                          setLocalChat(prev => [...prev, { sender: 'Sistema', text: '⚠️ Escolha um herói primeiro!', time: new Date().toLocaleTimeString() }]);
+                          return;
+                      }
+                      setIsReady(!isReady);
+                  }}
+                  className={`w-full py-4 text-base md:text-lg font-black uppercase tracking-[0.25em] rounded-2xl border transition-all duration-300 flex items-center justify-center gap-3 active:scale-95 group overflow-hidden relative
+                    ${isReady 
+                      ? 'bg-green-900/80 border-green-500 text-green-50 hover:bg-green-800 shadow-[0_0_30px_rgba(34,197,94,0.25)]' 
+                      : 'bg-gradient-to-r from-amber-800 via-amber-700 to-amber-800 border-amber-500 text-black hover:brightness-110 shadow-[0_0_10px_rgba(245,158,11,0.5)]'
+                    }`}
+                  style={titleFont}
+                >
+                  {!isReady && <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 z-0"></div>}
+                  <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity z-0"></div>
+                  
+                  <span className="relative z-10 flex items-center gap-3">
+                     {isReady ? <><CheckCircle2 size={24}/> Estou Pronto</> : <><Sword size={24}/> Preparar Batalha</>}
+                  </span>
+                </button>
 
-            <button 
-              onClick={onStartGame}
-              className="w-full py-3.5 bg-black/40 hover:bg-indigo-950/80 border border-white/5 hover:border-indigo-500/40 text-gray-500 hover:text-indigo-300 rounded-xl uppercase text-[10px] font-black tracking-[0.2em] transition-all backdrop-blur-sm group"
-            >
-              <span className="group-hover:hidden">Apenas o Mestre pode Iniciar</span>
-              <span className="hidden group-hover:inline">Forçar Início (DM Override)</span>
-            </button>
+                <div className="w-full py-3.5 bg-black/40 border border-white/5 text-gray-500 rounded-xl uppercase text-[10px] md:text-xs font-black tracking-[0.2em] flex items-center justify-center backdrop-blur-sm">
+                  Aguardando Mestre Iniciar...
+                </div>
+              </>
+            )}
           </div>
 
         </div>

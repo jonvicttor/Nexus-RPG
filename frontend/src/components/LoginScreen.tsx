@@ -93,7 +93,6 @@ const BackgroundWrapper = ({ children, isMuted, toggleMute }: { children: React.
       {isMuted ? <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>}
     </button>
     
-    {/* A MAGIA ACONTECEU AQUI: A rolagem agora flui lindamente sem travar no topo! */}
     <div className="relative z-10 w-full h-full overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in duration-700">
       <div className="m-auto w-full max-w-full flex justify-center py-8 px-2 md:px-4">
           {children}
@@ -116,6 +115,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const [role, setRole] = useState<'DM' | 'PLAYER'>('PLAYER');
   const [loginIntent, setLoginIntent] = useState<'LOGIN' | 'CREATE'>('CREATE'); 
   const [name, setName] = useState('');
+  
+  // Código da Sala para o Jogador
+  const [playerRoomId, setPlayerRoomId] = useState('');
+
   const [dmPass, setDmPass] = useState('');
   const [error, setError] = useState('');
   const [isChecking, setIsChecking] = useState(false);
@@ -194,7 +197,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   useEffect(() => {
     socket.on('characterFound', (existingChar) => { 
         setIsChecking(false); 
-        onLogin('PLAYER', name, existingChar); 
+        onLogin('PLAYER', name, { ...existingChar, roomId: playerRoomId }); 
     });
     
     socket.on('characterNotFound', () => { 
@@ -207,14 +210,14 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     });
     
     return () => { socket.off('characterFound'); socket.off('characterNotFound'); };
-  }, [name, onLogin, loginIntent]);
+  }, [name, onLogin, loginIntent, playerRoomId]);
 
   const handleLoginByName = () => {
     if (!name.trim()) return setError('Digite o nome do herói.');
     setError('');
     setLoginIntent('LOGIN'); 
     setIsChecking(true);
-    socket.emit('checkExistingCharacter', { name });
+    socket.emit('checkExistingCharacter', { name, roomId: playerRoomId });
   };
 
   const handleStartCreation = () => {
@@ -222,7 +225,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     setError('');
     setLoginIntent('CREATE'); 
     setIsChecking(true);
-    socket.emit('checkExistingCharacter', { name });
+    socket.emit('checkExistingCharacter', { name, roomId: playerRoomId });
   };
 
   useEffect(() => {
@@ -253,7 +256,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     const finalStats = { str: stats.str + racial.str, dex: stats.dex + racial.dex, con: stats.con + racial.con, int: stats.int + racial.int, wis: stats.wis + racial.wis, cha: stats.cha + racial.cha };
     const conMod = Math.floor((finalStats.con - 10) / 2);
     const hpMax = Math.max(1, (CLASSES as any)[selectedClass].hpBase + conMod);
-    return { name, stats: finalStats, hp: hpMax, maxHp: hpMax, ac: (CLASSES as any)[selectedClass].ac, image: getDynamicTokenImage(selectedRace, selectedClass), race: selectedRace, classType: selectedClass, xp: 0, level: 1 };
+    return { name, stats: finalStats, hp: hpMax, maxHp: hpMax, ac: (CLASSES as any)[selectedClass].ac, image: getDynamicTokenImage(selectedRace, selectedClass), race: selectedRace, classType: selectedClass, xp: 0, level: 1, roomId: playerRoomId };
   };
 
   const handleFinalSubmit = () => {
@@ -281,7 +284,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   };
 
   const handleQuickLogin = () => {
-      if (savedChar) onLogin('PLAYER', savedChar.name, savedChar);
+      if (savedChar) onLogin('PLAYER', savedChar.name, { ...savedChar, roomId: playerRoomId });
   };
 
   const handleDeleteSave = () => {
@@ -308,7 +311,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
         <div className="flex flex-col md:flex-row gap-4 md:gap-8 w-full justify-center items-stretch px-4 md:px-8 max-w-3xl">
           
-          <button onClick={() => { setRole('PLAYER'); if (savedChar) setStep(1.5); else setStep(1.2); }} className="group relative w-full md:flex-1 h-[200px] md:h-[280px] overflow-hidden rounded-3xl transition-all duration-500 hover:scale-[1.03] active:scale-95">
+          <button onClick={() => { setRole('PLAYER'); setStep(1.1); }} className="group relative w-full md:flex-1 h-[200px] md:h-[280px] overflow-hidden rounded-3xl transition-all duration-500 hover:scale-[1.03] active:scale-95">
              <ArcaneContainer width="w-full" className="h-full hover:shadow-[0_0_50px_rgba(37,99,235,0.3)] hover:border-blue-500/50 transition-all">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-900/40 via-transparent to-black opacity-60 z-0"></div>
                 <div className="relative z-10 flex flex-col h-full items-center justify-center p-4 md:p-6 text-center gap-3 md:gap-6">
@@ -344,6 +347,48 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     </BackgroundWrapper>
   );
 
+  if (step === 1.1 && role === 'PLAYER') return (
+    <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
+        <ArcaneContainer width="w-full max-w-[500px]" className="!p-6 md:!p-12 gap-6 md:gap-10 flex flex-col items-center">
+             <div className="text-center space-y-1 md:space-y-2">
+                <h2 className="text-2xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-200 via-blue-100 to-blue-400 uppercase tracking-[0.1em] drop-shadow-md" style={{ fontFamily: 'Cinzel Decorative' }}>O Convite</h2>
+                <p className="text-blue-200/50 text-xs md:text-sm font-serif italic">Insira a Chave da Sala fornecida pelo Mestre.</p>
+             </div>
+             <div className="w-full h-[2px] bg-gradient-to-r from-transparent via-blue-900/50 to-transparent"></div>
+             
+             <div className="w-full space-y-4 md:space-y-6">
+                <label className="text-[10px] md:text-xs text-blue-300/70 uppercase font-black tracking-[0.15em] mb-2 md:mb-3 flex items-center gap-2">
+                    <Key size={14} className="text-blue-500" /> Código da Taverna
+                </label>
+                <StoneInput 
+                    type="text" 
+                    placeholder="Ex: sala-do-dragao" 
+                    value={playerRoomId} 
+                    onChange={(e: any) => setPlayerRoomId(e.target.value.toLowerCase().replace(/\s+/g, '-'))} 
+                    onKeyDown={(e: any) => {
+                        if (e.key === 'Enter' && playerRoomId.trim()) {
+                            setError('');
+                            setStep(savedChar ? 1.5 : 1.2);
+                        }
+                    }}
+                    className="!text-xl md:!text-3xl !p-3 md:!p-4 !border-blue-900/50 focus:!border-blue-400/80 !text-blue-100 rounded-xl text-center font-mono tracking-widest"
+                />
+                {error && <p className="text-red-300 text-xs text-center font-bold bg-red-900/30 py-2 rounded-lg">{error}</p>}
+             </div>
+
+             <MetalButton onClick={() => {
+                 if (!playerRoomId.trim()) return setError('Os guardas exigem um código válido!');
+                 setError('');
+                 setStep(savedChar ? 1.5 : 1.2);
+             }} fullWidth variant="blue" className="py-4 md:py-6 text-xs md:text-sm mt-4">
+                 <ChevronRight size={20} className="mr-2" /> Entrar na Taverna
+             </MetalButton>
+
+             <button onClick={() => { setStep(1); setPlayerRoomId(''); setError(''); }} className="text-blue-500/40 hover:text-blue-200 text-[10px] uppercase tracking-[0.3em] font-bold transition-colors pb-1 md:pb-2 mt-2">❮ Voltar aos Portões</button>
+        </ArcaneContainer>
+    </BackgroundWrapper>
+  );
+
   if (step === 1.5 && savedChar) return (
     <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
         <ArcaneContainer width="w-full max-w-[450px]" className="!p-6 md:!p-10 gap-6 md:gap-8 flex flex-col items-center">
@@ -364,10 +409,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 <div className="inline-block bg-black/50 px-3 md:px-4 py-1 rounded-lg border border-amber-900/50">
                     <p className="text-amber-300 text-xs md:text-sm font-bold uppercase tracking-[0.1em] md:tracking-[0.2em]">{savedChar.race} | {savedChar.classType}</p>
                 </div>
+                <p className="text-blue-400 text-[10px] uppercase tracking-widest font-bold mt-2">Sala: {playerRoomId}</p>
             </div>
 
             <MetalButton onClick={handleQuickLogin} fullWidth variant="amber" className="py-4 md:py-5 text-sm md:text-base mt-2 md:mt-4">
-                <Play size={20} fill="currentColor" /> Entrar no Mundo
+                <Play size={20} fill="currentColor" /> Juntar-se à Mesa
             </MetalButton>
 
             <div className="flex flex-col sm:flex-row gap-3 md:gap-4 w-full pt-4 md:pt-6 border-t-2 border-amber-900/30">
@@ -378,7 +424,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                     <Trash2 size={16} /> <span className="sm:hidden uppercase font-bold">Apagar</span>
                 </button>
             </div>
-            <button onClick={() => setStep(1)} className="text-amber-500/40 hover:text-amber-200 text-[10px] uppercase tracking-[0.3em] font-bold transition-colors pb-1">❮ Voltar ao Início</button>
+            <button onClick={() => setStep(1.1)} className="text-amber-500/40 hover:text-amber-200 text-[10px] uppercase tracking-[0.3em] font-bold transition-colors pb-1">❮ Trocar de Sala</button>
         </ArcaneContainer>
     </BackgroundWrapper>
   );
@@ -388,13 +434,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         <ArcaneContainer width="w-full max-w-[500px]" className="!p-6 md:!p-12 gap-6 md:gap-10 flex flex-col items-center">
              <div className="text-center space-y-1 md:space-y-2">
                 <h2 className="text-2xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-200 via-blue-100 to-blue-400 uppercase tracking-[0.1em] drop-shadow-md" style={{ fontFamily: 'Cinzel Decorative' }}>Portal dos Viajantes</h2>
-                <p className="text-blue-200/50 text-xs md:text-sm font-serif italic">Identifique-se ou inicie uma nova jornada.</p>
+                <p className="text-blue-200/50 text-xs md:text-sm font-serif italic">Acessando a Taverna: <span className="text-blue-400 font-mono font-bold">{playerRoomId}</span></p>
              </div>
              <div className="w-full h-[2px] bg-gradient-to-r from-transparent via-blue-900/50 to-transparent"></div>
             
             <div className="w-full space-y-4 md:space-y-6 relative">
                 <div className="absolute -left-4 md:-left-6 top-1/2 -translate-y-1/2 w-1 h-12 bg-blue-500/50 blur-[2px] rounded-full hidden sm:block"></div>
-                <label className="text-[10px] md:text-xs text-blue-300/70 uppercase font-black tracking-[0.15em] md:tracking-[0.25em] mb-2 md:mb-3 block ml-1 drop-shadow-sm">Já tenho um herói</label>
+                <label className="text-[10px] md:text-xs text-blue-300/70 uppercase font-black tracking-[0.15em] md:tracking-[0.25em] mb-2 md:mb-3 block ml-1 drop-shadow-sm">Já tenho um herói nesta mesa</label>
                 <div className="flex flex-col sm:flex-row gap-3 md:gap-4 relative items-stretch w-full">
                     <StoneInput 
                         placeholder="Nome exato do Personagem" 
@@ -421,7 +467,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 <UserPlus size={20} className="mr-2" /> Forjar Nova Lenda
             </MetalButton>
 
-            <button onClick={() => setStep(1)} className="text-blue-500/40 hover:text-blue-200 text-[10px] uppercase tracking-[0.3em] font-bold transition-colors pb-1 md:pb-2 mt-2 md:mt-4">❮ Cancelar</button>
+            <button onClick={() => setStep(1.1)} className="text-blue-500/40 hover:text-blue-200 text-[10px] uppercase tracking-[0.3em] font-bold transition-colors pb-1 md:pb-2 mt-2 md:mt-4">❮ Voltar</button>
         </ArcaneContainer>
     </BackgroundWrapper>
   );
@@ -449,9 +495,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           </div>
         </div>
 
-        {/* --- CORREÇÃO DA ARMADILHA DE ROLAGEM AQUI --- */}
         <div className="flex flex-col md:flex-row flex-1 md:overflow-hidden">
-            {/* Secção Esquerda: Nome e Preview da Imagem */}
             <div className="w-full md:w-[350px] bg-black/20 md:border-r border-b md:border-b-0 border-white/5 flex flex-row md:flex-col items-center justify-center md:justify-start p-4 md:p-8 gap-4 md:gap-6 flex-shrink-0">
                 
                 <div className="relative group cursor-pointer flex-shrink-0" onClick={() => setShowFullImage(true)}>
@@ -481,10 +525,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 </div>
             </div>
 
-            {/* Secção Direita: Escolha de Raça e Classe */}
             <div className="flex-1 flex flex-col md:flex-row p-4 md:p-8 gap-4 md:gap-6 h-auto md:h-full md:overflow-hidden">
                 
-                {/* Seleção de Raça */}
                 <div className="flex flex-col md:flex-1 min-h-0">
                     <h3 className="text-amber-500/80 font-bold uppercase tracking-[0.15em] md:tracking-[0.2em] text-[10px] md:text-xs mb-2 md:mb-3 flex items-center gap-2">
                         <Crown size={14} /> Selecione a Linhagem
@@ -509,7 +551,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                     </div>
                 </div>
 
-                {/* Seleção de Classe */}
                 <div className="flex flex-col md:flex-1 min-h-0 mt-2 md:mt-0">
                     <h3 className="text-amber-500/80 font-bold uppercase tracking-[0.15em] md:tracking-[0.2em] text-[10px] md:text-xs mb-2 md:mb-3 flex items-center gap-2">
                         <Sword size={14} /> Selecione o Ofício
@@ -558,7 +599,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           </div>
         </div>
 
-        <div ref={statsScrollRef} className="p-4 md:p-8 flex flex-col md:h-full items-center justify-start md:overflow-y-auto custom-scrollbar bg-gradient-to-b from-transparent to-black/30 w-full">
+        <div ref={statsScrollRef} className="p-4 md:p-8 flex flex-col md:h-full items-center justify-start md:overflow-y-auto custom-scrollbar bg-gradient-to-b from-transparent to-black/30 w-full shrink-0">
             <div className="text-center mb-6 md:mb-8 flex-shrink-0 relative">
               <div className="absolute inset-0 bg-amber-600/20 blur-[30px] md:blur-[50px] rounded-full -z-10"></div>
               <span className="text-[10px] md:text-sm text-amber-300/70 uppercase font-black tracking-[0.2em] md:tracking-[0.4em] drop-shadow-sm border-b border-amber-900/50 pb-1 md:pb-2 px-4 md:px-8">Pontos Restantes</span>
