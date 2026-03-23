@@ -35,6 +35,8 @@ export interface Item {
     armorClass?: number;
     ac?: number; 
     properties?: string[];
+    isTreasure?: boolean;
+    coins?: { gp: number, sp: number, cp: number };
   };
 }
 
@@ -353,8 +355,8 @@ function App() {
                 const myChar = currentEntities.find(e => e.name === playerName && e.id === data.targetId);
                 const isMyChar = myChar || currentEntities.some(e => e.id === data.targetId && e.type === 'player' && e.name === playerName);
                 if (isMyChar) {
-                     setDiceContext({ title: data.skillName, subtitle: `Exigido pelo Mestre (CD ${data.dc})`, dc: data.dc, mod: data.mod, prof: 0, bonuses: [], rollType: 'normal' });
-                    setShowBgDice(true); handlePlayMusic('suspense', false); addLog({ text: `⚠️ O Mestre exigiu um teste de **${data.skillName}** (CD ${data.dc})!`, type: 'info', sender: 'Sistema' });
+                     setDiceContext({ title: data.skillName, subtitle: `Exigido pelo Mestre`, dc: data.dc, mod: data.mod, prof: 0, bonuses: [], rollType: 'normal' });
+                    setShowBgDice(true); handlePlayMusic('suspense', false); addLog({ text: `⚠️ O Mestre exigiu um teste de **${data.skillName}**!`, type: 'info', sender: 'Sistema' });
                 }
                 return currentEntities;
             });
@@ -379,8 +381,17 @@ function App() {
       else { addLog({ text: "🎥 Câmera recentralizada.", type: 'info', sender: 'Sistema' }); }
   };
   const handleMapSync = (offset: {x: number, y: number}, scale: number) => { setMapOffset(offset); setMapScale(scale); if (role === 'DM') socket.emit('syncMapState', { roomId, offset, scale }); };
-  const handleDmRequestRoll = (targetId: number, skillName: string, mod: number, dc: number) => { const target = entities.find(e => e.id === targetId); addLog({ text: `Mestre solicitou teste de **${skillName}** para **${target ? target.name : 'Alvo'}** (CD ${dc}).`, type: 'info', sender: 'Sistema' }); socket.emit('dmRequestRoll', { roomId, targetId, skillName, mod, dc }); };
-  const handleAttributeRoll = (charName: string, attrName: string, mod: number) => { setDiceContext({ title: attrName, subtitle: `Teste de Perícia (${charName})`, dc: 15, mod, prof: 0, bonuses: [], rollType: 'normal' }); setShowBgDice(true); };
+  
+  const handleDmRequestRoll = (targetId: number, skillName: string, mod: number, dc: number) => { 
+      const target = entities.find(e => e.id === targetId); 
+      addLog({ text: `Mestre solicitou um teste de **${skillName}** para **${target ? target.name : 'Alvo'}**.`, type: 'info', sender: 'Sistema' }); 
+      socket.emit('dmRequestRoll', { roomId, targetId, skillName, mod, dc }); 
+  };
+  
+  const handleAttributeRoll = (charName: string, attrName: string, mod: number) => { 
+      setDiceContext({ title: attrName, subtitle: `Teste de Perícia (${charName})`, dc: 15, mod, prof: 0, bonuses: [], rollType: 'normal' }); 
+      setShowBgDice(true); 
+  };
 
   const handleApplyDamageFromChat = (targetId: number, damageExpression: string) => {
         const rollMatch = damageExpression.match(/^(\d+)d(\d+)(\+(\d+))?$/i);
@@ -399,7 +410,6 @@ function App() {
         }
   };
 
-  // 👉 O CÉREBRO DOS ATAQUES MÁGICOS
   const handleDiceComplete = (total: number, isSuccess: boolean, isCritical: boolean, isSecret: boolean) => {
       const senderName = role === 'DM' ? 'Mestre' : playerName;
       let resultMsg = isCritical ? (total >= 20 ? "CRÍTICO! ⚔️" : "FALHA CRÍTICA! 💀") : (isSuccess ? "SUCESSO! ✅" : "FALHA ❌");
@@ -441,29 +451,26 @@ function App() {
               damageExpression = `${rollsCount}d${sides}${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''}`;
           }
 
-          // Se tiver um alvo selecionado, calcula hit/miss e aciona animação
           if (targetEntityIds.length > 0) {
               const target = entities.find(e => e.id === targetEntityIds[0]);
               if (target) {
                   if (total >= target.ac || (isCritical && total >= 20)) { 
-                      resultMsg = `**ACERTOU!** ⚔️ (vs CA ${target.ac})`; 
+                      resultMsg = `**ACERTOU!** ⚔️`; 
                       isAttackHit = true; 
                       targetIdForDamage = target.id;
-                      targetInfoMsg = `\n🎯 *${target.name}* foi atingido!\n🩸 Dano: [${dmgRolls.join(', ')}] ${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''} = **${Math.max(1, dmgTotal)}**`;
+                      targetInfoMsg = `\n🎯 *${target.name}* recebeu o golpe!\n🩸 Dano: [${dmgRolls.join(', ')}] ${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''} = **${Math.max(1, dmgTotal)}**`;
                       
-                      // DISPARAR ANIMAÇÃO E SOM DE ESPADA
                       socket.emit('triggerCombatAnimation', { roomId, attackerName: senderName, targetId: target.id, attackType: 'fisico' });
                       handlePlaySFX('sword', true);
                   } else { 
-                      resultMsg = `**ERROU!** 🛡️ (vs CA ${target.ac})`; 
+                      resultMsg = `**ERROU!** 🛡️`; 
                       targetInfoMsg = `\n💨 *${target.name}* defendeu o ataque.`; 
                       handlePlaySFX('dado', true);
                   }
               }
           } else {
-              // Apenas rola o dano no ar sem alvo
               resultMsg = `**Ataque Rolado** ⚔️`;
-              targetInfoMsg = `\n🩸 Dano Potencial: [${dmgRolls.join(', ')}] ${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''} = **${Math.max(1, dmgTotal)}**\n*(Nenhum alvo vermelho no mapa)*`;
+              targetInfoMsg = `\n🩸 Dano Potencial: [${dmgRolls.join(', ')}] ${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''} = **${Math.max(1, dmgTotal)}**\n*(Nenhum alvo selecionado)*`;
               handlePlaySFX('sword', true);
           }
       }
@@ -500,11 +507,9 @@ function App() {
     setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, hp: newHp } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { hp: newHp }, roomId });
   };
 
-  // 👉 O CÉREBRO DE DETETAR MAGIAS DO CHAT
   const handleSendMessage = (text: string) => {
       const senderName = role === 'DM' ? 'MESTRE' : playerName;
       
-      // VERIFICA SE É UMA MAGIA SENDO CONJURADA
       const spellMatch = text.match(/conjurou (\*\*o truque\*\* )?\*\*([^*]+)\*\*/i);
       if (spellMatch) {
           if (targetEntityIds.length > 0) {
@@ -555,14 +560,53 @@ function App() {
       addLog({ text: `🤝 **${sourceEntity.name}** deu **${item.name}** para **${targetEntity.name}**.`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true);
   };
 
+  // 👉 NOVO: SAQUE INTELIGENTE DE OURO OU ITENS!
   const handlePickUpLoot = (lootEntity: Entity) => {
       let receiver: Entity | undefined;
-      if (role === 'PLAYER') { receiver = entities.find(e => e.name === playerName && e.type === 'player'); } else { if (targetEntityIds.length > 0) receiver = entities.find(e => e.id === targetEntityIds[0]); }
-      if (!receiver) { setToastMsg({ text: role === 'DM' ? "Selecione um token (Alvo) para pegar o item." : "Você não tem um personagem para pegar isso.", id: Date.now() }); return; }
-      const item = lootEntity.inventory && lootEntity.inventory[0]; if (!item) { handleDeleteEntity(lootEntity.id); return; }
-      const newInventory = [...(receiver.inventory || []), item];
-      setEntities(prev => prev.map(ent => ent.id === receiver!.id ? { ...ent, inventory: newInventory } : ent)); socket.emit('updateEntityStatus', { entityId: receiver.id, updates: { inventory: newInventory }, roomId });
-      handleDeleteEntity(lootEntity.id); setStatusSelectionId(null); addLog({ text: `🎒 ${receiver.name} pegou ${item.name} do chão.`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true); 
+      if (role === 'PLAYER') { 
+          receiver = entities.find(e => e.name === playerName && e.type === 'player'); 
+      } else { 
+          if (targetEntityIds.length > 0) receiver = entities.find(e => e.id === targetEntityIds[0]); 
+      }
+      
+      if (!receiver) { 
+          setToastMsg({ text: role === 'DM' ? "Selecione um token (Alvo) para entregar o item." : "Você não tem um personagem para pegar isso.", id: Date.now() }); 
+          return; 
+      }
+
+      const item = lootEntity.inventory && lootEntity.inventory[0]; 
+      if (!item) { 
+          handleDeleteEntity(lootEntity.id); 
+          return; 
+      }
+
+      let updates: Partial<Entity> = {};
+      let logMsg = '';
+
+      if (item.stats?.isTreasure && item.stats.coins) {
+          // Extrair Moedas para o Cofre
+          const currentCoins = receiver.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+          updates.coins = {
+              cp: currentCoins.cp + (item.stats.coins.cp || 0),
+              sp: currentCoins.sp + (item.stats.coins.sp || 0),
+              ep: currentCoins.ep || 0,
+              gp: currentCoins.gp + (item.stats.coins.gp || 0),
+              pp: currentCoins.pp || 0
+          };
+          logMsg = `💰 **${receiver.name}** recolheu **${item.name}** (${item.value}).`;
+      } else {
+          // Extrair Equipamento para a Mochila
+          updates.inventory = [...(receiver.inventory || []), item];
+          logMsg = `🎒 **${receiver.name}** pegou **${item.name}** do chão.`;
+      }
+
+      setEntities(prev => prev.map(ent => ent.id === receiver!.id ? { ...ent, ...updates } : ent)); 
+      socket.emit('updateEntityStatus', { entityId: receiver.id, updates, roomId });
+      
+      handleDeleteEntity(lootEntity.id); 
+      setStatusSelectionId(null); 
+      addLog({ text: logMsg, type: 'info', sender: 'Sistema' }); 
+      handlePlaySFX('dado', true); 
   };
 
   const handleContextMenuAction = (action: string, entity: Entity) => {
@@ -843,7 +887,7 @@ function App() {
                         <div className="w-24 h-24 bg-black/50 rounded-lg border border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.2)] flex items-center justify-center p-2 relative overflow-hidden group"><div className="absolute inset-0 bg-yellow-500/10 blur-xl"></div>{selectedStatusEntity.image ? (<img src={selectedStatusEntity.image} alt="Item" className="w-full h-full object-contain relative z-10" />) : (<span className="text-2xl">🎁</span>)}</div>
                         <div className="text-center"><h2 className="text-xl font-bold text-yellow-400 drop-shadow-sm">{selectedStatusEntity.name}</h2><p className="text-[10px] text-gray-400 uppercase tracking-widest mt-1">Item no Chão</p></div>
                         <button onClick={() => handlePickUpLoot(selectedStatusEntity)} className="w-full py-3 bg-yellow-600/20 hover:bg-yellow-600/40 border border-yellow-500 text-yellow-200 font-bold uppercase tracking-widest rounded transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg"><span>✋</span> Pegar Item</button>
-                        {role === 'DM' && (<p className="text-[9px] text-gray-500 text-center italic mt-1">(Dica: Selecione um token alvo para entregar o item a ele)</p>)}
+                        {role === 'DM' && (<p className="text-[9px] text-gray-500 text-center italic mt-1">(Dica: Como Mestre, ao pegar o loot ele vai para o jogador que tiver como Alvo vermelho)</p>)}
                     </div>
                 ) : (
                     <>
@@ -886,7 +930,24 @@ function App() {
                     mapUrl={currentMap} gridSize={GRID_SIZE} entities={entities} role={role} fogGrid={fogGrid} isFogMode={isFogMode} fogTool={fogTool} activeTurnId={activeTurnId}
                     onFogUpdate={handleFogUpdate} onFogBulkUpdate={handleFogBulkUpdate} fogShape={fogShape}
                     onMoveToken={handleUpdatePosition} onAddToken={handleMapDrop} onRotateToken={handleRotateToken}
-                    onSelectEntity={() => {}} 
+                    
+                    // 👉 NOVO: Agora permite clicar em Itens no Chão para ver/pegar
+                    onSelectEntity={(entity) => {
+                        if (!entity) return;
+                        if (entity.classType === 'Item') {
+                            setStatusSelectionId(entity.id);
+                            return;
+                        }
+                        setFocusEntity(entity); 
+                        setTimeout(() => setFocusEntity(null), 100);
+                        
+                        if (attackerId === entity.id) {
+                            handleSetAttacker(null);
+                        } else {
+                            handleSetAttacker(entity.id);
+                        }
+                    }} 
+
                     onResizeToken={handleResizeToken} onTokenDoubleClick={handleAddToInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget}
                     onSetAttacker={handleSetAttacker} onFlipToken={handleFlipToken} activeAoE={activeAoE} onAoEComplete={() => setActiveAoE(null)} aoeColor={aoeColor} 
                     externalOffset={mapOffset} externalScale={mapScale} onMapChange={handleMapSync} focusEntity={focusEntity} globalBrightness={globalBrightness}

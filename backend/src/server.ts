@@ -35,11 +35,11 @@ interface GameState {
   customMonsters: any[];    
   globalBrightness: number; 
   weather: 'none' | 'rain' | 'snow';
+  currentTrack: string | null; // 👉 NOVO: O Servidor agora lembra qual música está a tocar!
 }
 
-// 👉 MAGIA NOVA: Cria um caminho de ficheiro único baseado no nome da sala
+// 👉 Cria um caminho de ficheiro único baseado no nome da sala
 const getSaveFilePath = (roomId: string) => {
-    // Substitui caracteres estranhos por '_' para evitar erros no sistema de arquivos
     const safeRoomId = roomId.replace(/[^a-z0-9-]/gi, '_');
     return path.join(process.cwd(), `savegame_${safeRoomId}.json`);
 };
@@ -58,10 +58,10 @@ const getRoomState = (roomId: string): GameState => {
             chatHistory: [],
             customMonsters: [],    
             globalBrightness: 1,
-            weather: 'none'
+            weather: 'none',
+            currentTrack: null
         };
         
-        // 👉 MAGIA NOVA: Tenta carregar o save específico DESTA sala
         const saveFile = getSaveFilePath(roomId);
         if (fs.existsSync(saveFile)) {
              try {
@@ -71,7 +71,8 @@ const getRoomState = (roomId: string): GameState => {
                     ...roomsState[roomId], 
                     ...loadedData,
                     customMonsters: loadedData.customMonsters || [],
-                    weather: loadedData.weather || 'none'
+                    weather: loadedData.weather || 'none',
+                    currentTrack: loadedData.currentTrack || null
                 };
                 console.log(`✅ SAVE CARREGADO COM SUCESSO PARA A SALA: ${roomId}`);
               } catch (e) {
@@ -89,7 +90,6 @@ const getRoomState = (roomId: string): GameState => {
 io.on('connection', (socket) => {
   console.log('🔌 Nova conexão:', socket.id);
 
-  // Sincroniza ao entrar na sala específica
   socket.on('joinRoom', (roomId: string) => {
     socket.join(roomId);
     const roomState = getRoomState(roomId);
@@ -97,7 +97,6 @@ io.on('connection', (socket) => {
     console.log(`👤 Usuário entrou na sala: ${roomId}`);
   });
 
-  // VERIFICAÇÃO DE PERSONAGEM
   socket.on('checkExistingCharacter', (data: any) => {
     console.log(`🔎 Verificando existência de: ${data.name} na sala ${data.roomId}`);
     const roomState = getRoomState(data.roomId);
@@ -111,12 +110,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  // INICIAR A PARTIDA PARA TODOS DA SALA
   socket.on('startGame', (data: any) => {
       io.in(data.roomId).emit('gameStarted');
   });
 
-  // CLIMA E ANIMAÇÕES
   socket.on('updateWeather', (data: any) => {
       const roomState = getRoomState(data.roomId);
       roomState.weather = data.weather;
@@ -131,7 +128,6 @@ io.on('connection', (socket) => {
       socket.to(data.roomId).emit('mapPinged', data);
   });
 
-  // MAPA E SAVE
   socket.on('changeMap', (data: any) => {
     const roomState = getRoomState(data.roomId);
     const newFog = createInitialFog();
@@ -152,10 +148,10 @@ io.on('connection', (socket) => {
         chatHistory: data.chatMessages || [],
         customMonsters: data.customMonsters || [],
         globalBrightness: data.globalBrightness,
-        weather: data.weather || roomState.weather
+        weather: data.weather || roomState.weather,
+        currentTrack: data.currentTrack || roomState.currentTrack
     };
 
-    // 👉 MAGIA NOVA: Salva no disco dinamicamente para a sala correta
     const saveFile = getSaveFilePath(data.roomId);
     try {
         fs.writeFileSync(saveFile, JSON.stringify(roomsState[data.roomId], null, 2));
@@ -167,7 +163,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ENTIDADES E POSIÇÃO
   socket.on('updateEntityPosition', (data: any) => {
     const roomState = getRoomState(data.roomId);
     const ent = roomState.entities.find((e: any) => e.id === data.entityId);
@@ -199,7 +194,6 @@ io.on('connection', (socket) => {
     socket.to(data.roomId).emit('entityDeleted', data);
   });
 
-  // BRILHO, NEBLINA E INICIATIVA
   socket.on('updateGlobalBrightness', (data: any) => {
       const roomState = getRoomState(data.roomId);
       roomState.globalBrightness = data.brightness;
@@ -214,7 +208,6 @@ io.on('connection', (socket) => {
     socket.to(data.roomId).emit('fogUpdated', data);
   });
 
-  // SINCRONIZAÇÃO
   socket.on('syncFogGrid', (data: any) => {
     const roomState = getRoomState(data.roomId);
     roomState.fogGrid = data.grid;
@@ -235,7 +228,25 @@ io.on('connection', (socket) => {
     socket.to(data.roomId).emit('initiativeUpdated', data);
   });
 
-  // --- CHAT, DADOS E ÁUDIO ---
+  // --- 🔊 A MÁGICA DOS SONS AQUI ---
+  socket.on('playSFX', (data: any) => {
+      // Quando alguém pede para tocar um SFX (espada, magia, dado), repassa para TODOS os outros na sala!
+      socket.to(data.roomId).emit('playSFX', { sfxId: data.sfxId });
+  });
+
+  socket.on('playMusic', (data: any) => {
+      const roomState = getRoomState(data.roomId);
+      roomState.currentTrack = data.trackId; // Servidor memoriza a música
+      socket.to(data.roomId).emit('playMusic', { trackId: data.trackId });
+  });
+
+  socket.on('stopMusic', (data: any) => {
+      const roomState = getRoomState(data.roomId);
+      roomState.currentTrack = null;
+      socket.to(data.roomId).emit('stopMusic');
+  });
+
+  // --- CHAT, DADOS E OUTROS ---
   socket.on('sendMessage', (data: any) => {
     const roomState = getRoomState(data.roomId);
     roomState.chatHistory.push(data.message);
@@ -244,7 +255,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('sendLobbyMessage', (msgData: any) => {
-    // Repassa (broadcast) apenas para quem está na mesma roomId
     socket.to(msgData.roomId).emit('receiveLobbyMessage', msgData);
   });
 
@@ -261,7 +271,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// ESCUTAR NA PORTA DO AMBIENTE E HOST 0.0.0.0
 fastify.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
   if (err) { 
     console.error(err); 

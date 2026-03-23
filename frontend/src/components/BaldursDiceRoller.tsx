@@ -121,6 +121,10 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
   const [showTotal, setShowTotal] = useState(false);
   const [isSecret, setIsSecret] = useState(false);
 
+  // 👉 LÓGICA DE OCULTAÇÃO DA CD
+  // Verifica se a jogada foi originada por um Pedido do Mestre ou um Ataque
+  const isTargetDCHidden = subtitle.toLowerCase().includes('exigido pelo mestre') || subtitle.toLowerCase().includes('ataque');
+
   useEffect(() => {
     if (isOpen) {
         setResult(null);
@@ -193,14 +197,17 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
           </div>
         </div>
 
-        {/* DIFICULDADE */}
+        {/* DIFICULDADE (COM OCULTAÇÃO) */}
         <div className="absolute top-20 right-10 z-20 flex flex-col items-center group">
             <span className="text-yellow-500/80 text-[10px] font-bold uppercase tracking-[0.2em] mb-1">Dificuldade</span>
             <div className="relative flex items-center justify-center w-16 h-16">
-                <div className="absolute inset-0 rounded-full border border-yellow-500/30 animate-[spin_10s_linear_infinite]"></div>
+                <div className={`absolute inset-0 rounded-full border border-yellow-500/30 ${isTargetDCHidden ? 'animate-pulse' : 'animate-[spin_10s_linear_infinite]'}`}></div>
                 <div className="absolute inset-0 rounded-full border border-yellow-500/10 scale-125"></div>
                 <div className="w-14 h-14 rounded-full bg-gradient-to-br from-gray-800 to-black border-2 border-yellow-600 shadow-[0_0_20px_rgba(234,179,8,0.2)] flex items-center justify-center">
-                    <span className="text-2xl font-bold text-white font-serif">{difficultyClass}</span>
+                    {/* 👉 EXIBE '???' SE A CD FOR OCULTA */}
+                    <span className={`font-bold font-serif ${isTargetDCHidden ? 'text-xl text-yellow-500/50' : 'text-2xl text-white'}`}>
+                        {isTargetDCHidden ? '???' : difficultyClass}
+                    </span>
                 </div>
             </div>
         </div>

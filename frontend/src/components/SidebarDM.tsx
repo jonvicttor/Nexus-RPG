@@ -294,7 +294,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>('combat');
   const [mainTab, setMainTab] = useState<MainTab>('tools'); 
-  const [showMonsterSelector, setShowMonsterSelector] = useState(false);
   const [pendingSkillRequest, setPendingSkillRequest] = useState<{ skillName: string, mod: number } | null>(null);
   const [dcInput, setDcInput] = useState<number>(10);
   
@@ -337,8 +336,19 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
       }
   };
 
-  const handleDragStart = (e: React.DragEvent, type: 'enemy' | 'player') => { e.dataTransfer.setData("entityType", type); };
-  const handleSelectPreset = (monster: MonsterPreset) => { const count = entities.filter(e => e.name.startsWith(monster.name)).length; const finalName = count > 0 ? `${monster.name} ${count + 1}` : monster.name; onAddEntity('enemy', finalName, monster); setShowMonsterSelector(false); };
+  const handleDragStart = (e: React.DragEvent, type: 'enemy' | 'player', preset?: MonsterPreset) => { 
+      e.dataTransfer.setData("entityType", type); 
+      if (preset) {
+          e.dataTransfer.setData("application/json", JSON.stringify({ type: 'SPAWN_MONSTER', preset }));
+      }
+  };
+
+  const handleSelectPreset = (monster: MonsterPreset) => { 
+      const count = entities.filter(e => e.name.startsWith(monster.name)).length; 
+      const finalName = count > 0 ? `${monster.name} ${count + 1}` : monster.name; 
+      onAddEntity('enemy', finalName, monster); 
+  };
+
   const attacker = entities.find(e => e.id === attackerId) || null;
   const targets = entities.filter(e => targetEntityIds.includes(e.id));
   const toggleConditionForAll = (cond: string) => { targets.forEach(t => onToggleCondition(t.id, cond)); };
@@ -348,24 +358,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   return (
     <>
       {editingEntity && (<EditEntityModal entity={editingEntity} onSave={onEditEntity} onClose={() => setEditingEntity(null)} />)}
-      {showMonsterSelector && (
-        <div className="fixed inset-0 z-[350] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setShowMonsterSelector(false)}>
-          <div className="bg-gray-900 border border-red-900/50 p-6 rounded-lg shadow-2xl w-[450px] max-h-[80vh] overflow-y-auto custom-scrollbar" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-red-500 font-bold uppercase tracking-widest mb-4 text-center border-b border-white/10 pb-2">Invocar Inimigo</h3>
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              {FULL_MONSTER_LIST.map((monster, idx) => (
-                <button key={`${monster.name}-${idx}`} onClick={() => handleSelectPreset(monster)} className="flex flex-col items-center bg-black/40 hover:bg-red-900/20 border border-white/10 hover:border-red-500/50 p-3 rounded transition-all group">
-                  <div className="w-12 h-12 rounded-full overflow-hidden mb-2 border border-white/20 group-hover:border-red-500"><img src={monster.image} alt={monster.name} className="w-full h-full object-cover" /></div>
-                  <span className="text-sm font-bold text-gray-300 group-hover:text-white truncate w-full text-center">{monster.name}</span>
-                  <div className="flex gap-2 text-[10px] text-gray-500 font-mono mt-1"><span>❤️ {monster.hp}</span><span>🛡️ {monster.ac}</span></div>
-                </button>
-              ))}
-            </div>
-            <button onClick={() => { setShowMonsterSelector(false); onOpenCreator('enemy'); }} className="w-full py-3 bg-red-900/40 hover:bg-red-600 border border-red-500/50 text-white font-bold rounded uppercase text-xs transition-all mb-2">⚙️ Personalizar (Criar do Zero)</button>
-            <button onClick={() => setShowMonsterSelector(false)} className="w-full py-2 text-xs text-gray-500 hover:text-white border border-transparent hover:border-white/20 rounded">Cancelar</button>
-          </div>
-        </div>
-      )}
+      
       {pendingSkillRequest && targetEntity && (
           <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPendingSkillRequest(null)}>
               <div className="bg-[#15151a] border border-purple-500/50 p-6 rounded-lg shadow-2xl w-80 animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
@@ -417,7 +410,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                     <button onClick={() => setActiveTab('map')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'map' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Mapa">🗺️</button>
                     <button onClick={() => setActiveTab('tools')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'tools' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Forja e Dados">🔨</button>
                     <button onClick={() => setActiveTab('campaign')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'campaign' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Campanha">📜</button>
-                    <button onClick={() => setActiveTab('create')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'create' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Criar Entidades">🐉</button>
+                    <button onClick={() => setActiveTab('create')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'create' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Bestiário">🐉</button>
                     <button onClick={() => setActiveTab('audio')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'audio' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Áudio">🔊</button>
                 </div>
 
@@ -602,14 +595,52 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                             </div>
                         </div>
                     )}
+
+                    {/* 👉 NOVO BESTIÁRIO */}
                     {activeTab === 'create' && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                            <h3 className="text-rpgText font-mono text-[10px] uppercase mb-4 opacity-50 tracking-widest text-center">Adicionar Entidades</h3>
-                            <button draggable onDragStart={(e) => handleDragStart(e, 'enemy')} onClick={() => setShowMonsterSelector(true)} className="w-full bg-red-900/50 hover:bg-red-600 border border-red-500/30 text-white text-lg font-bold py-6 rounded uppercase tracking-wider transition-all shadow-lg active:scale-95 cursor-grab mb-4 flex flex-col items-center gap-2"><span className="text-2xl">👹</span> Adicionar Inimigo</button>
-                            <button draggable onDragStart={(e) => handleDragStart(e, 'player')} onClick={() => onOpenCreator('player')} className="w-full bg-blue-900/50 hover:bg-blue-600 border border-blue-500/30 text-white text-lg font-bold py-6 rounded uppercase tracking-wider transition-all shadow-lg active:scale-95 cursor-grab flex flex-col items-center gap-2"><span className="text-2xl">🛡️</span> Adicionar Aliado</button>
-                            <p className="text-gray-500 text-xs text-center mt-6 italic px-4">Dica: Você também pode arrastar esses botões diretamente para o mapa!</p>
+                            
+                            <div className="flex gap-2 mb-6">
+                                <button onClick={() => onOpenCreator('player')} className="flex-1 bg-blue-900/50 hover:bg-blue-600 border border-blue-500/30 text-white text-xs font-bold py-3 rounded uppercase tracking-wider transition-all shadow-lg active:scale-95 flex flex-col items-center gap-1">
+                                    <span className="text-xl">🛡️</span> Novo Aliado
+                                </button>
+                                <button onClick={() => onOpenCreator('enemy')} className="flex-1 bg-red-900/50 hover:bg-red-600 border border-red-500/30 text-white text-xs font-bold py-3 rounded uppercase tracking-wider transition-all shadow-lg active:scale-95 flex flex-col items-center gap-1">
+                                    <span className="text-xl">⚙️</span> Novo Monstro
+                                </button>
+                            </div>
+
+                            <div className="bg-black/40 border border-red-900/30 rounded-xl p-3 shadow-inner">
+                                <h3 className="text-red-500 font-bold text-[10px] uppercase tracking-widest mb-3 flex items-center justify-between border-b border-red-900/30 pb-2">
+                                    <span>🐉 Bestiário Negro</span>
+                                    <span className="text-gray-500 text-[8px] normal-case">(Clique ou arraste)</span>
+                                </h3>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                    {FULL_MONSTER_LIST.map((monster, idx) => (
+                                        <button 
+                                            key={`${monster.name}-${idx}`} 
+                                            draggable 
+                                            onDragStart={(e) => handleDragStart(e, 'enemy', monster)} 
+                                            onClick={() => handleSelectPreset(monster)} 
+                                            className="flex flex-col items-center bg-black/60 hover:bg-red-900/40 border border-white/5 hover:border-red-500/50 p-2 rounded-lg transition-all group cursor-grab active:cursor-grabbing"
+                                        >
+                                            <div className="w-10 h-10 rounded-full overflow-hidden mb-1.5 border border-white/20 group-hover:border-red-500 shadow-lg">
+                                                <img src={monster.image} alt={monster.name} className="w-full h-full object-cover" />
+                                            </div>
+                                            <span className="text-[10px] font-bold text-gray-300 group-hover:text-white truncate w-full text-center leading-tight">
+                                                {monster.name}
+                                            </span>
+                                            <div className="flex gap-2 text-[9px] text-gray-500 font-mono mt-0.5">
+                                                <span className="text-red-400">❤️ {monster.hp}</span>
+                                                <span className="text-blue-400">🛡️ {monster.ac}</span>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
                     )}
+                    
                     {activeTab === 'audio' && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300 h-full">
                             <Soundboard 

@@ -50,7 +50,6 @@ interface TokenLayerProps {
   onMoveToken: (id: number, x: number, y: number) => void;
   onSelectToken: (entity: Entity, multi?: boolean) => void;
   onTokenContextMenu: (e: React.MouseEvent, entity: Entity) => void;
-  // --- ATUALIZADO: Agora passa a flag de Múltiplos Alvos (Shift) ---
   onTokenDoubleClick: (entity: Entity, multi?: boolean) => void; 
   
   onGiveItemToToken: (item: Item, sourceId: number, targetId: number) => void;
@@ -116,25 +115,52 @@ const TokenLayer: React.FC<TokenLayerProps> = ({
         {entities.map(entity => {
             if (role === 'PLAYER' && entity.visible === false) return null;
 
+            const isMyTurn = activeTurnId === entity.id;
+
             return (
-                <div key={entity.id} className="pointer-events-auto">
-                    <Token
-                        entity={entity}
-                        gridSize={gridSize}
-                        scale={scale}
-                        
-                        isSelected={false} 
-                        isTarget={targetEntityIds.includes(entity.id)}
-                        isAttacker={attackerId === entity.id}
-                        isActiveTurn={activeTurnId === entity.id}
-                        
-                        onMove={onMoveToken}
-                        onSelect={(e, ent) => onSelectToken(ent, e.shiftKey || e.ctrlKey)}
-                        onContextMenu={onTokenContextMenu}
-                        // --- ATUALIZADO: Passa o Shift/Ctrl para múltiplos alvos ---
-                        onDoubleClick={(e, ent) => onTokenDoubleClick(ent, e.shiftKey || e.ctrlKey)}
-                        onDropItemOnToken={onGiveItemToToken}
-                    />
+                <div key={entity.id} className="pointer-events-auto relative">
+                    
+                    {/* 👉 AURA DO TURNO ATIVO (A Roda do Tempo) */}
+                    {isMyTurn && (
+                        <div 
+                            className="absolute pointer-events-none z-0 flex items-center justify-center mix-blend-screen"
+                            style={{
+                                left: entity.x * gridSize,
+                                top: entity.y * gridSize,
+                                width: (entity.size || 1) * gridSize,
+                                height: (entity.size || 1) * gridSize,
+                            }}
+                        >
+                            {/* Brilho base pulsante */}
+                            <div className="absolute inset-[-20%] rounded-full bg-yellow-500/30 animate-pulse blur-md"></div>
+                            
+                            {/* Anel Externo Giratório (Lento) */}
+                            <div className="absolute inset-[-30%] rounded-full border-2 border-dashed border-yellow-400/60 animate-[spin_10s_linear_infinite] drop-shadow-[0_0_10px_#facc15]"></div>
+                            
+                            {/* Anel Interno Giratório (Rápido e Inverso) */}
+                            <div className="absolute inset-[-10%] rounded-full border-[3px] border-dotted border-yellow-500/80 animate-[spin_6s_linear_infinite_reverse]"></div>
+                        </div>
+                    )}
+
+                    {/* O Token em si (Renderizado por cima da Aura) */}
+                    <div className="relative z-10">
+                        <Token
+                            entity={entity}
+                            gridSize={gridSize}
+                            scale={scale}
+                            
+                            isSelected={false} 
+                            isTarget={targetEntityIds.includes(entity.id)}
+                            isAttacker={attackerId === entity.id}
+                            isActiveTurn={isMyTurn}
+                            
+                            onMove={onMoveToken}
+                            onSelect={(e, ent) => onSelectToken(ent, e.shiftKey || e.ctrlKey)}
+                            onContextMenu={onTokenContextMenu}
+                            onDoubleClick={(e, ent) => onTokenDoubleClick(ent, e.shiftKey || e.ctrlKey)}
+                            onDropItemOnToken={onGiveItemToToken}
+                        />
+                    </div>
                 </div>
             );
         })}
