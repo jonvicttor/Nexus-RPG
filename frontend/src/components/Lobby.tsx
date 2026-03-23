@@ -20,7 +20,7 @@ interface LobbyProps {
 
 // --- GLASSMORPHISM PANEL REFINADO ---
 const TavernPanel = ({ children, className = '' }: { children: React.ReactNode, className?: string }) => (
-  <div className={`relative p-[1px] rounded-3xl overflow-hidden group transition-all duration-500 shadow-[0_10px_40px_rgba(0,0,0,0.6)] ${className}`}>
+  <div className={`relative p-[1px] rounded-3xl overflow-hidden group transition-all duration-500 shadow-[0_10px_40px_rgba(0,0,0,0.6)] flex flex-col ${className}`}>
       <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-amber-900/30 z-0"></div>
       <div className="absolute inset-[1px] rounded-[23px] overflow-hidden pointer-events-none z-0">
           <div className="absolute inset-0 bg-gradient-to-br from-amber-600/10 via-amber-900/5 to-blue-900/10 opacity-60 transition-opacity duration-700"></div>
@@ -28,7 +28,7 @@ const TavernPanel = ({ children, className = '' }: { children: React.ReactNode, 
       </div>
       <Sparkles className="absolute top-4 left-4 text-amber-500/10 w-5 h-5 z-0 pointer-events-none" />
       <Sparkles className="absolute top-4 right-4 text-amber-500/10 w-5 h-5 scale-x-[-1] z-0 pointer-events-none" />
-      <div className="relative rounded-[23px] bg-black/60 backdrop-blur-xl shadow-[inset_0_0_20px_rgba(0,0,0,0.8)] p-4 md:p-6 h-full flex flex-col z-10">
+      <div className="relative rounded-[23px] bg-black/60 backdrop-blur-xl shadow-[inset_0_0_20px_rgba(0,0,0,0.8)] p-4 md:p-6 flex-grow flex flex-col z-10 overflow-hidden">
           {children}
       </div>
   </div>
@@ -57,7 +57,6 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
   const [copiedCode, setCopiedCode] = useState(false);
   const [deletedIds, setDeletedIds] = useState<number[]>([]);
   
-  // 👉 MAGIA DA MÚSICA AQUI
   const [isMuted, setIsMuted] = useState(false);
   const musicRef = useRef<Howl | null>(null);
   
@@ -112,10 +111,9 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
       ...Object.values(networkPlayers).filter(p => p.id !== socket.id)
   ];
 
-  // Inicia a música de fundo
   useEffect(() => {
     const sound = new Howl({ 
-      src: ['/sfx/tavern_ambiance.mp3', '/sfx/tavern_ambiance.ogg'], // Procura mp3 ou ogg
+      src: ['/sfx/tavern_ambiance.mp3', '/sfx/tavern_ambiance.ogg'],
       loop: true, 
       volume: 0.3, 
       html5: true 
@@ -125,7 +123,6 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
     return () => { musicRef.current?.stop(); musicRef.current?.unload(); };
   }, []);
 
-  // Botão que o utilizador clica para silenciar/ligar a música
   const toggleMute = () => {
     if (musicRef.current) {
       const newState = !isMuted;
@@ -161,10 +158,10 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
   const displayChat = chatMessages || localChat;
 
   return (
-    <div className="min-h-screen w-full relative bg-[#0d0b09] bg-cover bg-center bg-fixed font-serif" style={{ backgroundImage: "url('/images/tavern-bg.jpg')" }}>
+    // FIX: Aplicado h-[100dvh] e overflow-y-auto para libertar o scroll no mobile
+    <div className="h-[100dvh] w-full relative bg-[#0d0b09] bg-cover bg-center bg-fixed font-serif overflow-y-auto" style={{ backgroundImage: "url('/images/tavern-bg.jpg')" }}>
       <TavernSparks />
       
-      {/* Botão de Mute Fixo (Semelhante à Tela de Login) */}
       <button onClick={toggleMute} className="fixed top-4 right-4 md:top-6 md:right-6 z-50 text-amber-700 hover:text-amber-400 transition-colors bg-black/60 p-2 md:p-3 rounded-full border border-amber-800/50 hover:border-amber-500 backdrop-blur-md hover:scale-110 active:scale-95 duration-200 shadow-lg">
         {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
       </button>
@@ -175,19 +172,18 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
           <div className="absolute -bottom-1/4 left-1/2 -translate-x-1/2 w-full h-3/4 bg-gradient-to-t from-amber-700/20 via-amber-950/10 to-transparent blur-[100px] opacity-80 z-0"></div>
       </div>
 
-      <div className="relative z-10 w-full min-h-screen p-4 py-8 md:p-8 flex flex-col lg:items-center lg:justify-center">
-        <div className="max-w-[1300px] w-full mx-auto flex flex-col lg:grid lg:grid-cols-12 gap-6 lg:h-[88vh]">
+      <div className="relative z-10 w-full min-h-full p-4 py-8 md:p-8 flex flex-col items-center justify-start lg:justify-center">
+        <div className="max-w-[1300px] w-full flex flex-col lg:grid lg:grid-cols-12 gap-6 lg:h-[88vh]">
           
           {/* === COLUNA ESQUERDA === */}
-          <div className="lg:col-span-8 flex flex-col gap-6 lg:h-full">
+          <div className="lg:col-span-8 flex flex-col gap-6 lg:h-full lg:overflow-hidden">
             <TavernPanel className="shrink-0 !p-0">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
-                <div className="w-full sm:w-auto text-center sm:text-left">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full pr-12 md:pr-0">
+                <div className="w-full sm:w-auto text-left">
                   <h1 className="text-3xl md:text-5xl text-amber-500 mb-1 drop-shadow-md" style={titleFont}>A Taverna</h1>
                   <p className="text-gray-400 text-xs md:text-sm italic" style={textFont}>Escolha o seu herói e junte-se à lareira.</p>
                 </div>
-                <div className="flex items-center justify-between sm:justify-start gap-3 bg-black/50 px-4 md:px-5 py-3 rounded-xl border border-white/10 w-full sm:w-auto shadow-inner flex-nowrap mr-10 md:mr-0">
-                  {/* mr-10 no mobile para não sobrepor o botão de música */}
+                <div className="flex items-center justify-between sm:justify-start gap-3 bg-black/50 px-4 py-3 rounded-xl border border-white/10 w-auto shadow-inner flex-nowrap">
                   <span className="text-gray-400 text-[10px] md:text-xs uppercase tracking-[0.2em] font-bold shrink-0">Código:</span>
                   <span className="text-amber-400 font-mono font-black tracking-widest text-sm sm:text-base md:text-xl drop-shadow-[0_0_5px_rgba(251,191,36,0.5)] truncate">{displayRoomCode}</span>
                   <button onClick={handleCopyCode} className={`shrink-0 p-2 rounded-lg transition-colors flex gap-1 items-center ${copiedCode ? 'bg-green-900/50 text-green-400 border border-green-500/30' : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5'}`}>
@@ -197,7 +193,7 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
               </div>
             </TavernPanel>
 
-            <TavernPanel className="flex-grow lg:overflow-hidden flex flex-col">
+            <TavernPanel className="flex-grow lg:flex-1 flex flex-col min-h-[350px]">
               <div className="flex items-center justify-between mb-2 border-b border-white/10 pb-3 shrink-0">
                   <h2 className="text-amber-500/80 uppercase tracking-[0.2em] text-xs font-black flex items-center gap-2">
                      <Shield size={16} /> Heróis Disponíveis
@@ -205,7 +201,7 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
                   <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest hidden sm:block">Lendas Salvas na Mesa</span>
               </div>
               
-              <div className="flex-1 lg:overflow-y-auto custom-scrollbar -mx-2 px-2 pb-4 p-4">
+              <div className="flex-1 overflow-y-auto custom-scrollbar -mx-2 px-2 pb-4 p-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-1">
                   {uniqueCharacters.length > 0 ? uniqueCharacters.map((char) => {
                     
@@ -284,13 +280,13 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
           </div>
 
           {/* === COLUNA DIREITA === */}
-          <div className="lg:col-span-4 flex flex-col gap-6 lg:h-full">
+          <div className="lg:col-span-4 flex flex-col gap-6 lg:h-full lg:overflow-hidden pb-4 lg:pb-0">
             
             <TavernPanel className="flex flex-col shrink-0 max-h-[250px] lg:max-h-[35%] !p-0">
-              <h2 className="text-gray-400 uppercase tracking-[0.2em] text-xs font-black mb-3 flex items-center gap-2 border-b border-white/10 pb-3">
+              <h2 className="text-gray-400 uppercase tracking-[0.2em] text-xs font-black mb-3 flex items-center gap-2 border-b border-white/10 pb-3 shrink-0">
                 <User size={16} className="text-blue-400"/> Companheiros Online ({currentPlayers.length})
               </h2>
-              <div className="space-y-2 overflow-y-auto pr-1 custom-scrollbar shrink-0 lg:shrink">
+              <div className="space-y-2 overflow-y-auto pr-1 custom-scrollbar">
                 {currentPlayers.map(player => {
                   const pChar = uniqueCharacters.find(c => c.id === player.selectedCharId);
                   return (
@@ -337,7 +333,7 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
                  <MessageSquare size={16} className="text-purple-400"/> Conversa da Lareira
               </h2>
               
-              <div ref={chatScrollRef} className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3 mb-3 flex flex-col pt-2 shrink-0 lg:shrink">
+              <div ref={chatScrollRef} className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3 mb-3 flex flex-col pt-2">
                  {displayChat.length === 0 && <p className="text-center text-gray-600 text-xs italic m-auto font-serif">A taverna está silenciosa...</p>}
                  {displayChat.map((msg, idx) => {
                     const isSystem = msg.sender === 'Sistema';
@@ -364,12 +360,14 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
               </div>
 
               <form onSubmit={handleSendChat} className="flex gap-2 shrink-0 mt-auto pt-3 border-t border-white/10">
+                 {/* FIX: fontSize: '16px' para prevenir zoom no iOS */}
                  <input 
                     type="text" 
                     value={chatInput} 
                     onChange={e => setChatInput(e.target.value)} 
                     placeholder="Diga algo à mesa..." 
-                    className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50 transition-colors shadow-inner"
+                    className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50 transition-colors shadow-inner"
+                    style={{ fontSize: '16px' }}
                  />
                  <button type="submit" disabled={!chatInput.trim()} className="bg-gradient-to-br from-amber-500 to-amber-700 hover:from-amber-400 hover:to-amber-600 disabled:from-gray-800 disabled:to-gray-900 disabled:text-gray-600 text-black p-3 rounded-xl transition-all shadow-[0_4px_15px_rgba(245,158,11,0.2)] disabled:shadow-none active:scale-95 flex items-center justify-center">
                     <Send size={18} className="translate-x-[-1px] translate-y-[1px]" />
@@ -377,7 +375,7 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
               </form>
             </TavernPanel>
 
-            <div className="flex flex-col gap-3 shrink-0 pb-10 lg:pb-0">
+            <div className="flex flex-col gap-3 shrink-0">
               {isDM ? (
                 <button 
                   onClick={onStartGame}

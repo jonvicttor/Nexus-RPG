@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Heart, Sword, Backpack, Dices, Zap, Circle, CheckCircle2, Star, Skull, Flame, BookOpen, MessageSquare } from 'lucide-react';
+import { Shield, Heart, Sword, Backpack, Dices, Circle, CheckCircle2, Star, Skull, Flame, MessageSquare, Send } from 'lucide-react';
 import { Entity } from '../App';
 import Chat, { ChatMessage } from './Chat';
 
@@ -35,7 +35,6 @@ const SAVING_THROWS = [
 export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribute, onOpenDiceRoller, onUpdateCharacter, chatMessages, onSendMessage, onApplyDamageFromChat }: MobileSheetProps) {
     const [activeTab, setActiveTab] = useState<'STATUS' | 'ACTIONS' | 'SPELLS' | 'INVENTORY' | 'CHAT'>('STATUS');
     
-    // Novo estado para mostrar notificação de mensagens não lidas no chat
     const [unreadMessages, setUnreadMessages] = useState(false);
     const lastMessageCount = useRef(chatMessages.length);
 
@@ -136,6 +135,7 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
     const equippedWeapons = character.inventory?.filter(i => i.type === 'weapon' && i.isEquipped) || [];
 
     return (
+        // FIX: h-[100dvh] para cobrir a tela perfeitamente e evitar corte da dock
         <div className="flex flex-col h-[100dvh] w-screen bg-[#050505] text-amber-50 font-serif items-center justify-center overflow-hidden">
             <div className="w-full max-w-3xl flex flex-col h-full relative bg-[#0a0a0a] md:border-l md:border-r border-gray-900 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
                 
@@ -391,37 +391,35 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
 
                     {activeTab === 'INVENTORY' && (
                         <div className="space-y-6 animate-in fade-in duration-300">
-                            <h2 className="text-yellow-500/80 uppercase tracking-[0.2em] text-xs font-bold border-b border-yellow-900/30 pb-2 mb-4">Mochila</h2>
-                            <div className="grid grid-cols-3 md:grid-cols-5 gap-3 md:gap-5">
-                                {character.inventory?.map(item => (
-                                    <div key={item.id} className={`bg-gray-900 border ${item.isEquipped ? 'border-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.2)]' : 'border-gray-800 hover:border-yellow-900/50'} rounded-xl p-3 md:p-4 flex flex-col items-center text-center relative transition-colors`}>
-                                        <div className="absolute top-2 right-2 bg-black px-1.5 py-0.5 rounded text-[10px] font-bold text-yellow-500 border border-yellow-900/50 shadow-sm">x{item.quantity}</div>
-                                        <div className="w-12 h-12 md:w-16 md:h-16 bg-black rounded-lg border border-gray-700 flex items-center justify-center mb-2 mt-2 relative">
-                                            {item.image ? <img src={item.image} alt={item.name} className="w-10 h-10 md:w-14 md:h-14 object-contain" /> : <Backpack size={24} className="text-gray-500" />}
+                             <div className="flex flex-col flex-shrink-0 bg-gray-900/50 rounded-xl border border-gray-800 pb-2">
+                                <div className="p-4 border-b border-gray-800 flex items-center justify-between">
+                                    <h3 className="text-xs uppercase font-black text-amber-500 tracking-widest flex items-center gap-1.5"><Backpack size={16} /> Mochila</h3>
+                                </div>
+                                <div className="p-3 space-y-2">
+                                    {!character.inventory || character.inventory.length === 0 ? (
+                                        <div className="text-center py-6 text-gray-600 text-xs italic">A mochila está vazia...</div>
+                                    ) : character.inventory.map(item => (
+                                        <div key={item.id} className={`flex gap-3 items-center p-3 rounded-lg border transition-colors ${item.isEquipped ? 'bg-amber-900/20 border-amber-600 shadow-[0_0_10px_rgba(217,119,6,0.1)]' : 'bg-black/40 border-gray-800'}`}>
+                                            <div className="w-12 h-12 rounded-md bg-black/60 border border-gray-700 flex items-center justify-center p-1.5 shrink-0"><img src={item.image} className="max-w-full max-h-full object-contain" alt="" /></div>
+                                            <div className="flex-grow"><p className="text-sm font-bold text-white leading-tight">{item.name}</p><p className="text-[10px] text-gray-400 line-clamp-2">{item.description}</p></div>
+                                            <div className="flex flex-col items-end gap-1">
+                                              {item.quantity > 1 && <span className="text-[10px] bg-gray-700 text-white font-bold px-2 py-0.5 rounded">x{item.quantity}</span>}
+                                              {(item.type === 'weapon' || item.type === 'armor') && (
+                                                <button onClick={() => toggleEquip(item.id)} className={`text-[9px] px-2 py-1 rounded font-bold uppercase tracking-wider transition-all active:scale-95 ${item.isEquipped ? 'bg-amber-600 text-black' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                                                  {item.isEquipped ? 'Equipado' : 'Equipar'}
+                                                </button>
+                                              )}
+                                            </div>
                                         </div>
-                                        <span className="text-[10px] md:text-sm font-bold text-gray-200 line-clamp-2 w-full mb-3">{item.name}</span>
-                                        
-                                        {(item.type === 'weapon' || item.type === 'armor') && (
-                                            <button 
-                                                onClick={() => toggleEquip(item.id)} 
-                                                className={`mt-auto text-[9px] md:text-[10px] px-2 py-1.5 rounded font-bold uppercase tracking-wider w-full transition-all active:scale-95 ${item.isEquipped ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-500/50' : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'}`}
-                                            >
-                                                {item.isEquipped ? 'Equipado' : 'Equipar'}
-                                            </button>
-                                        )}
-                                    </div>
-                                )) || <p className="col-span-full text-center text-gray-500 text-sm py-8 italic">A mochila está vazia.</p>}
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     )}
 
-                    {/* --- NOVA ABA: CHAT --- */}
                     {activeTab === 'CHAT' && (
-                        <div className="flex flex-col h-full animate-in fade-in duration-300 -m-4 md:-m-8">
-                            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-900/50 sticky top-0 z-10">
-                                <h2 className="text-gray-400 uppercase tracking-[0.2em] text-xs font-bold">Registro de Combate</h2>
-                            </div>
-                            <div className="flex-1 w-full bg-black/60 min-h-[50vh]">
+                        <div className="absolute inset-0 flex flex-col z-10 bg-[#0a0a0a]">
+                            <div className="flex-1 overflow-y-auto custom-scrollbar">
                                 <Chat 
                                     messages={chatMessages} 
                                     onSendMessage={onSendMessage} 
@@ -429,22 +427,25 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                                     onApplyDamage={onApplyDamageFromChat} 
                                 />
                             </div>
+                            <div className="p-3 bg-gray-900 border-t border-gray-800 pb-safe">
+                                <ChatInput onSendMessage={onSendMessage} />
+                            </div>
                         </div>
                     )}
                 </main>
 
                 <nav className="absolute bottom-0 left-0 w-full bg-black/95 backdrop-blur-xl border-t border-gray-800 flex justify-around items-end pb-6 pt-3 px-1 md:px-2 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] rounded-b-none md:rounded-b-3xl">
-                    <button onClick={() => setActiveTab('STATUS')} className={`flex flex-col items-center w-14 md:w-20 transition-colors hover:scale-105 ${activeTab === 'STATUS' ? 'text-amber-400' : 'text-gray-500'}`}>
+                    <button onClick={() => setActiveTab('STATUS')} className={`flex flex-col items-center w-12 md:w-16 transition-colors hover:scale-105 ${activeTab === 'STATUS' ? 'text-amber-400' : 'text-gray-500'}`}>
                         <Shield size={22} className={activeTab === 'STATUS' ? 'drop-shadow-[0_0_8px_rgba(251,191,36,0.8)]' : ''} />
                         <span className="text-[8px] md:text-[10px] mt-1 font-bold uppercase tracking-wider">Status</span>
                     </button>
                     
-                    <button onClick={() => setActiveTab('ACTIONS')} className={`flex flex-col items-center w-14 md:w-20 transition-colors hover:scale-105 ${activeTab === 'ACTIONS' ? 'text-blue-400' : 'text-gray-500'}`}>
-                        <Zap size={22} className={activeTab === 'ACTIONS' ? 'drop-shadow-[0_0_8px_rgba(96,165,250,0.8)]' : ''} />
+                    <button onClick={() => setActiveTab('ACTIONS')} className={`flex flex-col items-center w-12 md:w-16 transition-colors hover:scale-105 ${activeTab === 'ACTIONS' ? 'text-blue-400' : 'text-gray-500'}`}>
+                        <Sword size={22} className={activeTab === 'ACTIONS' ? 'drop-shadow-[0_0_8px_rgba(96,165,250,0.8)]' : ''} />
                         <span className="text-[8px] md:text-[10px] mt-1 font-bold uppercase tracking-wider">Ações</span>
                     </button>
 
-                    <div className="relative -top-6 w-16 md:w-20 flex justify-center">
+                    <div className="relative -top-6 w-16 md:w-20 flex justify-center shrink-0">
                         <button 
                             onClick={onOpenDiceRoller}
                             className="w-14 h-14 md:w-20 md:h-20 bg-gradient-to-br from-indigo-600 via-purple-700 to-indigo-900 rounded-full border-[4px] border-[#0a0a0a] flex items-center justify-center shadow-[0_0_20px_rgba(79,70,229,0.5)] hover:scale-105 active:scale-95 transition-all"
@@ -453,13 +454,12 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                         </button>
                     </div>
 
-                    <button onClick={() => setActiveTab('SPELLS')} className={`flex flex-col items-center w-14 md:w-20 transition-colors hover:scale-105 ${activeTab === 'SPELLS' ? 'text-purple-400' : 'text-gray-500'}`}>
-                        <BookOpen size={22} className={activeTab === 'SPELLS' ? 'drop-shadow-[0_0_8px_rgba(192,132,252,0.8)]' : ''} />
-                        <span className="text-[8px] md:text-[10px] mt-1 font-bold uppercase tracking-wider">Magias</span>
+                    <button onClick={() => setActiveTab('INVENTORY')} className={`flex flex-col items-center w-12 md:w-16 transition-colors hover:scale-105 ${activeTab === 'INVENTORY' ? 'text-yellow-500' : 'text-gray-500'}`}>
+                        <Backpack size={22} className={activeTab === 'INVENTORY' ? 'drop-shadow-[0_0_8px_rgba(234,179,8,0.8)]' : ''} />
+                        <span className="text-[8px] md:text-[10px] mt-1 font-bold uppercase tracking-wider">Bolsa</span>
                     </button>
                     
-                    {/* Botão do Chat Substituiu a Mochila aqui, mas a mochila subiu para não desaparecer */}
-                    <button onClick={() => setActiveTab('CHAT')} className={`flex flex-col items-center w-14 md:w-20 transition-colors hover:scale-105 relative ${activeTab === 'CHAT' ? 'text-gray-200' : 'text-gray-500'}`}>
+                    <button onClick={() => setActiveTab('CHAT')} className={`flex flex-col items-center w-12 md:w-16 transition-colors hover:scale-105 relative ${activeTab === 'CHAT' ? 'text-gray-200' : 'text-gray-500'}`}>
                         <div className="relative">
                             <MessageSquare size={22} className={activeTab === 'CHAT' ? 'drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : ''} />
                             {unreadMessages && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-black animate-pulse"></span>}
@@ -468,15 +468,29 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                     </button>
                 </nav>
 
-                {/* Botão flutuante para a Mochila (Inventário) para não perder o acesso */}
-                <button 
-                    onClick={() => setActiveTab('INVENTORY')}
-                    className={`absolute top-20 right-4 p-3 rounded-full shadow-xl transition-all z-20 border ${activeTab === 'INVENTORY' ? 'bg-yellow-600 text-black border-yellow-400' : 'bg-gray-900 border-gray-700 text-yellow-500 hover:scale-105'}`}
-                >
-                    <Backpack size={20} />
-                </button>
-
             </div>
         </div>
     );
 }
+
+// Componente isolado para o input do chat para manter o foco e evitar zoom
+const ChatInput = ({ onSendMessage }: { onSendMessage: (msg: string) => void }) => {
+    const [input, setInput] = useState('');
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if(input.trim()) { onSendMessage(input); setInput(''); }
+    };
+    return (
+        <form onSubmit={handleSubmit} className="flex gap-2">
+            <input 
+                type="text" 
+                value={input} 
+                onChange={e => setInput(e.target.value)} 
+                placeholder="Mensagem..." 
+                className="flex-1 bg-black/50 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" 
+                style={{ fontSize: '16px' }} 
+            />
+            <button type="submit" disabled={!input.trim()} className="bg-purple-600 disabled:bg-gray-800 text-white p-2.5 rounded-xl active:scale-95 transition-transform"><Send size={20}/></button>
+        </form>
+    );
+};
