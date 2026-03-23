@@ -7,7 +7,7 @@ import SkillList from './SkillList';
 import Inventory from './Inventory';
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
 import { 
-  Shield, Zap, Skull, Backpack, Dna, Flame, Heart, Scroll 
+  Shield, Zap, Skull, Backpack, Dna, Flame, Heart, Scroll, Coins, Scale, Trash2, Sword 
 } from 'lucide-react';
 
 // --- TIPAGEM ---
@@ -33,10 +33,6 @@ const CLASS_ABILITIES: Record<string, { name: string; max: number; icon: string;
   ],
 };
 
-const SPELL_SLOTS_BY_LEVEL: Record<number, number[]> = {
-    1: [2], 2: [3], 3: [4, 2], 4: [4, 3], 5: [4, 3, 2] 
-};
-
 interface SidebarPlayerProps {
   entities: Entity[];
   myCharacterName: string; 
@@ -48,8 +44,6 @@ interface SidebarPlayerProps {
   onRollAttribute: (charName: string, attrName: string, mod: number) => void;
   onUpdateCharacter?: (id: number, updates: Partial<Entity>) => void;
   onSelectEntity?: (entity: Entity) => void;
-  
-  // NOVO: APLICAR DANO VIA CHAT
   onApplyDamageFromChat: (targetId: number, damageExpression: string) => void;
 }
 
@@ -61,8 +55,11 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   const [pendingLevelData, setPendingLevelData] = useState<{ newLevel: number, hpGain: number } | null>(null);
   
   const [abilityUsage, setAbilityUsage] = useState<Record<string, number>>({});
-  const [spellSlotsUsed, setSpellSlotsUsed] = useState<number[]>([0,0,0,0,0,0,0,0,0]); 
   const [deathSaves, setDeathSaves] = useState({ successes: 0, failures: 0 });
+
+  // Estados para o formulário de Magias
+  const [newSpellName, setNewSpellName] = useState('');
+  const [newSpellLevel, setNewSpellLevel] = useState(1);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -75,6 +72,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   const attributes = myCharacter ? mapEntityStatsToAttributes(myCharacter) : { FOR: 10, DES: 10, CON: 10, INT: 10, SAB: 10, CAR: 10 };
   
   const inventory = (myCharacter?.inventory || []);
+  const equippedWeapons = inventory.filter(i => i.type === 'weapon' && i.isEquipped); // 👈 Arsenal separado aqui
 
   const dexMod = Math.floor((attributes.DES - 10) / 2);
   const equippedArmor = inventory.find(i => i.isEquipped && i.type === 'armor');
@@ -86,6 +84,31 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   const xpVisivel = currentXP - currentLevelBaseXP;
   const xpNecessarioNoNivel = nextLevelTotalXP - currentLevelBaseXP;
   const xpPercent = xpNecessarioNoNivel > 0 ? Math.min(100, (xpVisivel / xpNecessarioNoNivel) * 100) : 100;
+
+  const totalWeight = inventory.reduce((acc, item) => acc + (item.weight || 0) * item.quantity, 0);
+  const maxWeight = (attributes.FOR || 10) * 7.5; 
+  const weightPercent = Math.min(100, (totalWeight / maxWeight) * 100);
+
+  const handleCoinChange = (coinType: 'cp' | 'sp' | 'ep' | 'gp' | 'pp', amount: number) => {
+      if (!myCharacter || !onUpdateCharacter) return;
+      const currentCoins = myCharacter.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+      const newVal = Math.max(0, currentCoins[coinType] + amount);
+      onUpdateCharacter(myCharacter.id, { coins: { ...currentCoins, [coinType]: newVal } });
+  };
+
+  const renderCoin = (type: 'cp' | 'sp' | 'ep' | 'gp' | 'pp', label: string, colorClass: string) => {
+      const val = myCharacter?.coins?.[type] || 0;
+      return (
+          <div className={`flex-1 flex flex-col items-center justify-center p-1.5 rounded-lg border ${colorClass} relative group overflow-hidden`}>
+              <span className="text-[9px] font-black tracking-widest opacity-80 mb-0.5">{label}</span>
+              <span className="font-bold text-sm">{val}</span>
+              <div className="absolute inset-0 flex items-center justify-between px-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/90">
+                  <button onClick={() => handleCoinChange(type, -1)} className="text-red-400 hover:text-red-300 font-black px-1.5 hover:bg-white/10 rounded">-</button>
+                  <button onClick={() => handleCoinChange(type, 1)} className="text-green-400 hover:text-green-300 font-black px-1.5 hover:bg-white/10 rounded">+</button>
+              </div>
+          </div>
+      );
+  };
 
   useEffect(() => {
     if (activeTab === 'chat') chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -133,9 +156,9 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
       if (item.type === 'armor') {
           newInv = newInv.map(i => i.type === 'armor' ? { ...i, isEquipped: false } : i);
       } else if (item.type === 'weapon') { 
-          const equippedWeapons = newInv.filter(i => i.isEquipped && i.type === 'weapon');
-          if (equippedWeapons.length >= 2) {
-              newInv = newInv.map(i => i.id === equippedWeapons[0].id ? { ...i, isEquipped: false } : i);
+          const equippedWeaponsList = newInv.filter(i => i.isEquipped && i.type === 'weapon');
+          if (equippedWeaponsList.length >= 2) {
+              newInv = newInv.map(i => i.id === equippedWeaponsList[0].id ? { ...i, isEquipped: false } : i);
           }
       }
       
@@ -151,17 +174,6 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
           onUpdateCharacter(myCharacter.id, { inventory: newInv });
           onSendMessage(`🗑️ **${myCharacter.name}** descartou **${item.name}**.`);
       }
-  };
-
-  const handleCastSpell = (spellName: string, level: number) => {
-      if (!myCharacter) return; 
-      const currentUsed = spellSlotsUsed[level-1] || 0;
-      const maxSlots = (SPELL_SLOTS_BY_LEVEL[savedLevel] || [])[level-1] || 0;
-      if (currentUsed >= maxSlots) { alert("Sem slots de magia disponíveis neste nível!"); return; }
-      const newSlots = [...spellSlotsUsed];
-      newSlots[level-1]++;
-      setSpellSlotsUsed(newSlots);
-      onSendMessage(`✨ **${myCharacter.name}** conjurou **${spellName}** (Slot Nível ${level})!`);
   };
 
   const handleDeathSave = (type: 'success' | 'failure') => {
@@ -185,10 +197,79 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   const handleLongRest = () => {
     if (!myCharacter || !onUpdateCharacter) return;
     if (window.confirm("Fazer um Descanso Longo?")) {
-        setAbilityUsage({}); setSpellSlotsUsed([0,0,0,0,0,0,0,0,0]); setDeathSaves({ successes: 0, failures: 0 });
-        onUpdateCharacter(myCharacter.id, { hp: myCharacter.maxHp });
+        setAbilityUsage({}); setDeathSaves({ successes: 0, failures: 0 });
+        
+        let clearedSlots = { ...myCharacter.spellSlots };
+        if (clearedSlots) {
+            Object.keys(clearedSlots).forEach(level => { clearedSlots[Number(level)].used = 0; });
+        }
+        onUpdateCharacter(myCharacter.id, { hp: myCharacter.maxHp, spellSlots: clearedSlots });
         onSendMessage(`💤 **${myCharacter.name}** realizou um Descanso Longo. Vida, magias e recursos restaurados.`);
     }
+  };
+
+  // --- NOVA LÓGICA DE MAGIAS ---
+  const handleAddSpell = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!myCharacter || !newSpellName.trim() || !onUpdateCharacter) return;
+      const newSpell = { id: Date.now().toString(), name: newSpellName.trim(), level: newSpellLevel };
+      const updatedSpells = [...(myCharacter.spells || []), newSpell];
+      onUpdateCharacter(myCharacter.id, { spells: updatedSpells });
+      setNewSpellName('');
+  };
+
+  const handleRemoveSpell = (spellId: string) => {
+      if (!myCharacter || !onUpdateCharacter) return;
+      const updatedSpells = (myCharacter.spells || []).filter(s => s.id !== spellId);
+      onUpdateCharacter(myCharacter.id, { spells: updatedSpells });
+  };
+
+  const handleCastSpell = (spellName: string, level: number) => {
+      if (!myCharacter || !onUpdateCharacter) return; 
+      
+      if (level === 0) {
+          onSendMessage(`✨ **${myCharacter.name}** conjurou o truque **${spellName}**!`);
+          return;
+      }
+
+      const currentSlots = myCharacter.spellSlots || {};
+      const levelData = currentSlots[level] || { max: 0, used: 0 };
+      
+      if (levelData.used >= levelData.max) { 
+          alert(`Sem espaços de magia disponíveis para o Círculo ${level}!`); 
+          return; 
+      }
+      
+      onUpdateCharacter(myCharacter.id, {
+          spellSlots: { ...currentSlots, [level]: { ...levelData, used: levelData.used + 1 } }
+      });
+      onSendMessage(`✨ **${myCharacter.name}** conjurou **${spellName}** (Espaço Círculo ${level})!`);
+  };
+
+  const handleSpellSlotChange = (levelIndex: number, action: 'add_max' | 'remove_max' | 'toggle_used', slotIndex?: number) => {
+      if (!myCharacter || !onUpdateCharacter) return;
+      const currentSlots = myCharacter.spellSlots || {};
+      const levelData = currentSlots[levelIndex] || { max: 0, used: 0 };
+
+      let newMax = levelData.max;
+      let newUsed = levelData.used;
+
+      if (action === 'add_max' && newMax < 4) newMax++;
+      if (action === 'remove_max' && newMax > 0) {
+          newMax--;
+          if (newUsed > newMax) newUsed = newMax;
+      }
+      if (action === 'toggle_used' && slotIndex !== undefined) {
+           if (newUsed === slotIndex + 1) {
+               newUsed--; 
+           } else {
+               newUsed = slotIndex + 1; 
+           }
+      }
+
+      onUpdateCharacter(myCharacter.id, {
+          spellSlots: { ...currentSlots, [levelIndex]: { max: newMax, used: newUsed } }
+      });
   };
 
   return (
@@ -244,6 +325,41 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                             <div className="bg-black/40 border border-white/10 rounded p-2 text-center"><span className="text-[9px] text-gray-500 uppercase font-bold block mb-1">Iniciativa</span><div className="text-xl font-black text-white flex items-center justify-center gap-1"><Zap size={14} className="text-yellow-500"/> {dexMod >= 0 ? `+${dexMod}` : dexMod}</div></div>
                             <div className="bg-black/40 border border-white/10 rounded p-2 text-center"><span className="text-[9px] text-gray-500 uppercase font-bold block mb-1">Deslocamento</span><div className="text-xl font-black text-white">9m</div></div>
                         </div>
+
+                        {/* 👉 E AQUI ESTÁ O ARSENAL (AÇÕES DE COMBATE) */}
+                        {equippedWeapons.length > 0 && (
+                            <div className="mb-6 mt-6">
+                                <p className="text-[10px] text-blue-400 uppercase font-bold mb-2 tracking-widest border-b border-white/5 pb-1">Ações de Combate</p>
+                                <div className="flex flex-col gap-2">
+                                    {equippedWeapons.map(weapon => {
+                                        const strMod = Math.floor((attributes.FOR - 10) / 2);
+                                        const dexMod = Math.floor((attributes.DES - 10) / 2);
+                                        const wName = weapon.name.toLowerCase();
+                                        const isFinesseOrRanged = weapon.stats?.properties?.some(p => p.toLowerCase().includes('finesse') || p.toLowerCase().includes('distância') || p.toLowerCase().includes('ranged')) || wName.includes('arco') || wName.includes('besta') || wName.includes('adaga') || wName.includes('rapieira');
+                                        const bestMod = isFinesseOrRanged ? Math.max(strMod, dexMod) : strMod;
+                                        const atkMod = bestMod + proficiencyBonus;
+
+                                        return (
+                                            <div key={weapon.id} className="bg-black/30 border border-blue-900/30 rounded p-2 flex items-center justify-between group hover:border-blue-500/30 transition-colors">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 bg-black/50 rounded border border-gray-700 flex items-center justify-center p-1 overflow-hidden">
+                                                        {weapon.image ? <img src={weapon.image} alt={weapon.name} className="max-w-full max-h-full object-contain" /> : <Sword size={16} className="text-gray-500" />}
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-xs font-bold text-blue-200 block truncate max-w-[140px]">{weapon.name}</span>
+                                                        <span className="text-[9px] text-gray-500 uppercase tracking-widest">{weapon.stats?.damage || '1d4'} Dano</span>
+                                                    </div>
+                                                </div>
+                                                <button onClick={() => onRollAttribute(myCharacter.name, `Ataque: ${weapon.name}`, atkMod)} className="flex items-center gap-1.5 bg-blue-900/40 hover:bg-blue-600 text-blue-200 hover:text-white px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider border border-blue-700/50 transition-all active:scale-95 shadow-md">
+                                                    <span className="text-sm">🎲</span> {atkMod >= 0 ? `+${atkMod}` : atkMod}
+                                                </button>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
                         <div className="mb-6">
                             <p className="text-[10px] text-gray-500 uppercase font-bold mb-2 tracking-widest border-b border-white/5 pb-1">Habilidades</p>
                             <div className="flex flex-col gap-2">
@@ -259,14 +375,53 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                     </div>
                 )}
 
-                {/* 2. ABA INVENTÁRIO (ATUALIZADA COM OWNER ID) */}
+                {/* 2. ABA INVENTÁRIO COM TESOURO */}
                 {activeTab === 'inv' && myCharacter && (
-                    <Inventory 
-                        items={inventory} 
-                        ownerId={myCharacter.id} // <--- PASSANDO O ID CORRETAMENTE
-                        onEquip={handleEquipItem}
-                        onDrop={handleDropItem}
-                    />
+                    <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                        
+                        {/* PAINEL DE TESOURO E PESO */}
+                        <div className="bg-black/40 border border-white/10 rounded-xl p-3 shadow-md">
+                            <div className="flex justify-between items-center mb-3">
+                                <h3 className="text-[10px] uppercase font-bold text-yellow-500 tracking-widest flex items-center gap-1.5">
+                                    <Coins size={14} /> Tesouro
+                                </h3>
+                                <span className="text-[9px] text-gray-500 font-bold italic">Hover p/ Editar</span>
+                            </div>
+                            
+                            <div className="flex gap-2">
+                                {renderCoin('cp', 'PC', 'bg-[#b87333]/10 text-[#b87333] border-[#b87333]/30')}
+                                {renderCoin('sp', 'PP', 'bg-gray-400/10 text-gray-400 border-gray-400/30')}
+                                {renderCoin('ep', 'PE', 'bg-blue-400/10 text-blue-400 border-blue-400/30')}
+                                {renderCoin('gp', 'PO', 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30')}
+                                {renderCoin('pp', 'PL', 'bg-purple-400/10 text-purple-400 border-purple-400/30')}
+                            </div>
+
+                            <div className="mt-4 pt-3 border-t border-white/5">
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <span className="text-[10px] text-gray-400 font-bold uppercase flex items-center gap-1">
+                                        <Scale size={12}/> Carga Total
+                                    </span>
+                                    <span className={`text-[10px] font-bold ${totalWeight > maxWeight ? 'text-red-400 animate-pulse' : 'text-gray-300'}`}>
+                                        {totalWeight.toFixed(1)} / {maxWeight} kg
+                                    </span>
+                                </div>
+                                <div className="w-full h-1.5 bg-gray-900 rounded-full overflow-hidden border border-white/5">
+                                    <div 
+                                        className={`h-full transition-all duration-500 ${weightPercent > 100 ? 'bg-red-500' : weightPercent > 80 ? 'bg-orange-500' : 'bg-green-500'}`} 
+                                        style={{ width: `${Math.min(100, weightPercent)}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* LISTA DE ITENS */}
+                        <Inventory 
+                            items={inventory} 
+                            ownerId={myCharacter.id}
+                            onEquip={handleEquipItem}
+                            onDrop={handleDropItem}
+                        />
+                    </div>
                 )}
 
                 {/* 3. ABA MAGIAS */}
@@ -274,14 +429,102 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                         {myCharacter ? (
                             <>
-                                <div className="text-center mb-6"><h3 className="text-purple-400 font-mono text-xs uppercase tracking-widest mb-1">Grimório Arcano</h3><p className="text-[10px] text-gray-500">Sabedoria {attributes.SAB} • CD {8+proficiencyBonus+Math.floor((attributes.SAB-10)/2)}</p></div>
-                                <div className="space-y-4">
-                                    {[1, 2, 3].map(level => {
-                                        const max = (SPELL_SLOTS_BY_LEVEL[savedLevel]||[])[level-1]||0; if(max===0)return null; const used = spellSlotsUsed[level-1]||0;
+                                <div className="text-center mb-6">
+                                    <h3 className="text-purple-400 font-mono text-xs uppercase tracking-widest mb-1">Grimório Arcano</h3>
+                                    <p className="text-[10px] text-gray-500">Sabedoria {attributes.SAB} • CD {8+proficiencyBonus+Math.floor((attributes.SAB-10)/2)}</p>
+                                </div>
+
+                                <form onSubmit={handleAddSpell} className="flex gap-2 mb-6 bg-black/40 p-3 rounded-xl border border-purple-900/30 shadow-inner">
+                                    <input 
+                                        type="text" 
+                                        value={newSpellName}
+                                        onChange={e => setNewSpellName(e.target.value)}
+                                        placeholder="Nova Magia..."
+                                        className="flex-1 bg-black/50 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+                                    />
+                                    <select 
+                                        value={newSpellLevel}
+                                        onChange={e => setNewSpellLevel(Number(e.target.value))}
+                                        className="bg-black/50 border border-gray-800 rounded-lg px-2 py-2 text-xs text-white outline-none focus:border-purple-500"
+                                    >
+                                        <option value={0}>Truque</option>
+                                        {[1,2,3,4,5,6,7,8,9].map(l => <option key={l} value={l}>Círculo {l}</option>)}
+                                    </select>
+                                    <button type="submit" disabled={!newSpellName.trim()} className="bg-purple-700 hover:bg-purple-600 disabled:bg-gray-800 text-white px-4 rounded-lg font-bold transition-all active:scale-95">+</button>
+                                </form>
+
+                                <div className="space-y-5">
+                                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(level => {
+                                        const levelSpells = (myCharacter.spells || []).filter(s => s.level === level);
+                                        const slotData = myCharacter.spellSlots?.[level] || { max: 0, used: 0 };
+                                        
+                                        const hasMax = slotData.max > 0;
+                                        const prevLevelData = level > 1 ? myCharacter.spellSlots?.[level-1] : null;
+                                        const canAddSlots = level > 0 && (hasMax || level === 1 || (prevLevelData && prevLevelData.max > 0));
+
+                                        if (level > 0 && !canAddSlots && !hasMax && levelSpells.length === 0) return null;
+                                        if (level === 0 && levelSpells.length === 0) return null;
+
                                         return (
-                                            <div key={level} className="bg-black/30 border border-purple-900/30 rounded p-3">
-                                                <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-purple-200">Círculo {level}</span><div className="flex gap-1">{Array.from({length:max}).map((_,i)=><div key={i} className={`w-2 h-2 rounded-full border border-purple-500 ${i<(max-used)?'bg-purple-400 shadow-[0_0_5px_#a855f7]':'bg-black opacity-30'}`}></div>)}</div></div>
-                                                <div className="space-y-1"><button onClick={()=>handleCastSpell("Mísseis Mágicos",level)} disabled={used>=max} className="w-full text-left p-2 rounded hover:bg-purple-900/20 flex justify-between items-center group disabled:opacity-30"><span className="text-xs text-gray-300 group-hover:text-white">Mísseis Mágicos</span><span className="text-[9px] text-purple-500 font-bold uppercase">Conjurar</span></button></div>
+                                            <div key={`spell-lvl-${level}`} className="bg-black/30 border border-purple-900/30 rounded-xl overflow-hidden shadow-md">
+                                                <div className="flex items-center justify-between bg-purple-950/20 p-3 border-b border-purple-900/30">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-xs font-black text-purple-300 uppercase tracking-widest">
+                                                            {level === 0 ? 'Truques (Infinito)' : `Círculo ${level}`}
+                                                        </span>
+                                                        {level > 0 && (
+                                                            <div className="flex gap-1.5 ml-2">
+                                                                {[...Array(Math.max(1, slotData.max))].map((_, i) => {
+                                                                    if (slotData.max === 0) return null;
+                                                                    const isUsed = i < slotData.used;
+                                                                    return (
+                                                                        <div 
+                                                                            key={`bubble-${level}-${i}`} 
+                                                                            onClick={() => handleSpellSlotChange(level, 'toggle_used', i)}
+                                                                            className="cursor-pointer hover:scale-110 transition-transform"
+                                                                        >
+                                                                            {isUsed ? (
+                                                                                <div className="w-[14px] h-[14px] rounded-full bg-black border border-purple-900/50"></div>
+                                                                            ) : (
+                                                                                <div className="w-[14px] h-[14px] rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.6)]"></div>
+                                                                            )}
+                                                                        </div>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {level > 0 && (
+                                                        <div className="flex gap-1 border-l border-white/10 pl-3">
+                                                            <button onClick={() => handleSpellSlotChange(level, 'remove_max')} className="w-5 h-5 flex items-center justify-center bg-red-900/30 text-red-400 rounded hover:bg-red-900/50 text-xs font-black">-</button>
+                                                            <button onClick={() => handleSpellSlotChange(level, 'add_max')} className="w-5 h-5 flex items-center justify-center bg-green-900/30 text-green-400 rounded hover:bg-green-900/50 text-xs font-black">+</button>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="p-2 space-y-1">
+                                                    {levelSpells.length === 0 ? (
+                                                        <p className="text-[10px] text-gray-600 italic text-center py-3">Nenhuma magia memorizada.</p>
+                                                    ) : (
+                                                        levelSpells.map(spell => (
+                                                            <div key={spell.id} className="flex justify-between items-center group p-2.5 rounded-lg hover:bg-purple-900/20 transition-colors border border-transparent hover:border-purple-900/30">
+                                                                <span className="text-xs font-bold text-gray-200">{spell.name}</span>
+                                                                <div className="flex items-center gap-3">
+                                                                    <button 
+                                                                        onClick={() => handleCastSpell(spell.name, level)} 
+                                                                        disabled={level > 0 && slotData.used >= slotData.max} 
+                                                                        className="text-[9px] bg-purple-900/60 border border-purple-700 text-purple-200 hover:bg-purple-600 hover:text-white px-3 py-1.5 rounded-md font-bold uppercase tracking-wider transition-all disabled:opacity-30 disabled:hover:bg-purple-900/60 active:scale-95"
+                                                                    >
+                                                                        Conjurar
+                                                                    </button>
+                                                                    <button onClick={() => handleRemoveSpell(spell.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Apagar magia">
+                                                                        <Trash2 size={14} />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
                                             </div>
                                         )
                                     })}
@@ -296,13 +539,14 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                     </div>
                 )}
 
+                {/* 4. ABA CHAT */}
                 {activeTab === 'chat' && (
                     <div className="h-full flex flex-col">
                         <Chat 
                             messages={chatMessages} 
                             onSendMessage={onSendMessage} 
                             role="PLAYER" 
-                            onApplyDamage={onApplyDamageFromChat} // <--- AQUI REPASA
+                            onApplyDamage={onApplyDamageFromChat}
                         />
                     </div>
                 )}

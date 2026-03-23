@@ -37,7 +37,12 @@ interface GameState {
   weather: 'none' | 'rain' | 'snow';
 }
 
-const DATA_FILE = path.join(process.cwd(), 'savegame_v2.json');
+// 👉 MAGIA NOVA: Cria um caminho de ficheiro único baseado no nome da sala
+const getSaveFilePath = (roomId: string) => {
+    // Substitui caracteres estranhos por '_' para evitar erros no sistema de arquivos
+    const safeRoomId = roomId.replace(/[^a-z0-9-]/gi, '_');
+    return path.join(process.cwd(), `savegame_${safeRoomId}.json`);
+};
 
 // Gestão de estado por Sala
 let roomsState: Record<string, GameState> = {}; 
@@ -55,10 +60,12 @@ const getRoomState = (roomId: string): GameState => {
             globalBrightness: 1,
             weather: 'none'
         };
-        // Se for a sala principal padrão do save (mesa-do-victor), carregamos os dados do ficheiro
-        if (roomId === 'mesa-do-victor' && fs.existsSync(DATA_FILE)) {
+        
+        // 👉 MAGIA NOVA: Tenta carregar o save específico DESTA sala
+        const saveFile = getSaveFilePath(roomId);
+        if (fs.existsSync(saveFile)) {
              try {
-                const rawData = fs.readFileSync(DATA_FILE, 'utf-8');
+                const rawData = fs.readFileSync(saveFile, 'utf-8');
                 const loadedData = JSON.parse(rawData);
                 roomsState[roomId] = { 
                     ...roomsState[roomId], 
@@ -70,6 +77,8 @@ const getRoomState = (roomId: string): GameState => {
               } catch (e) {
                 console.error(`❌ ERRO AO LER SAVE PARA A SALA ${roomId}:`, e);
               }
+        } else {
+            console.log(`📝 NOVA MESA CRIADA. Nenhum save anterior para a sala: ${roomId}`);
         }
     }
     return roomsState[roomId];
@@ -146,16 +155,15 @@ io.on('connection', (socket) => {
         weather: data.weather || roomState.weather
     };
 
-    // Apenas salva no disco a sala principal por enquanto
-    if (data.roomId === 'mesa-do-victor') {
-        try {
-          fs.writeFileSync(DATA_FILE, JSON.stringify(roomsState[data.roomId], null, 2));
-          io.in(data.roomId).emit('notification', { message: 'Mundo salvo com sucesso!' });
-        } catch (err) {
-          console.error("❌ ERRO AO GRAVAR ARQUIVO:", err);
-        }
-    } else {
-        io.in(data.roomId).emit('notification', { message: 'Sessão atualizada (Salas adicionais são apagadas ao reiniciar o servidor).' });
+    // 👉 MAGIA NOVA: Salva no disco dinamicamente para a sala correta
+    const saveFile = getSaveFilePath(data.roomId);
+    try {
+        fs.writeFileSync(saveFile, JSON.stringify(roomsState[data.roomId], null, 2));
+        io.in(data.roomId).emit('notification', { message: 'Mundo salvo com sucesso!' });
+        console.log(`💾 Mesa ${data.roomId} guardada nos registos.`);
+    } catch (err) {
+        console.error(`❌ ERRO AO GRAVAR ARQUIVO PARA ${data.roomId}:`, err);
+        io.in(data.roomId).emit('notification', { message: 'Erro ao salvar o mundo!' });
     }
   });
 

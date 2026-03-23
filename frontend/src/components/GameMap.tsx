@@ -3,6 +3,7 @@ import CanvasMap, { AoEData } from './CanvasMap';
 import TokenLayer from './TokenLayer';
 import { Entity, Item } from '../App';
 import { Keyboard, X } from 'lucide-react'; 
+import socket from '../services/socket'; // 👈 NOVO IMPORT PARA O SOCKET!
 
 export interface MapPing {
   id: string;
@@ -83,8 +84,42 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     const isMapMouseDown = useRef(false);
     const mapMouseDownPos = useRef({ x: 0, y: 0 });
 
+    // 👉 NOVO ESTADO: O Guardião das Animações
+    const [combatAnimation, setCombatAnimation] = useState<{
+        attackerName: string;
+        targetId: number;
+        attackType: string;
+        id: string; // ID único para a animação
+    } | null>(null);
+
     useEffect(() => { targetIdsRef.current = targetEntityIds; }, [targetEntityIds]);
     useEffect(() => { attackerIdRef.current = attackerId; }, [attackerId]);
+
+    // 👉 NOVA ESCUTA MAGICA: Ouve o servidor por ataques
+    useEffect(() => {
+        const handleCombatAnimation = (data: any) => {
+            // Verifica se o alvo desta animação existe na mesa atual
+            const targetExists = entities.some(e => e.id === data.targetId);
+            if (targetExists) {
+                setCombatAnimation({
+                    attackerName: data.attackerName,
+                    targetId: data.targetId,
+                    attackType: data.attackType,
+                    id: Date.now().toString()
+                });
+
+                // A animação desaparece após 1.5 segundos
+                setTimeout(() => {
+                    setCombatAnimation(null);
+                }, 1500);
+            }
+        };
+
+        socket.on('triggerCombatAnimation', handleCombatAnimation);
+        return () => {
+            socket.off('triggerCombatAnimation', handleCombatAnimation);
+        };
+    }, [entities]);
 
     useEffect(() => {
         if (role === 'PLAYER' && externalOffset && externalScale) {
@@ -386,6 +421,48 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 </div>
             ))}
 
+            {/* 👉 O PALCO DAS ANIMAÇÕES */}
+            {combatAnimation && (() => {
+                const targetEnt = entities.find(e => e.id === combatAnimation.targetId);
+                if (!targetEnt) return null;
+
+                const tokenSizeInPx = (targetEnt.size || 1) * gridSize * scale;
+                const tokenScreenX = (targetEnt.x * gridSize * scale) + offset.x;
+                const tokenScreenY = (targetEnt.y * gridSize * scale) + offset.y;
+
+                const isMagic = combatAnimation.attackType.toLowerCase().includes('conjurou');
+                
+                return (
+                    <div 
+                        key={combatAnimation.id}
+                        className="absolute pointer-events-none z-[300] flex items-center justify-center mix-blend-screen"
+                        style={{ 
+                            left: tokenScreenX, 
+                            top: tokenScreenY,
+                            width: tokenSizeInPx,
+                            height: tokenSizeInPx
+                        }}
+                    >
+                        {isMagic ? (
+                            // EFEITO DE EXPLOSÃO MÁGICA
+                            <div className="relative w-[150%] h-[150%] animate-in zoom-in duration-300 flex items-center justify-center">
+                                <div className="absolute inset-0 bg-purple-600 rounded-full animate-ping opacity-60 blur-md"></div>
+                                <div className="absolute w-full h-full border-4 border-cyan-400 rounded-full animate-[spin_1s_linear_infinite] border-t-transparent border-b-transparent shadow-[0_0_30px_#22d3ee]"></div>
+                                <div className="absolute w-3/4 h-3/4 bg-white rounded-full animate-pulse blur-sm"></div>
+                            </div>
+                        ) : (
+                            // EFEITO DE CORTE/ATAQUE FÍSICO
+                            <div className="relative w-[120%] h-[120%] animate-in zoom-in fade-in duration-200">
+                                <div className="absolute inset-0 bg-red-600 rounded-full animate-ping opacity-40"></div>
+                                <svg viewBox="0 0 100 100" className="absolute w-full h-full text-red-500 transform -rotate-45 drop-shadow-[0_0_15px_#ef4444]">
+                                    <path d="M10,90 Q50,10 90,10" fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" className="animate-[dash_0.3s_ease-out_forwards]"/>
+                                </svg>
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
+
             {isMeasuring && rulerStart && (
                 <svg className="absolute inset-0 w-full h-full pointer-events-none z-[150]">
                     <line 
@@ -417,11 +494,9 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 targetEntityIds={targetEntityIds}
                 onMoveToken={onMoveToken}
                 
-                // --- A MAGIA OCORRE AQUI: Jogadores agora podem selecionar! ---
                 onSelectToken={(entity, multi) => {
                     if (!entity || entity.classType === 'Item') return; 
                     
-                    // Todos (Mestre e Jogador) podem ver os atributos básicos, o Mestre vê tudo.
                     onSelectEntity(entity, 0, 0); 
                     
                     if (attackerId === entity.id) {
@@ -434,7 +509,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 onTokenDoubleClick={(entity, multi) => {
                     if (!entity || entity.classType === 'Item') return; 
                     
-                    // MESTRE E JOGADOR AGORA PODEM DEFINIR ALVOS!
                     if (targetEntityIds.includes(entity.id)) {
                         if (multi) { 
                             onSetTarget(targetEntityIds.filter(id => id !== entity.id));
@@ -527,6 +601,13 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 )}
             </div>
 
+            <style>{`
+                @keyframes dash {
+                    to {
+                        stroke-dashoffset: 0;
+                    }
+                }
+            `}</style>
         </div>
     );
 };

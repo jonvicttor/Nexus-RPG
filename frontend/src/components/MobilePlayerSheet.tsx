@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Heart, Sword, Backpack, Dices, Circle, CheckCircle2, Star, Skull, Flame, MessageSquare, Send } from 'lucide-react';
+import { Shield, Heart, Sword, Backpack, Dices, Circle, CheckCircle2, Star, Skull, Flame, MessageSquare, Send, Coins, Scale, Trash2 } from 'lucide-react';
 import { Entity } from '../App';
 import Chat, { ChatMessage } from './Chat';
 
@@ -38,6 +38,10 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
     const [unreadMessages, setUnreadMessages] = useState(false);
     const lastMessageCount = useRef(chatMessages.length);
 
+    // Estados para o formulário de Magias
+    const [newSpellName, setNewSpellName] = useState('');
+    const [newSpellLevel, setNewSpellLevel] = useState(1);
+
     useEffect(() => {
         if (chatMessages.length > lastMessageCount.current) {
             if (activeTab !== 'CHAT') {
@@ -58,6 +62,31 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
     
     const getMod = (val: number) => Math.floor((val - 10) / 2);
     const formatMod = (mod: number) => mod >= 0 ? `+${mod}` : `${mod}`;
+
+    // --- CÁLCULO DE PESO E RIQUEZA ---
+    const totalWeight = (character.inventory || []).reduce((acc, item) => acc + (item.weight || 0) * item.quantity, 0);
+    const maxWeight = ((character.stats as any)?.str || 10) * 7.5;
+    const weightPercent = Math.min(100, (totalWeight / maxWeight) * 100);
+
+    const handleCoinChange = (coinType: 'cp' | 'sp' | 'ep' | 'gp' | 'pp', amount: number) => {
+        const currentCoins = character.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+        const newVal = Math.max(0, currentCoins[coinType] + amount);
+        onUpdateCharacter(character.id, { coins: { ...currentCoins, [coinType]: newVal } });
+    };
+
+    const renderCoin = (type: 'cp' | 'sp' | 'ep' | 'gp' | 'pp', label: string, colorClass: string) => {
+        const val = character.coins?.[type] || 0;
+        return (
+            <div className={`flex-1 flex flex-col items-center justify-center py-1.5 rounded-lg border ${colorClass}`}>
+                <span className="text-[9px] font-black tracking-widest opacity-80 mb-0.5">{label}</span>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                    <button onClick={() => handleCoinChange(type, -1)} className="text-red-400 px-1.5 active:scale-125 font-bold leading-none">-</button>
+                    <span className="font-bold text-xs w-3 text-center leading-none">{val}</span>
+                    <button onClick={() => handleCoinChange(type, 1)} className="text-green-400 px-1.5 active:scale-125 font-bold leading-none">+</button>
+                </div>
+            </div>
+        );
+    };
 
     const toggleProficiency = (skillName: string) => {
         const currentProf = character.proficiencies?.[skillName] || 0;
@@ -82,8 +111,8 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
         if(window.confirm("Fazer um Descanso Longo? Isso irá restaurar Vida, Espaços de Magia e Testes de Morte.")) {
             let clearedSlots = { ...character.spellSlots };
             if (clearedSlots) {
-                Object.keys(clearedSlots).forEach(level => {
-                    clearedSlots[Number(level)].used = 0;
+                Object.keys(clearedSlots).forEach(lvl => {
+                    clearedSlots[Number(lvl)].used = 0;
                 });
             }
             onUpdateCharacter(character.id, {
@@ -91,7 +120,43 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                 deathSaves: { successes: 0, failures: 0 },
                 spellSlots: clearedSlots
             });
+            onSendMessage(`💤 **${character.name}** realizou um Descanso Longo. Vida, magias e recursos restaurados.`);
         }
+    };
+
+    // --- NOVA LÓGICA DE MAGIAS ---
+    const handleAddSpell = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newSpellName.trim()) return;
+        const newSpell = { id: Date.now().toString(), name: newSpellName.trim(), level: newSpellLevel };
+        const updatedSpells = [...(character.spells || []), newSpell];
+        onUpdateCharacter(character.id, { spells: updatedSpells });
+        setNewSpellName('');
+    };
+
+    const handleRemoveSpell = (spellId: string) => {
+        const updatedSpells = (character.spells || []).filter(s => s.id !== spellId);
+        onUpdateCharacter(character.id, { spells: updatedSpells });
+    };
+
+    const handleCastSpell = (spellName: string, spellLevel: number) => {
+        if (spellLevel === 0) {
+            onSendMessage(`✨ **${character.name}** conjurou o truque **${spellName}**!`);
+            return;
+        }
+
+        const currentSlots = character.spellSlots || {};
+        const levelData = currentSlots[spellLevel] || { max: 0, used: 0 };
+        
+        if (levelData.used >= levelData.max) { 
+            alert(`Sem espaços de magia disponíveis para o Círculo ${spellLevel}!`); 
+            return; 
+        }
+        
+        onUpdateCharacter(character.id, {
+            spellSlots: { ...currentSlots, [spellLevel]: { ...levelData, used: levelData.used + 1 } }
+        });
+        onSendMessage(`✨ **${character.name}** conjurou **${spellName}** (Espaço Círculo ${spellLevel})!`);
     };
 
     const handleSpellSlotChange = (levelIndex: number, action: 'add_max' | 'remove_max' | 'toggle_used', slotIndex?: number) => {
@@ -135,7 +200,6 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
     const equippedWeapons = character.inventory?.filter(i => i.type === 'weapon' && i.isEquipped) || [];
 
     return (
-        // FIX: h-[100dvh] para cobrir a tela perfeitamente e evitar corte da dock
         <div className="flex flex-col h-[100dvh] w-screen bg-[#050505] text-amber-50 font-serif items-center justify-center overflow-hidden">
             <div className="w-full max-w-3xl flex flex-col h-full relative bg-[#0a0a0a] md:border-l md:border-r border-gray-900 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
                 
@@ -298,8 +362,8 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                                 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {equippedWeapons.length > 0 ? equippedWeapons.map(weapon => {
-                                        const strMod = getMod(character.stats?.str || 10);
-                                        const dexMod = getMod(character.stats?.dex || 10);
+                                        const strMod = getMod((character.stats as any)?.str || 10);
+                                        const dexMod = getMod((character.stats as any)?.dex || 10);
                                         
                                         const wName = weapon.name.toLowerCase();
                                         const isFinesseOrRanged = 
@@ -338,59 +402,151 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
 
                     {activeTab === 'SPELLS' && (
                         <div className="space-y-6 animate-in fade-in duration-300">
-                            <div>
-                                <h2 className="text-purple-400/80 uppercase tracking-[0.2em] text-xs font-bold border-b border-purple-900/30 pb-2 mb-4 flex items-center justify-between">
-                                    <span>Espaços de Magia</span>
-                                    <span className="text-[9px] text-gray-500">Toque p/ Gastar</span>
-                                </h2>
-                                <div className="space-y-3 bg-gray-900/30 p-4 rounded-xl border border-gray-800/50">
-                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(level => {
-                                        const slotData = character.spellSlots?.[level] || { max: 0, used: 0 };
-                                        
-                                        const hasMax = slotData.max > 0;
-                                        const prevLevelData = level > 1 ? character.spellSlots?.[level-1] : null;
-                                        const canAdd = hasMax || (level === 1) || (prevLevelData && prevLevelData.max > 0);
-
-                                        if (!canAdd && !hasMax) return null;
-
-                                        return (
-                                            <div key={`slot-lvl-${level}`} className="flex items-center justify-between bg-black/40 p-2 rounded-lg border border-white/5">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs font-bold text-purple-400/80 w-12">Nível {level}</span>
-                                                    <div className="flex gap-1.5">
-                                                        {[...Array(Math.max(1, slotData.max))].map((_, i) => {
-                                                            const isUsed = i < slotData.used;
-                                                            if (slotData.max === 0) return null;
-                                                            return (
-                                                                <div 
-                                                                    key={`bubble-${level}-${i}`} 
-                                                                    onClick={() => handleSpellSlotChange(level, 'toggle_used', i)}
-                                                                    className="cursor-pointer"
-                                                                >
-                                                                    {isUsed ? <Circle size={18} className="text-gray-700" /> : <div className="w-[18px] h-[18px] rounded-full bg-purple-600 shadow-[0_0_8px_rgba(147,51,234,0.6)]"></div>}
-                                                                </div>
-                                                            )
-                                                        })}
-                                                    </div>
-                                                </div>
-                                                <div className="flex gap-1 border-l border-white/10 pl-2 ml-2">
-                                                    <button onClick={() => handleSpellSlotChange(level, 'remove_max')} className="w-6 h-6 flex items-center justify-center bg-red-900/30 text-red-500 rounded hover:bg-red-900/50">-</button>
-                                                    <button onClick={() => handleSpellSlotChange(level, 'add_max')} className="w-6 h-6 flex items-center justify-center bg-green-900/30 text-green-500 rounded hover:bg-green-900/50">+</button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                            <div className="text-center mb-6">
+                                <h3 className="text-purple-400 font-mono text-xs uppercase tracking-widest mb-1">Grimório Arcano</h3>
+                                <p className="text-[10px] text-gray-500">
+                                    Sabedoria {(character.stats as any)?.wis || 10} • CD {8 + profBonus + getMod((character.stats as any)?.wis || 10)}
+                                </p>
                             </div>
-                            
-                            <p className="text-center text-gray-500 text-xs py-4 italic border border-dashed border-gray-800 rounded-lg bg-black/20">
-                                Grimório de Magias Detalhado<br/>em breve na próxima atualização!
-                            </p>
+
+                            <form onSubmit={handleAddSpell} className="flex gap-2 mb-6 bg-black/40 p-3 rounded-xl border border-purple-900/30 shadow-inner">
+                                <input 
+                                    type="text" 
+                                    value={newSpellName}
+                                    onChange={e => setNewSpellName(e.target.value)}
+                                    placeholder="Nova Magia..."
+                                    className="flex-1 bg-black/50 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+                                    style={{ fontSize: '16px' }} 
+                                />
+                                <select 
+                                    value={newSpellLevel}
+                                    onChange={e => setNewSpellLevel(Number(e.target.value))}
+                                    className="bg-black/50 border border-gray-800 rounded-lg px-2 py-2 text-xs text-white outline-none focus:border-purple-500"
+                                    style={{ fontSize: '16px' }}
+                                >
+                                    <option value={0}>Truque</option>
+                                    {[1,2,3,4,5,6,7,8,9].map(l => <option key={l} value={l}>Círculo {l}</option>)}
+                                </select>
+                                <button type="submit" disabled={!newSpellName.trim()} className="bg-purple-700 hover:bg-purple-600 disabled:bg-gray-800 text-white px-4 rounded-lg font-bold transition-all active:scale-95">+</button>
+                            </form>
+
+                            <div className="space-y-5">
+                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(level => {
+                                    const levelSpells = (character.spells || []).filter(s => s.level === level);
+                                    const slotData = character.spellSlots?.[level] || { max: 0, used: 0 };
+                                    
+                                    const hasMax = slotData.max > 0;
+                                    const prevLevelData = level > 1 ? character.spellSlots?.[level-1] : null;
+                                    const canAddSlots = level > 0 && (hasMax || level === 1 || (prevLevelData && prevLevelData.max > 0));
+
+                                    if (level > 0 && !canAddSlots && !hasMax && levelSpells.length === 0) return null;
+                                    if (level === 0 && levelSpells.length === 0) return null;
+
+                                    return (
+                                        <div key={`spell-lvl-${level}`} className="bg-black/30 border border-purple-900/30 rounded-xl overflow-hidden shadow-md">
+                                            
+                                            <div className="flex items-center justify-between bg-purple-950/20 p-3 border-b border-purple-900/30">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-xs font-black text-purple-300 uppercase tracking-widest">
+                                                        {level === 0 ? 'Truques (Infinito)' : `Círculo ${level}`}
+                                                    </span>
+                                                    {level > 0 && (
+                                                        <div className="flex gap-1.5 ml-2">
+                                                            {[...Array(Math.max(1, slotData.max))].map((_, i) => {
+                                                                if (slotData.max === 0) return null;
+                                                                const isUsed = i < slotData.used;
+                                                                return (
+                                                                    <div 
+                                                                        key={`bubble-${level}-${i}`} 
+                                                                        onClick={() => handleSpellSlotChange(level, 'toggle_used', i)}
+                                                                        className="cursor-pointer hover:scale-110 transition-transform p-1 -m-1"
+                                                                    >
+                                                                        {isUsed ? (
+                                                                            <div className="w-[14px] h-[14px] rounded-full bg-black border border-purple-900/50"></div>
+                                                                        ) : (
+                                                                            <div className="w-[14px] h-[14px] rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.6)]"></div>
+                                                                        )}
+                                                                    </div>
+                                                                )
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {level > 0 && (
+                                                    <div className="flex gap-1 border-l border-white/10 pl-3">
+                                                        <button onClick={() => handleSpellSlotChange(level, 'remove_max')} className="w-6 h-6 flex items-center justify-center bg-red-900/30 text-red-400 rounded hover:bg-red-900/50 text-sm font-black active:scale-90">-</button>
+                                                        <button onClick={() => handleSpellSlotChange(level, 'add_max')} className="w-6 h-6 flex items-center justify-center bg-green-900/30 text-green-400 rounded hover:bg-green-900/50 text-sm font-black active:scale-90">+</button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="p-2 space-y-1">
+                                                {levelSpells.length === 0 ? (
+                                                    <p className="text-[10px] text-gray-600 italic text-center py-3">Nenhuma magia memorizada.</p>
+                                                ) : (
+                                                    levelSpells.map(spell => (
+                                                        <div key={spell.id} className="flex justify-between items-center group p-2.5 rounded-lg border border-transparent hover:border-purple-900/30 bg-black/20">
+                                                            <span className="text-xs font-bold text-gray-200">{spell.name}</span>
+                                                            <div className="flex items-center gap-3">
+                                                                <button 
+                                                                    onClick={() => handleCastSpell(spell.name, level)} 
+                                                                    disabled={level > 0 && slotData.used >= slotData.max} 
+                                                                    className="text-[9px] bg-purple-900/60 border border-purple-700 text-purple-200 px-3 py-2 rounded-md font-bold uppercase tracking-wider transition-all disabled:opacity-30 active:scale-95"
+                                                                >
+                                                                    Conjurar
+                                                                </button>
+                                                                <button onClick={() => handleRemoveSpell(spell.id)} className="text-gray-500 hover:text-red-400 p-2" title="Apagar magia">
+                                                                    <Trash2 size={14} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
                         </div>
                     )}
 
                     {activeTab === 'INVENTORY' && (
                         <div className="space-y-6 animate-in fade-in duration-300">
+                             
+                             {/* PAINEL DE TESOURO E PESO */}
+                             <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-3 shadow-md">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h3 className="text-[10px] uppercase font-bold text-yellow-500 tracking-widest flex items-center gap-1.5">
+                                        <Coins size={14} /> Tesouro
+                                    </h3>
+                                </div>
+                                
+                                <div className="flex gap-1.5">
+                                    {renderCoin('cp', 'PC', 'bg-[#b87333]/10 text-[#b87333] border-[#b87333]/30')}
+                                    {renderCoin('sp', 'PP', 'bg-gray-400/10 text-gray-400 border-gray-400/30')}
+                                    {renderCoin('ep', 'PE', 'bg-blue-400/10 text-blue-400 border-blue-400/30')}
+                                    {renderCoin('gp', 'PO', 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30')}
+                                    {renderCoin('pp', 'PL', 'bg-purple-400/10 text-purple-400 border-purple-400/30')}
+                                </div>
+
+                                <div className="mt-4 pt-3 border-t border-white/5">
+                                    <div className="flex justify-between items-center mb-1.5">
+                                        <span className="text-[10px] text-gray-400 font-bold uppercase flex items-center gap-1">
+                                            <Scale size={12}/> Carga Total
+                                        </span>
+                                        <span className={`text-[10px] font-bold ${totalWeight > maxWeight ? 'text-red-400 animate-pulse' : 'text-gray-300'}`}>
+                                            {totalWeight.toFixed(1)} / {maxWeight} kg
+                                        </span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-gray-900 rounded-full overflow-hidden border border-white/5">
+                                        <div 
+                                            className={`h-full transition-all duration-500 ${weightPercent > 100 ? 'bg-red-500' : weightPercent > 80 ? 'bg-orange-500' : 'bg-green-500'}`} 
+                                            style={{ width: `${Math.min(100, weightPercent)}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            </div>
+
                              <div className="flex flex-col flex-shrink-0 bg-gray-900/50 rounded-xl border border-gray-800 pb-2">
                                 <div className="p-4 border-b border-gray-800 flex items-center justify-between">
                                     <h3 className="text-xs uppercase font-black text-amber-500 tracking-widest flex items-center gap-1.5"><Backpack size={16} /> Mochila</h3>
@@ -473,7 +629,6 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
     );
 }
 
-// Componente isolado para o input do chat para manter o foco e evitar zoom
 const ChatInput = ({ onSendMessage }: { onSendMessage: (msg: string) => void }) => {
     const [input, setInput] = useState('');
     const handleSubmit = (e: React.FormEvent) => {
@@ -490,7 +645,9 @@ const ChatInput = ({ onSendMessage }: { onSendMessage: (msg: string) => void }) 
                 className="flex-1 bg-black/50 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" 
                 style={{ fontSize: '16px' }} 
             />
-            <button type="submit" disabled={!input.trim()} className="bg-purple-600 disabled:bg-gray-800 text-white p-2.5 rounded-xl active:scale-95 transition-transform"><Send size={20}/></button>
+            <button type="submit" disabled={!input.trim()} className="bg-purple-600 disabled:bg-gray-800 text-white p-2.5 rounded-xl active:scale-95 transition-transform">
+                <Send size={20}/>
+            </button>
         </form>
     );
 };

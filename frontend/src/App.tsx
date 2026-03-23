@@ -192,7 +192,6 @@ function App() {
 
   const ignoreNextDiceSound = useRef(false);
 
-  // Calcula o centro da tela para invocar os tokens onde o Mestre está a olhar
   const getCenterGridPosition = () => {
     const centerPixelX = (CANVAS_WIDTH / 2) - mapOffset.x;
     const centerPixelY = (CANVAS_HEIGHT / 2) - mapOffset.y;
@@ -400,64 +399,76 @@ function App() {
         }
   };
 
+  // 👉 O CÉREBRO DOS ATAQUES MÁGICOS
   const handleDiceComplete = (total: number, isSuccess: boolean, isCritical: boolean, isSecret: boolean) => {
       const senderName = role === 'DM' ? 'Mestre' : playerName;
       let resultMsg = isCritical ? (total >= 20 ? "CRÍTICO! ⚔️" : "FALHA CRÍTICA! 💀") : (isSuccess ? "SUCESSO! ✅" : "FALHA ❌");
-      let isAttackHit = false; let targetIdForDamage: number | null = null; let targetInfoMsg = "";
+      let isAttackHit = false; 
+      let targetIdForDamage: number | null = null; 
+      let targetInfoMsg = "";
       let damageExpression = "";
 
       const isAttack = diceContext.title.toLowerCase().includes("ataque");
 
-      if (targetEntityIds.length > 0 && isAttack) {
-          const target = entities.find(e => e.id === targetEntityIds[0]);
-          if (target) {
-              if (total >= target.ac || (isCritical && total >= 20)) { 
-                  resultMsg = `**ACERTOU!** ⚔️ (vs CA ${target.ac})`; 
-                  isAttackHit = true; 
-                  targetIdForDamage = target.id;
+      if (isAttack) {
+          const attacker = role === 'DM' && attackerId ? entities.find(e => e.id === attackerId) : entities.find(e => e.name === playerName);
+          const weaponName = diceContext.title.replace(/Ataque:\s*/i, '').trim();
+          const weapon = attacker?.inventory?.find(i => i.name.toLowerCase() === weaponName.toLowerCase());
 
-                  const attacker = role === 'DM' && attackerId ? entities.find(e => e.id === attackerId) : entities.find(e => e.name === playerName);
-                  const weaponName = diceContext.title.replace(/Ataque:\s*/i, '').trim();
-                  const weapon = attacker?.inventory?.find(i => i.name.toLowerCase() === weaponName.toLowerCase());
+          let baseDmg = weapon?.stats?.damage || '1d4';
+          let dmgMod = 0;
+          
+          if (attacker && attacker.stats) {
+              const strMod = Math.floor((attacker.stats.str - 10) / 2);
+              const dexMod = Math.floor((attacker.stats.dex - 10) / 2);
+              const isFinesseOrRanged = weapon?.stats?.properties?.some(p => p.toLowerCase().includes('finesse') || p.toLowerCase().includes('distância') || p.toLowerCase().includes('ranged')) || weaponName.toLowerCase().includes('arco') || weaponName.toLowerCase().includes('besta') || weaponName.toLowerCase().includes('adaga') || weaponName.toLowerCase().includes('rapieira');
+              dmgMod = isFinesseOrRanged ? Math.max(strMod, dexMod) : strMod;
+          }
 
-                  let baseDmg = weapon?.stats?.damage || '1d4';
-                  let dmgMod = 0;
-                  
-                  if (attacker && attacker.stats) {
-                      const strMod = Math.floor((attacker.stats.str - 10) / 2);
-                      const dexMod = Math.floor((attacker.stats.dex - 10) / 2);
-                      const isFinesseOrRanged = weapon?.stats?.properties?.some(p => p.toLowerCase().includes('finesse') || p.toLowerCase().includes('distância') || p.toLowerCase().includes('ranged')) || weaponName.toLowerCase().includes('arco') || weaponName.toLowerCase().includes('besta') || weaponName.toLowerCase().includes('adaga') || weaponName.toLowerCase().includes('rapieira');
-                      dmgMod = isFinesseOrRanged ? Math.max(strMod, dexMod) : strMod;
-                  }
-
-                  const dmgMatch = baseDmg.match(/^(\d+)d(\d+)/i);
-                  if (dmgMatch) {
-                      const count = parseInt(dmgMatch[1]);
-                      const sides = parseInt(dmgMatch[2]);
-                      const rollsCount = (isCritical && total >= 20) ? count * 2 : count;
-                      
-                      let dmgTotal = 0;
-                      let dmgRolls = [];
-                      for(let i=0; i<rollsCount; i++) {
-                          const val = Math.floor(Math.random() * sides) + 1;
-                          dmgRolls.push(val);
-                          dmgTotal += val;
-                      }
-                      dmgTotal += dmgMod;
-                      damageExpression = `${rollsCount}d${sides}${dmgMod > 0 ? '+'+dmgMod : (dmgMod < 0 ? dmgMod : '')}`;
-                      
-                      targetInfoMsg = `\n🎯 *${target.name}* foi atingido!\n🩸 Dano: [${dmgRolls.join(', ')}] ${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''} = **${Math.max(1, dmgTotal)}**`;
-                  } else {
-                      targetInfoMsg = `\n🎯 *${target.name}* foi atingido!`;
-                  }
-              } else { 
-                  resultMsg = `**ERROU!** 🛡️ (vs CA ${target.ac})`; 
-                  targetInfoMsg = `\n💨 *${target.name}* defendeu o ataque.`; 
+          const dmgMatch = baseDmg.match(/^(\d+)d(\d+)/i);
+          let dmgTotal = 0; let dmgRolls = [];
+          if (dmgMatch) {
+              const count = parseInt(dmgMatch[1]);
+              const sides = parseInt(dmgMatch[2]);
+              const rollsCount = (isCritical && total >= 20) ? count * 2 : count;
+              
+              for(let i=0; i<rollsCount; i++) {
+                  const val = Math.floor(Math.random() * sides) + 1;
+                  dmgRolls.push(val);
+                  dmgTotal += val;
               }
+              dmgTotal += dmgMod;
+              damageExpression = `${rollsCount}d${sides}${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''}`;
+          }
+
+          // Se tiver um alvo selecionado, calcula hit/miss e aciona animação
+          if (targetEntityIds.length > 0) {
+              const target = entities.find(e => e.id === targetEntityIds[0]);
+              if (target) {
+                  if (total >= target.ac || (isCritical && total >= 20)) { 
+                      resultMsg = `**ACERTOU!** ⚔️ (vs CA ${target.ac})`; 
+                      isAttackHit = true; 
+                      targetIdForDamage = target.id;
+                      targetInfoMsg = `\n🎯 *${target.name}* foi atingido!\n🩸 Dano: [${dmgRolls.join(', ')}] ${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''} = **${Math.max(1, dmgTotal)}**`;
+                      
+                      // DISPARAR ANIMAÇÃO E SOM DE ESPADA
+                      socket.emit('triggerCombatAnimation', { roomId, attackerName: senderName, targetId: target.id, attackType: 'fisico' });
+                      handlePlaySFX('sword', true);
+                  } else { 
+                      resultMsg = `**ERROU!** 🛡️ (vs CA ${target.ac})`; 
+                      targetInfoMsg = `\n💨 *${target.name}* defendeu o ataque.`; 
+                      handlePlaySFX('dado', true);
+                  }
+              }
+          } else {
+              // Apenas rola o dano no ar sem alvo
+              resultMsg = `**Ataque Rolado** ⚔️`;
+              targetInfoMsg = `\n🩸 Dano Potencial: [${dmgRolls.join(', ')}] ${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''} = **${Math.max(1, dmgTotal)}**\n*(Nenhum alvo vermelho no mapa)*`;
+              handlePlaySFX('sword', true);
           }
       }
 
-      const publicText = `🎲 **${senderName}** rolou ${diceContext.title}:\n🎯 Ataque: **${total}** - ${resultMsg}${targetInfoMsg}`;
+      const publicText = `🎲 **${senderName}** rolou ${diceContext.title}:\n🎯 Resultado: **${total}** - ${resultMsg}${targetInfoMsg}`;
 
       if (isSecret) {
           const secretText = `👁️ (Secreto) ` + publicText;
@@ -489,8 +500,19 @@ function App() {
     setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, hp: newHp } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { hp: newHp }, roomId });
   };
 
+  // 👉 O CÉREBRO DE DETETAR MAGIAS DO CHAT
   const handleSendMessage = (text: string) => {
       const senderName = role === 'DM' ? 'MESTRE' : playerName;
+      
+      // VERIFICA SE É UMA MAGIA SENDO CONJURADA
+      const spellMatch = text.match(/conjurou (\*\*o truque\*\* )?\*\*([^*]+)\*\*/i);
+      if (spellMatch) {
+          if (targetEntityIds.length > 0) {
+              socket.emit('triggerCombatAnimation', { roomId, attackerName: senderName, targetId: targetEntityIds[0], attackType: 'magia' });
+          }
+          handlePlaySFX('magic', true);
+      }
+
       const whisperMatch = text.match(/^\/w\s+"([^"]+)"\s+(.+)$/i) || text.match(/^\/w\s+([^\s]+)\s+(.+)$/i);
       if (whisperMatch) {
           const whisperTarget = whisperMatch[1]; const whisperText = whisperMatch[2];
@@ -692,7 +714,6 @@ function App() {
                   const existing = prev.find(e => e.name.toLowerCase() === name.toLowerCase() && e.type === 'player');
                   
                   if (!existing) { 
-                      // 👉 MAGIA DO TAMANHO APLICADA (size: charData.size || 2)
                       const newEntity: Entity = { id: charData.id || Date.now(), name, hp: charData.hp, maxHp: charData.maxHp, ac: charData.ac, x: 8, y: 6, rotation: charData.rotation || 0, mirrored: charData.mirrored || false, conditions: charData.conditions || [], color: '#3b82f6', type: 'player', image: charData.image, stats: charData.stats, classType: charData.classType, visionRadius: charData.visionRadius || 9, size: charData.size || 2, xp: charData.xp || 0, level: charData.level || 1, inventory: charData.inventory || [], race: charData.race || 'Humano', visible: charData.visible !== false, proficiencies: charData.proficiencies || {}, deathSaves: charData.deathSaves || { successes: 0, failures: 0 }, inspiration: charData.inspiration || false, spellSlots: charData.spellSlots || {}, spells: charData.spells || [], coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; 
                       socket.emit('createEntity', { entity: newEntity, roomId: sessionRoomId }); 
                       return [...prev, newEntity]; 
@@ -716,7 +737,6 @@ function App() {
   let modalPosition = { top: 0, left: 0 };
   if (selectedStatusEntity) { const canvasOffsetX = (windowSize.w - CANVAS_WIDTH) / 2; const canvasOffsetY = (windowSize.h - CANVAS_HEIGHT) / 2; const tokenPixelX = (selectedStatusEntity.x * GRID_SIZE * mapScale) + mapOffset.x + canvasOffsetX; const tokenPixelY = (selectedStatusEntity.y * GRID_SIZE * mapScale) + mapOffset.y + canvasOffsetY; modalPosition = { top: tokenPixelY, left: tokenPixelX + ((selectedStatusEntity.size || 1) * GRID_SIZE * mapScale) + 15 }; if (modalPosition.left + 330 > windowSize.w - 320) { modalPosition.left = tokenPixelX - 340; } if (modalPosition.top + 400 > windowSize.h) { modalPosition.top = windowSize.h - 410; } if (modalPosition.top < 10) modalPosition.top = 10; }
 
-  // 👉 MAGIA DO TAMANHO APLICADA PARA NOVOS ALIADOS CRIADOS (size: 2)
   const handleSaveNewAlly = (id: number, data: Partial<Entity>) => { 
       const nextNum = entities.filter(e => e.type === 'player').length + 1; 
       const finalName = data.name || `Aliado ${nextNum}`; 
@@ -855,7 +875,6 @@ function App() {
                 </div>
             )}
             
-            {/* 👉 MAGIA DO TAMANHO NA CRIAÇÃO DE ALIADOS NO MODAL (size: 2 em vez de 1) */}
             {showAllyCreator && (<EditEntityModal entity={{ id: 0, name: '', hp: 20, maxHp: 20, ac: 12, x:0, y:0, type: 'player', color: '', conditions: [], mirrored: false, size: 2, inventory: [] }} onSave={(id, updates) => handleSaveNewAlly(id, updates)} onClose={() => setShowAllyCreator(false)} />)}
             {showEnemyCreator && (<MonsterCreatorModal onSave={handleSaveNewEnemy} onSavePreset={handleSaveMonsterPreset} onClose={() => setShowEnemyCreator(false)} />)}
             {contextMenu && (<ContextMenu x={contextMenu.x} y={contextMenu.y} entity={contextMenu.entity} role={role} onClose={() => setContextMenu(null)} onAction={handleContextMenuAction} />)}
