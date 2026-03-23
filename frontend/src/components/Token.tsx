@@ -58,7 +58,7 @@ const Token: React.FC<TokenProps> = ({
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return; 
     e.preventDefault();
-    e.stopPropagation();
+    e.stopPropagation(); // 👉 BLOQUEIA O CLIQUE DE IR PARA O MAPA
 
     onSelect(e, entity);
 
@@ -77,6 +77,9 @@ const Token: React.FC<TokenProps> = ({
 
   const handleMouseMove = (e: MouseEvent) => {
     if (!isDragging.current || !elementRef.current) return;
+    
+    // 👉 IMPORTANTE: O rato "rouba" o evento do mapa se estivermos arrastar.
+    e.preventDefault();
 
     const parentRect = elementRef.current.parentElement?.getBoundingClientRect();
     if (!parentRect) return;
@@ -128,7 +131,7 @@ const Token: React.FC<TokenProps> = ({
         elementRef.current.style.transform = `translate(${position.x}px, ${position.y}px)`;
     }
 
-    elementRef.current.style.zIndex = isSelected ? '100' : '10';
+    elementRef.current.style.zIndex = isActiveTurn ? '150' : (isSelected ? '100' : '10');
     elementRef.current.style.cursor = 'grab';
     elementRef.current.style.transition = 'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)';
     elementRef.current.style.transform = `translate(${finalX}px, ${finalY}px)`;
@@ -169,22 +172,22 @@ const Token: React.FC<TokenProps> = ({
 
   const size = (entity.size || 1) * gridSize;
   const isDead = entity.hp <= 0;
+  const isLoot = entity.type === 'loot'; // 👉 BOOLEANO ÚTIL
 
-  // Definição das cores das Auras
   let ringColor = 'transparent';
   let glowEffect = 'none';
 
   if (isActiveTurn) {
-      ringColor = '#facc15'; // Amarelo vibrante
+      ringColor = '#facc15'; 
       glowEffect = '0 0 25px rgba(250, 204, 21, 0.8), inset 0 0 10px rgba(250, 204, 21, 0.5)';
   } else if (isAttacker) {
-      ringColor = '#3b82f6'; // Azul
+      ringColor = '#3b82f6'; 
       glowEffect = '0 0 15px rgba(59, 130, 246, 0.6)';
   } else if (isTarget) {
-      ringColor = '#ef4444'; // Vermelho
+      ringColor = '#ef4444'; 
       glowEffect = '0 0 20px rgba(239, 68, 68, 0.7)';
   } else if (isSelected) {
-      ringColor = '#ffffff'; // Branco
+      ringColor = '#ffffff'; 
       glowEffect = '0 0 10px rgba(255, 255, 255, 0.5)';
   }
 
@@ -192,8 +195,8 @@ const Token: React.FC<TokenProps> = ({
     <div
       ref={elementRef}
       onMouseDown={handleMouseDown}
-      onContextMenu={(e) => onContextMenu(e, entity)}
-      onDoubleClick={(e) => onDoubleClick(e, entity)}
+      onContextMenu={(e) => { e.stopPropagation(); onContextMenu(e, entity); }} // 👉 PROTEGE CONTRA MENU DUPLO
+      onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(e, entity); }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -202,13 +205,12 @@ const Token: React.FC<TokenProps> = ({
         top: 0, left: 0,
         width: size, height: size,
         transform: `translate(${position.x}px, ${position.y}px)`,
-        zIndex: isActiveTurn ? 150 : (isSelected ? 100 : 10), // Turno ativo sempre no topo
+        zIndex: isActiveTurn ? 150 : (isSelected ? 100 : 10), 
         cursor: 'grab',
         transition: isDragging.current ? 'none' : 'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
         willChange: 'transform'
       }}
     >
-      {/* 1. SELEÇÃO / AURA NO CHÃO (Perspectiva 2.5D Oval) */}
       {(isSelected || isTarget || isAttacker || isActiveTurn) && (
         <div 
             className={`absolute bottom-0 left-[10%] w-[80%] h-[30%] rounded-[100%] border-[2px] pointer-events-none transition-all duration-300 ${isActiveTurn ? 'animate-pulse' : ''}`}
@@ -220,12 +222,10 @@ const Token: React.FC<TokenProps> = ({
         ></div>
       )}
 
-      {/* 2. SOMBRA BASE OVAL */}
-      {!isDead && (
+      {!isDead && !isLoot && (
           <div className="absolute bottom-[5%] left-[20%] w-[60%] h-[20%] bg-black/50 blur-md rounded-[100%] pointer-events-none"></div>
       )}
 
-      {/* 3. IMAGEM DO PERSONAGEM (Cresce pra cima da base) */}
       <div 
         className="absolute bottom-0 left-0 w-full h-[140%] flex items-end justify-center pointer-events-none"
         style={{
@@ -244,40 +244,39 @@ const Token: React.FC<TokenProps> = ({
         )}
       </div>
 
-      {/* 4. MARCADOR DE MORTE */}
-      {isDead && (
+      {isDead && !isLoot && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
               <span className="text-[50px] drop-shadow-[0_0_10px_rgba(0,0,0,1)] filter grayscale">💀</span>
           </div>
       )}
 
-      {/* 5. ÍCONE DE OCULTO (Para o Mestre) */}
       {entity.visible === false && (
         <div className="absolute top-0 -right-2 bg-black/90 rounded-full w-7 h-7 flex items-center justify-center text-sm text-cyan-400 border border-cyan-500/50 z-30 shadow-[0_0_8px_rgba(34,211,238,0.5)]">
             Ø
         </div>
       )}
       
-      {/* 6. NOME E NÍVEL (Corrigido para ficar SEMPRE acima da cabeça da imagem) */}
-      <div className="absolute left-1/2 pointer-events-none z-30 flex flex-col items-center"
-           style={{ 
-               bottom: '145%', // <--- A MÁGICA ESTÁ AQUI! (Acima dos 140% da imagem)
-               transform: `translateX(-50%) scale(${1/Math.max(scale, 0.5)})`, 
-               transformOrigin: 'bottom center' 
-           }}>
-        <div className="flex items-center bg-black/80 text-white text-[11px] px-2.5 py-1 rounded border border-white/20 shadow-[0_4px_4px_rgba(0,0,0,0.5)] backdrop-blur-sm gap-2 whitespace-nowrap">
-            <span className="text-yellow-400 font-black border-r border-white/20 pr-2 mr-0.5 drop-shadow-md">
-                Nv.{entity.level || 1}
-            </span>
-            <span className="font-bold tracking-wide text-gray-100">
-                {entity.name}
-            </span>
-        </div>
-        <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-t-black/80 mt-[-1px]"></div>
-      </div>
+      {/* 👉 MÁGICA FINAL: Só mostra Nome/Nível se NÃO FOR LOOT! */}
+      {!isLoot && (
+          <div className="absolute left-1/2 pointer-events-none z-30 flex flex-col items-center"
+               style={{ 
+                   bottom: '145%', 
+                   transform: `translateX(-50%) scale(${1/Math.max(scale, 0.5)})`, 
+                   transformOrigin: 'bottom center' 
+               }}>
+            <div className="flex items-center bg-black/80 text-white text-[11px] px-2.5 py-1 rounded border border-white/20 shadow-[0_4px_4px_rgba(0,0,0,0.5)] backdrop-blur-sm gap-2 whitespace-nowrap">
+                <span className="text-yellow-400 font-black border-r border-white/20 pr-2 mr-0.5 drop-shadow-md">
+                    Nv.{entity.level || 1}
+                </span>
+                <span className="font-bold tracking-wide text-gray-100">
+                    {entity.name}
+                </span>
+            </div>
+            <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-t-black/80 mt-[-1px]"></div>
+          </div>
+      )}
 
-      {/* 7. ÍCONES DE CONDIÇÃO FLUTUANTES */}
-      {entity.conditions && entity.conditions.length > 0 && !isDead && (
+      {entity.conditions && entity.conditions.length > 0 && !isDead && !isLoot && (
         <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 pointer-events-none z-30 bg-black/50 px-2 py-1 rounded-full border border-white/10 backdrop-blur-md">
            {entity.conditions.map((c, index) => (
                <div 

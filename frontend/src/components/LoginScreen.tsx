@@ -126,6 +126,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const musicRef = useRef<Howl | null>(null);
   const [savedChar, setSavedChar] = useState<any>(null);
 
+  // 👉 NOVO: Salão das Crônicas do Mestre
+  const [savedCampaigns, setSavedCampaigns] = useState<{name: string, roomId: string}[]>([]);
+
   // Estados do Jogador
   const [selectedRace, setSelectedRace] = useState<keyof typeof RACES>('HUMANO');
   const [selectedClass, setSelectedClass] = useState<keyof typeof CLASSES>('GUERREIRO');
@@ -168,9 +171,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   };
 
   useEffect(() => {
+    // Carrega o Herói Salvo
     const saved = localStorage.getItem('nexus_last_char');
     if (saved) {
       try { setSavedChar(JSON.parse(saved)); } catch(e) { console.error(e); }
+    }
+
+    // 👉 NOVO: Carrega as Campanhas Salvas do Mestre
+    const savedCamps = localStorage.getItem('nexus_saved_campaigns');
+    if (savedCamps) {
+        try { setSavedCampaigns(JSON.parse(savedCamps)); } catch(e) { console.error(e); }
     }
   }, []);
 
@@ -274,13 +284,20 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     }
   };
 
-  const handleStartCampaign = () => {
-      if (!campaignName.trim() || !roomPassword.trim()) {
+  // 👉 NOVO: Função Global de Submissão de Campanha (Forjada ou Salva)
+  const submitCampaign = (cName: string, cRoom: string) => {
+      if (!cName.trim() || !cRoom.trim()) {
           setError('Preencha o nome da campanha e a chave da sala.');
           return;
       }
       setError('');
-      onLogin('DM', 'Mestre Supremo', { campaignName, roomId: roomPassword });
+      
+      const newCampaign = { name: cName, roomId: cRoom };
+      const existing = savedCampaigns.filter(c => c.roomId !== cRoom);
+      const updatedCampaigns = [newCampaign, ...existing].slice(0, 5); // Guarda as últimas 5 crônicas
+      
+      localStorage.setItem('nexus_saved_campaigns', JSON.stringify(updatedCampaigns));
+      onLogin('DM', 'Mestre Supremo', { campaignName: cName, roomId: cRoom });
   };
 
   const handleQuickLogin = () => {
@@ -481,9 +498,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         </div>
       )}
 
-      {/* CORREÇÃO AQUI: Garante que a altura é respeitada e o botão não corta */}
       <ArcaneContainer width="w-full max-w-[1100px]" className="h-[90vh] md:h-[750px] !p-0 flex flex-col w-full">
-        {/* Cabeçalho */}
         <div className="px-4 md:px-8 py-3 md:py-5 border-b-2 border-amber-900/30 flex justify-between items-center bg-black/40 shrink-0 relative">
           <div className="flex items-center gap-2 md:gap-4">
               <div className="p-1.5 md:p-2 bg-amber-900/30 rounded-lg border border-amber-500/30 shadow-inner"><Scroll className="text-amber-500 w-5 h-5 md:w-6 md:h-6" /></div>
@@ -497,7 +512,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           </div>
         </div>
 
-        {/* Meio (Rolável) */}
         <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-y-auto md:overflow-hidden">
             <div className="w-full md:w-[350px] bg-black/20 md:border-r border-b md:border-b-0 border-white/5 flex flex-row md:flex-col items-center justify-center md:justify-start p-4 md:p-8 gap-4 md:gap-6 shrink-0">
                 <div className="relative group cursor-pointer shrink-0" onClick={() => setShowFullImage(true)}>
@@ -589,7 +603,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
   if (step === 3 && role === 'PLAYER') return (
     <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
-      {/* CORREÇÃO AQUI: h-[90vh] em vez de h-auto e flex-1 min-h-0 no meio! */}
       <ArcaneContainer width="w-full max-w-[900px]" className="h-[90vh] md:h-[650px] !p-0 flex flex-col w-full">
         
         {/* Cabeçalho */}
@@ -648,8 +661,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         </div>
 
         {/* Rodapé Fixo */}
-        <div className="w-full flex justify-between items-center border-t-2 border-amber-900/30 p-4 md:p-6 bg-black/60 shrink-0">
-           {error && <p className="text-red-400 text-xs animate-bounce mr-2 md:mr-4 absolute -top-8 left-1/2 -translate-x-1/2 bg-black px-3 py-1 rounded border border-red-500 w-max max-w-[90%] text-center">{error}</p>}
+        <div className="w-full flex justify-between items-center border-t-2 border-amber-900/30 p-4 md:p-6 bg-black/60 shrink-0 relative">
+           {error && <p className="text-red-400 text-xs animate-bounce mr-2 md:mr-4 absolute -top-12 left-1/2 -translate-x-1/2 bg-black px-3 py-1 rounded border border-red-500 w-max max-w-[90%] text-center">{error}</p>}
            <button onClick={() => setStep(2)} className="text-amber-500/50 hover:text-amber-200 font-bold uppercase tracking-[0.1em] md:tracking-[0.3em] text-[10px] md:text-xs">❮ Voltar</button>
            <MetalButton onClick={handleFinalSubmit} disabled={isChecking || pointsLeft < 0} variant="amber" className="px-6 md:px-12 py-3 md:py-4 text-[10px] md:text-sm">
              {isChecking ? <Sparkles className="animate-spin" size={20} /> : 'Despertar Lenda ❯'}
@@ -683,49 +696,95 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         </BackgroundWrapper>
     );
 
+    // 👉 NOVO PASSO 4: O SALÃO DOS MUNDOS (CRÔNICAS)
     if (step === 4) return (
         <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
-            <ArcaneContainer width="w-full max-w-[600px]" className="!p-8 md:!p-12 gap-6 flex flex-col items-center border-red-900/30 w-full animate-in fade-in zoom-in-95 duration-500">
+            <ArcaneContainer width="w-full max-w-[600px]" className="!p-6 md:!p-10 gap-4 flex flex-col items-center border-red-900/30 w-full animate-in fade-in zoom-in-95 duration-500">
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(220,38,38,0.15),transparent_70%)] pointer-events-none"></div>
                 
                 <div className="text-center space-y-2 mb-2 w-full">
-                    <h2 className="text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-200 via-red-500 to-red-800 uppercase tracking-[0.1em] md:tracking-[0.2em] drop-shadow-md border-b-2 border-red-900/50 pb-4 w-full" style={{ fontFamily: 'Cinzel Decorative' }}>Forjar Campanha</h2>
+                    <h2 className="text-2xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-200 via-red-500 to-red-800 uppercase tracking-[0.1em] md:tracking-[0.2em] drop-shadow-md border-b-2 border-red-900/50 pb-4 w-full" style={{ fontFamily: 'Cinzel Decorative' }}>Crônicas</h2>
                 </div>
 
-                <div className="w-full space-y-5">
-                    <div className="bg-black/40 border border-red-900/30 rounded-2xl p-4 md:p-6 shadow-inner hover:border-red-500/50 transition-colors">
-                        <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-2 flex items-center gap-2">
-                            <MapIcon size={14} className="text-red-500" /> Nome da Crônica
-                        </label>
-                        <StoneInput 
-                            type="text" 
-                            placeholder="Ex: A Mina Perdida de Phandelver" 
-                            value={campaignName} 
-                            onChange={(e: any) => setCampaignName(e.target.value)} 
-                            className="!text-lg md:!text-xl !p-3 !border-red-900/50 focus:!border-red-400/80 !text-red-50 rounded-xl"
-                        />
-                    </div>
+                <div className="w-full flex-col flex gap-2">
+                    
+                    {/* CRÔNICAS SALVAS */}
+                    {savedCampaigns.length > 0 && (
+                        <div className="w-full mb-2">
+                            <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-3 flex items-center gap-2">
+                                <Scroll size={14} className="text-red-500" /> Salão dos Mundos (Salvas)
+                            </label>
+                            <div className="flex flex-col gap-3 max-h-[180px] overflow-y-auto custom-scrollbar pr-2">
+                                {savedCampaigns.map((camp, idx) => (
+                                    <div key={idx} className="flex items-center gap-2">
+                                        <button 
+                                            onClick={() => submitCampaign(camp.name, camp.roomId)}
+                                            className="flex-1 bg-black/60 hover:bg-red-900/40 border border-red-900/30 hover:border-red-500/50 rounded-2xl p-3 md:p-4 transition-all text-left group shadow-inner"
+                                        >
+                                            <div className="text-red-100 font-bold text-sm md:text-base font-serif group-hover:text-white transition-colors truncate">{camp.name}</div>
+                                            <div className="text-[9px] md:text-[10px] text-red-500/60 uppercase tracking-widest font-mono mt-1">Sala ID: <span className="text-red-300">{camp.roomId}</span></div>
+                                        </button>
+                                        <button 
+                                            onClick={() => {
+                                                if(window.confirm(`Destruir os registros da crônica "${camp.name}"?`)) {
+                                                    const updated = savedCampaigns.filter(c => c.roomId !== camp.roomId);
+                                                    setSavedCampaigns(updated);
+                                                    localStorage.setItem('nexus_saved_campaigns', JSON.stringify(updated));
+                                                }
+                                            }}
+                                            className="p-3 md:p-4 bg-black/60 hover:bg-red-950 border border-red-900/30 hover:border-red-500/50 rounded-2xl text-red-500/40 hover:text-red-400 transition-all shadow-inner"
+                                            title="Esquecer Crônica"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="flex items-center w-full gap-4 opacity-50 mt-6 mb-4">
+                                <div className="h-px bg-gradient-to-r from-transparent to-red-500/50 flex-grow"></div>
+                                <span className="text-red-200/50 text-[10px] uppercase font-black tracking-widest">Ou Forjar Nova</span>
+                                <div className="h-px bg-gradient-to-l from-transparent to-red-500/50 flex-grow"></div>
+                            </div>
+                        </div>
+                    )}
 
-                    <div className="bg-black/40 border border-red-900/30 rounded-2xl p-4 md:p-6 shadow-inner hover:border-red-500/50 transition-colors">
-                        <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-2 flex items-center gap-2">
-                            <Key size={14} className="text-red-500" /> Chave da Sala (ID Secreto)
-                        </label>
-                        <StoneInput 
-                            type="text" 
-                            placeholder="exemplo: sala-do-dragao" 
-                            value={roomPassword} 
-                            onChange={(e: any) => setRoomPassword(e.target.value.toLowerCase().replace(/\s+/g, '-'))} 
-                            className="!text-lg md:!text-xl !p-3 !border-red-900/50 focus:!border-red-400/80 !text-red-400 rounded-xl font-mono text-center tracking-widest"
-                        />
-                        <p className="text-[9px] text-red-500/50 mt-2 text-center uppercase tracking-widest">Passe esta chave aos jogadores para entrarem na sua mesa.</p>
+                    {/* FORJAR NOVA */}
+                    <div className="bg-black/40 border border-red-900/30 rounded-2xl p-4 shadow-inner hover:border-red-500/50 transition-colors space-y-4">
+                        <div>
+                            <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-2 flex items-center gap-2">
+                                <MapIcon size={14} className="text-red-500" /> Nome da Nova Crônica
+                            </label>
+                            <StoneInput 
+                                type="text" 
+                                placeholder="Ex: A Mina Perdida de Phandelver" 
+                                value={campaignName} 
+                                onChange={(e: any) => setCampaignName(e.target.value)} 
+                                className="!text-lg md:!text-xl !p-3 !border-red-900/50 focus:!border-red-400/80 !text-red-50 rounded-xl"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-2 flex items-center gap-2">
+                                <Key size={14} className="text-red-500" /> Chave da Sala (ID Secreto)
+                            </label>
+                            <StoneInput 
+                                type="text" 
+                                placeholder="ex: sala-do-dragao" 
+                                value={roomPassword} 
+                                onChange={(e: any) => setRoomPassword(e.target.value.toLowerCase().replace(/\s+/g, '-'))} 
+                                onKeyDown={(e: any) => e.key === 'Enter' && submitCampaign(campaignName, roomPassword)}
+                                className="!text-lg md:!text-xl !p-3 !border-red-900/50 focus:!border-red-400/80 !text-red-400 rounded-xl font-mono text-center tracking-widest"
+                            />
+                            <p className="text-[9px] text-red-500/50 mt-2 text-center uppercase tracking-widest">Passe esta chave aos jogadores para entrarem na sua mesa.</p>
+                        </div>
                     </div>
                 </div>
 
                 {error && <p className="text-red-300 text-xs md:text-sm animate-in fade-in slide-in-from-top-2 text-center bg-red-950/50 p-2 md:p-3 rounded-lg border border-red-500/30 shadow-md font-bold flex items-center justify-center gap-2 w-full mt-2"><XCircle size={16}/> {error}</p>}
 
-                <div className="flex gap-3 md:gap-4 w-full mt-4 pt-6 border-t-2 border-red-900/30">
+                <div className="flex gap-3 md:gap-4 w-full mt-2 pt-4 border-t-2 border-red-900/30">
                     <button onClick={() => { setStep(2); setDmPass(''); }} className="px-4 py-3 text-red-500/50 hover:text-red-200 font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors rounded-xl hover:bg-white/5 border border-transparent hover:border-white/10">❮ Cancelar</button>
-                    <MetalButton onClick={handleStartCampaign} fullWidth variant="red" className="py-4 text-xs md:text-sm">
+                    <MetalButton onClick={() => submitCampaign(campaignName, roomPassword)} fullWidth variant="red" className="py-4 text-xs md:text-sm">
                         Abrir os Portões ❯
                     </MetalButton>
                 </div>

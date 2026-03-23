@@ -34,17 +34,30 @@ const TavernPanel = ({ children, className = '' }: { children: React.ReactNode, 
   </div>
 );
 
+// 👉 FIX: Fagulhas agora são fixas na montagem para não reiniciarem a cada "ping" da rede
 const TavernSparks = () => {
-    const sparks = [...Array(15)].map((_, i) => ({
-      left: `${Math.random() * 100}%`,
-      animationDelay: `${Math.random() * 5}s`,
-      animationDuration: `${3 + Math.random() * 4}s`,
-    }));
+    const [sparks, setSparks] = useState<{left: string, delay: string, duration: string, tx: string}[]>([]);
+    
+    useEffect(() => {
+        setSparks([...Array(20)].map(() => ({
+            left: `${Math.random() * 100}%`,
+            delay: `${Math.random() * 5}s`,
+            duration: `${3 + Math.random() * 4}s`,
+            tx: `${(Math.random() - 0.5) * 150}px` // Desvio lateral aleatório
+        })));
+    }, []);
+
     return (
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
           {sparks.map((spark, i) => (
               <div key={i} className={`absolute w-1.5 h-1.5 bg-amber-500 rounded-full animate-sparks opacity-0 blur-[1px] shadow-[0_0_10px_#f59e0b]`}
-                  style={{ left: spark.left, bottom: '-5%', animationDelay: spark.animationDelay, animationDuration: spark.animationDuration }}
+                  style={{ 
+                      left: spark.left, 
+                      bottom: '-5%', 
+                      animationDelay: spark.delay, 
+                      animationDuration: spark.duration, 
+                      '--tx': spark.tx 
+                  } as React.CSSProperties}
               />
           ))}
       </div>
@@ -149,16 +162,19 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
       setChatInput('');
   };
 
+  // 👉 FIX: Cruzamento de dados! Só mostra a ficha se o nome do dono estiver na lista de online.
+  const onlinePlayerNames = currentPlayers.map(p => p.name.toLowerCase());
+
   const uniqueCharacters = Array.from(new Map(
       availableCharacters
       .filter(e => e.type === 'player' && !deletedIds.includes(e.id))
+      .filter(e => onlinePlayerNames.includes(e.name.toLowerCase())) // <-- O FILTRO MÁGICO AQUI
       .map(item => [item.name, item])
   ).values()) as PlayerEntity[];
   
   const displayChat = chatMessages || localChat;
 
   return (
-    // FIX: Aplicado h-[100dvh] e overflow-y-auto para libertar o scroll no mobile
     <div className="h-[100dvh] w-full relative bg-[#0d0b09] bg-cover bg-center bg-fixed font-serif overflow-y-auto" style={{ backgroundImage: "url('/images/tavern-bg.jpg')" }}>
       <TavernSparks />
       
@@ -198,7 +214,7 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
                   <h2 className="text-amber-500/80 uppercase tracking-[0.2em] text-xs font-black flex items-center gap-2">
                      <Shield size={16} /> Heróis Disponíveis
                   </h2>
-                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest hidden sm:block">Lendas Salvas na Mesa</span>
+                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest hidden sm:block">Apenas Jogadores Online</span>
               </div>
               
               <div className="flex-1 overflow-y-auto custom-scrollbar -mx-2 px-2 pb-4 p-4">
@@ -271,7 +287,7 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
                   }) : (
                     <div className="col-span-full py-16 flex flex-col items-center justify-center text-gray-500 border border-dashed border-white/10 rounded-2xl bg-black/30">
                         <Shield size={40} className="mb-3 opacity-30"/>
-                        <p className="text-lg italic" style={textFont}>Nenhum herói forjado ainda.</p>
+                        <p className="text-lg italic text-center px-4" style={textFont}>Nenhum herói online neste momento.<br/>Os aventureiros aparecerão quando se juntarem à Taverna.</p>
                     </div>
                   )}
                 </div>
@@ -360,7 +376,6 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
               </div>
 
               <form onSubmit={handleSendChat} className="flex gap-2 shrink-0 mt-auto pt-3 border-t border-white/10">
-                 {/* FIX: fontSize: '16px' para prevenir zoom no iOS */}
                  <input 
                     type="text" 
                     value={chatInput} 
@@ -429,11 +444,11 @@ const Lobby: React.FC<LobbyProps> = ({ availableCharacters, onStartGame, myPlaye
         .animate-pulse-slow { animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         
         @keyframes sparks {
-            0% { transform: translateY(0) scale(1); opacity: 0; }
-            10% { opacity: 1; }
-            100% { transform: translateY(-100vh) scale(0.3) translateX(calc(-80px + 160px * ${Math.random()})); opacity: 0; }
+            0% { transform: translate(0, 0) scale(1); opacity: 0; }
+            20% { opacity: 1; }
+            100% { transform: translate(var(--tx), -100vh) scale(0.3); opacity: 0; }
         }
-        .animate-sparks { animation: sparks linear forwards; }
+        .animate-sparks { animation: sparks linear infinite; }
 
         @keyframes shimmer {
             100% { transform: translateX(100%); }

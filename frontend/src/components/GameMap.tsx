@@ -3,7 +3,7 @@ import CanvasMap, { AoEData } from './CanvasMap';
 import TokenLayer from './TokenLayer';
 import { Entity, Item } from '../App';
 import { Keyboard, X } from 'lucide-react'; 
-import socket from '../services/socket'; // 👈 NOVO IMPORT PARA O SOCKET!
+import socket from '../services/socket'; 
 
 export interface MapPing {
   id: string;
@@ -59,7 +59,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         mapUrl, gridSize = 70, entities, role, fogGrid, isFogMode, fogTool,
         fogShape, onFogBulkUpdate,
         activeTurnId, onFogUpdate, onMoveToken, onAddToken, onRotateToken,
-        onResizeToken, targetEntityIds, attackerId,
+        onResizeToken, targetEntityIds, attackerId, onTokenDoubleClick,
         onSetTarget, onSetAttacker, onFlipToken, activeAoE, onAoEComplete,
         aoeColor, onSelectEntity, externalOffset, externalScale, onMapChange,
         focusEntity, globalBrightness, onDropItem, onGiveItemToToken,
@@ -79,26 +79,56 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     const [rulerStart, setRulerStart] = useState<{ x: number, y: number } | null>(null);
     const rulerLineRef = useRef<SVGLineElement>(null);
     const rulerTextRef = useRef<SVGTextElement>(null);
+    
+    // 👉 ESTADOS DA NAVEGAÇÃO MÁGICA
     const isMPressed = useRef(false);
+    const isSpacePressed = useRef(false);
+    const isPanning = useRef(false);
+    const panStartPos = useRef({ x: 0, y: 0 });
+    const offsetOnPanStart = useRef({ x: 0, y: 0 });
+    const activeKeys = useRef<Set<string>>(new Set());
+    const animationFrameId = useRef<number | null>(null);
     
     const isMapMouseDown = useRef(false);
     const mapMouseDownPos = useRef({ x: 0, y: 0 });
 
-    // 👉 NOVO ESTADO: O Guardião das Animações
     const [combatAnimation, setCombatAnimation] = useState<{
         attackerName: string;
         targetId: number;
         attackType: string;
-        id: string; // ID único para a animação
+        id: string; 
     } | null>(null);
+
+    // 👉 LOOP DO MOTOR DE CÂMERA (WASD / Setas)
+    const updateCameraLoop = useCallback(() => {
+        if (activeKeys.current.size > 0 && !isFogMode) {
+            setOffset(prev => {
+                const moveSpeed = 15;
+                let dx = 0; let dy = 0;
+                
+                if (activeKeys.current.has('w') || activeKeys.current.has('arrowup')) dy += moveSpeed;
+                if (activeKeys.current.has('s') || activeKeys.current.has('arrowdown')) dy -= moveSpeed;
+                if (activeKeys.current.has('a') || activeKeys.current.has('arrowleft')) dx += moveSpeed;
+                if (activeKeys.current.has('d') || activeKeys.current.has('arrowright')) dx -= moveSpeed;
+                
+                const newOffset = { x: prev.x + dx, y: prev.y + dy };
+                if (role === 'DM' && onMapChange) onMapChange(newOffset, scale);
+                return newOffset;
+            });
+        }
+        animationFrameId.current = requestAnimationFrame(updateCameraLoop);
+    }, [isFogMode, role, scale, onMapChange]);
+
+    useEffect(() => {
+        animationFrameId.current = requestAnimationFrame(updateCameraLoop);
+        return () => { if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current); };
+    }, [updateCameraLoop]);
 
     useEffect(() => { targetIdsRef.current = targetEntityIds; }, [targetEntityIds]);
     useEffect(() => { attackerIdRef.current = attackerId; }, [attackerId]);
 
-    // 👉 NOVA ESCUTA MAGICA: Ouve o servidor por ataques
     useEffect(() => {
         const handleCombatAnimation = (data: any) => {
-            // Verifica se o alvo desta animação existe na mesa atual
             const targetExists = entities.some(e => e.id === data.targetId);
             if (targetExists) {
                 setCombatAnimation({
@@ -108,7 +138,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                     id: Date.now().toString()
                 });
 
-                // A animação desaparece após 1.5 segundos
                 setTimeout(() => {
                     setCombatAnimation(null);
                 }, 1500);
@@ -165,8 +194,18 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
-            if (e.key.toLowerCase() === 'm') isMPressed.current = true;
+            const key = e.key.toLowerCase();
+            
+            if (key === 'm') isMPressed.current = true;
+            if (key === ' ') {
+                e.preventDefault(); 
+                isSpacePressed.current = true;
+                if (containerRef.current) containerRef.current.style.cursor = 'grab';
+            }
+            
+            if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
+                activeKeys.current.add(key);
+            }
             
             if (e.key === 'Escape') {
                 if (activeAoE) onAoEComplete();
@@ -189,12 +228,22 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         };
 
         const handleGlobalKeyUp = (e: KeyboardEvent) => {
-            if (e.key.toLowerCase() === 'm') {
+            const key = e.key.toLowerCase();
+            if (key === 'm') {
                 isMPressed.current = false;
                 if (isMeasuring) {
                     setIsMeasuring(false);
                     setRulerStart(null);
                 }
+            }
+            if (key === ' ') {
+                isSpacePressed.current = false;
+                isPanning.current = false;
+                if (containerRef.current) containerRef.current.style.cursor = 'default';
+            }
+            
+            if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
+                activeKeys.current.delete(key);
             }
         };
 
@@ -258,6 +307,17 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     };
 
     const handleMouseDown = (e: React.MouseEvent) => {
+        if ((isSpacePressed.current && e.button === 0) || e.button === 1) {
+            e.preventDefault();
+            isPanning.current = true;
+            panStartPos.current = { x: e.clientX, y: e.clientY };
+            offsetOnPanStart.current = { ...offset };
+            if (containerRef.current) containerRef.current.style.cursor = 'grabbing';
+            return;
+        }
+        
+        if (e.button !== 0 && e.button !== 2) return;
+        
         isMapMouseDown.current = true;
         mapMouseDownPos.current = { x: e.clientX, y: e.clientY };
 
@@ -273,6 +333,18 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
+        if (isPanning.current) {
+            const dx = e.clientX - panStartPos.current.x;
+            const dy = e.clientY - panStartPos.current.y;
+            const newOffset = { 
+                x: offsetOnPanStart.current.x + dx, 
+                y: offsetOnPanStart.current.y + dy 
+            };
+            setOffset(newOffset);
+            if (role === 'DM' && onMapChange) onMapChange(newOffset, scale);
+            return;
+        }
+
         if (isMeasuring && rulerStart && rulerLineRef.current) {
             const rect = containerRef.current?.getBoundingClientRect();
             if (!rect) return;
@@ -295,6 +367,12 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     };
 
     const handleMouseUp = (e: React.MouseEvent) => {
+        if (isPanning.current) {
+            isPanning.current = false;
+            if (containerRef.current) containerRef.current.style.cursor = isSpacePressed.current ? 'grab' : 'default';
+            return;
+        }
+
         if (isMeasuring) {
             setIsMeasuring(false);
             setRulerStart(null);
@@ -324,7 +402,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         const capturedTargets: number[] = [];
 
         entities.forEach(ent => {
-            if (ent.classType === 'Item' || ent.visible === false) return;
+            if (ent.classType === 'Item' || ent.type === 'loot' || ent.visible === false) return;
 
             const sizeInPixels = (ent.size || 1) * gridSize;
             const entCenterX = (ent.x * gridSize) + (sizeInPixels / 2);
@@ -384,12 +462,13 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     return (
         <div 
             ref={containerRef}
-            className="w-full h-full bg-[#1a1a1a] overflow-hidden relative"
+            className="w-full h-full bg-[#1a1a1a] overflow-hidden relative transition-colors"
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp} 
         >
             <CanvasMap 
                 mapUrl={mapUrl}
@@ -402,7 +481,9 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 fogShape={fogShape}
                 onFogBulkUpdate={onFogBulkUpdate}
                 onFogUpdate={onFogUpdate}
-                onMapTransform={(newOff, newSc) => { if(!isMeasuring) handleMapTransform(newOff, newSc) }}
+                onMapTransform={(newOff, newSc) => { 
+                    if(!isMeasuring && !isMapMouseDown.current && !isPanning.current) handleMapTransform(newOff, newSc) 
+                }}
                 activeAoE={activeAoE}
                 aoeColor={aoeColor}
                 onAoEComplete={handleAoECompleted}
@@ -421,7 +502,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 </div>
             ))}
 
-            {/* 👉 O PALCO DAS ANIMAÇÕES */}
             {combatAnimation && (() => {
                 const targetEnt = entities.find(e => e.id === combatAnimation.targetId);
                 if (!targetEnt) return null;
@@ -444,14 +524,12 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                         }}
                     >
                         {isMagic ? (
-                            // EFEITO DE EXPLOSÃO MÁGICA
                             <div className="relative w-[150%] h-[150%] animate-in zoom-in duration-300 flex items-center justify-center">
                                 <div className="absolute inset-0 bg-purple-600 rounded-full animate-ping opacity-60 blur-md"></div>
                                 <div className="absolute w-full h-full border-4 border-cyan-400 rounded-full animate-[spin_1s_linear_infinite] border-t-transparent border-b-transparent shadow-[0_0_30px_#22d3ee]"></div>
                                 <div className="absolute w-3/4 h-3/4 bg-white rounded-full animate-pulse blur-sm"></div>
                             </div>
                         ) : (
-                            // EFEITO DE CORTE/ATAQUE FÍSICO
                             <div className="relative w-[120%] h-[120%] animate-in zoom-in fade-in duration-200">
                                 <div className="absolute inset-0 bg-red-600 rounded-full animate-ping opacity-40"></div>
                                 <svg viewBox="0 0 100 100" className="absolute w-full h-full text-red-500 transform -rotate-45 drop-shadow-[0_0_15px_#ef4444]">
@@ -495,38 +573,39 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 onMoveToken={onMoveToken}
                 
                 onSelectToken={(entity, multi) => {
-                    if (!entity || entity.classType === 'Item') return; 
+                    if (!entity) return; 
+                    if (entity.classType === 'Item' || entity.type === 'loot') {
+                        onSelectEntity(entity, 0, 0); 
+                        return; 
+                    }
                     
-                    onSelectEntity(entity, 0, 0); 
-                    
+                    // 👉 LÓGICA DE ATACANTE
                     if (attackerId === entity.id) {
                         onSetAttacker(null); 
                     } else {
                         onSetAttacker(entity.id); 
                     }
-                }}
+                }} 
                 
-                onTokenDoubleClick={(entity, multi) => {
-                    if (!entity || entity.classType === 'Item') return; 
-                    
-                    if (targetEntityIds.includes(entity.id)) {
-                        if (multi) { 
-                            onSetTarget(targetEntityIds.filter(id => id !== entity.id));
-                        } else {
-                            onSetTarget(null); 
-                        }
+                onTokenDoubleClick={(entity) => {
+                    if (entity.classType === 'Item' || entity.type === 'loot') {
+                        onSelectEntity(entity, 0, 0); 
                     } else {
-                        onSetTarget(entity.id, multi); 
+                        onTokenDoubleClick(entity);
                     }
-                }}
+                }} 
+
+                onTokenContextMenu={(e, entity) => { 
+                    if (entity.classType === 'Item' || entity.type === 'loot') {
+                        onSelectEntity(entity, 0, 0); 
+                    } else if (onContextMenu) {
+                        onContextMenu(e, entity); 
+                    }
+                }} 
                 
-                onTokenContextMenu={(e, ent) => { 
-                    e.preventDefault(); 
-                    if (onContextMenu) onContextMenu(e, ent);
-                }}
                 onGiveItemToToken={onGiveItemToToken || (() => {})} 
             />
-
+            
             <div className="absolute top-4 right-4 z-[250] flex flex-col items-end">
                 {isFogMode && (
                     <div className="bg-yellow-900/80 border border-yellow-500 text-yellow-300 text-xs font-bold px-3 py-1.5 rounded-full shadow-lg mb-3">
@@ -554,6 +633,13 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                         </div>
                         
                         <ul className="space-y-2.5">
+                            <li className="flex justify-between items-center bg-white/5 p-2 rounded">
+                                <span className="font-medium text-cyan-200">Mover Câmera</span> 
+                                <div className="flex flex-col items-end gap-1">
+                                    <kbd className="bg-black/50 border border-white/10 px-2 py-0.5 rounded text-cyan-400 text-[10px] font-mono shadow-inner">W A S D</kbd>
+                                    <span className="text-[9px] text-gray-500 font-bold uppercase">ou Arrastar com 'Espaço'</span>
+                                </div>
+                            </li>
                             <li className="flex justify-between items-center">
                                 <span className="font-medium">Sinalizar no Mapa</span> 
                                 <kbd className="bg-white/10 border border-white/5 px-2 py-0.5 rounded text-cyan-300 text-[10px] font-mono shadow-inner">Alt + Clique</kbd>

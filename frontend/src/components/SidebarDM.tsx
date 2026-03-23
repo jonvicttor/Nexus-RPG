@@ -9,7 +9,7 @@ import SkillList from './SkillList';
 import ItemCreator from './ItemCreator';
 import Scratchpad from './Scratchpad'; 
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
-import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus } from 'lucide-react';
+import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent } from 'lucide-react'; // 👉 Importado o ícone Tent
 
 export interface InitiativeItem { id: number; name: string; value: number; }
 
@@ -88,6 +88,7 @@ interface SidebarDMProps {
   onGiveItem: (targetId: number, item: any) => void;
   onApplyDamageFromChat: (targetId: number, damageExpression: string) => void;
   onDMRoll: (title: string, subtitle: string, mod: number, rollType?: 'normal' | 'advantage' | 'disadvantage') => void;
+  onLongRest: () => void; // 👉 PROP DECLARADA!
 }
 
 const AoEColorPicker = ({ selected, onSelect }: { selected: string, onSelect: (c: string) => void }) => {
@@ -289,7 +290,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   onOpenCreator, onAddXP, customMonsters, globalBrightness = 1, onSetGlobalBrightness, onRequestRoll, onToggleVisibility,
   currentTrack, onPlayMusic, onStopMusic, onPlaySFX, audioVolume, onSetAudioVolume,
   onResetView, onGiveItem, onApplyDamageFromChat,
-  onDMRoll
+  onDMRoll, onLongRest
 }) => {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>('combat');
@@ -438,7 +439,28 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                             <Scratchpad />
                         </div>
                     )}
-                    {activeTab === 'campaign' && (<CampaignManager />)}
+
+                    {/* 👉 MUDANÇA AQUI: O botão de Descanso Longo entra na aba Campanha! */}
+                    {activeTab === 'campaign' && (
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-6">
+                            <CampaignManager />
+                            
+                            <section className="bg-black/40 border border-orange-900/30 rounded-xl p-4 shadow-inner">
+                                <h3 className="text-orange-500 font-bold text-[10px] uppercase tracking-widest mb-3 border-b border-orange-900/30 pb-2">Gerenciar Grupo</h3>
+                                <p className="text-xs text-gray-400 mb-4 italic">Cura completamente todos os aventureiros (apenas jogadores) e restaura seus espaços de magia.</p>
+                                <button 
+                                    onClick={() => {
+                                        if (window.confirm("Os heróis montaram acampamento para um descanso longo? (Cura total para todos os jogadores)")) {
+                                            onLongRest();
+                                        }
+                                    }} 
+                                    className="w-full py-3 bg-gradient-to-r from-orange-900 to-amber-900 hover:from-orange-700 hover:to-amber-700 border border-orange-500/50 text-white font-black uppercase tracking-widest rounded-lg transition-all shadow-[0_0_15px_rgba(249,115,22,0.3)] flex items-center justify-center gap-2 active:scale-95"
+                                >
+                                    <Tent size={18} /> Descanso Longo
+                                </button>
+                            </section>
+                        </div>
+                    )}
                     
                     {activeTab === 'combat' && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
@@ -596,7 +618,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                         </div>
                     )}
 
-                    {/* 👉 NOVO BESTIÁRIO */}
                     {activeTab === 'create' && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                             

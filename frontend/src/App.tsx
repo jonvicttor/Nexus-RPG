@@ -52,7 +52,7 @@ export interface Entity {
   mirrored?: boolean;
   conditions: string[]; 
   color: string;
-  type: 'player' | 'enemy';
+  type: 'player' | 'enemy' | 'loot'; 
   image?: string;
   visionRadius?: number; 
   stats?: {
@@ -131,6 +131,7 @@ const SFX_LIBRARY: Record<string, Howl> = {
   roar: new Howl({ src: ['/sfx/roar.mp3'], volume: 0.5, html5: true }),
   ping: new Howl({ src: ['/sfx/danger-ping.mp3'], volume: 0.6, html5: true }), 
   notificacao: new Howl({ src: ['/sfx/notificacao.mp3'], volume: 0.7, html5: true }), 
+  campfire: new Howl({ src: ['/sfx/campfire.mp3'], volume: 0.8, html5: true }) 
 };
 
 function App() {
@@ -258,7 +259,7 @@ function App() {
       if (emit) socket.emit('playSFX', { sfxId, roomId });
   }, [audioVolume, roomId]);
 
-  const playSound = useCallback((type: 'dado' | 'levelup' | 'magic' | 'notificacao') => { 
+  const playSound = useCallback((type: 'dado' | 'levelup' | 'magic' | 'notificacao' | 'campfire') => { 
     handlePlaySFX(type, false); 
   }, [handlePlaySFX]);
 
@@ -507,6 +508,31 @@ function App() {
     setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, hp: newHp } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { hp: newHp }, roomId });
   };
 
+  const handleLongRest = () => {
+      setEntities(prev => {
+          const updatedEntities = prev.map(ent => {
+              if (ent.type !== 'player') return ent; 
+
+              let updates: Partial<Entity> = { hp: ent.maxHp };
+
+              if (ent.spellSlots) {
+                  const restoredSlots: Record<number, { max: number, used: number }> = {};
+                  Object.entries(ent.spellSlots).forEach(([level, slotData]) => {
+                      restoredSlots[parseInt(level)] = { max: slotData.max, used: 0 };
+                  });
+                  updates.spellSlots = restoredSlots;
+              }
+
+              socket.emit('updateEntityStatus', { entityId: ent.id, updates, roomId });
+              return { ...ent, ...updates };
+          });
+          return updatedEntities;
+      });
+
+      handlePlaySFX('campfire', true);
+      addLog({ text: "🏕️ **O grupo montou acampamento.** Vocês recuperaram todo o HP e seus espaços de magia através de um longo descanso.", type: 'info', sender: 'Mestre' });
+  };
+
   const handleSendMessage = (text: string) => {
       const senderName = role === 'DM' ? 'MESTRE' : playerName;
       
@@ -547,8 +573,16 @@ function App() {
           if (ent.id !== sourceId) return ent;
           const newInv = (ent.inventory || []).filter(i => i.id !== item.id); socket.emit('updateEntityStatus', { entityId: sourceId, updates: { inventory: newInv }, roomId }); return { ...ent, inventory: newInv };
       }));
-      const lootEntity: Entity = { id: Date.now(), name: item.name, hp: 1, maxHp: 1, ac: 10, x: x, y: y, type: 'player', color: '#fbbf24', image: item.image, size: 0.5, conditions: [], stats: { str:0, dex:0, con:0, int:0, wis:0, cha:0 }, visible: true, inventory: [item], level: 0, classType: 'Item' };
-      setEntities(prev => [...prev, lootEntity]); socket.emit('createEntity', { entity: lootEntity, roomId }); addLog({ text: `🎒 ${item.name} foi jogado no chão!`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true); 
+      const lootEntity: Entity = { 
+          id: Date.now(), name: item.name, hp: 1, maxHp: 1, ac: 0, x: x, y: y, 
+          type: 'loot', color: '#fbbf24', image: item.image, size: 0.6, conditions: [], 
+          stats: { str:0, dex:0, con:0, int:0, wis:0, cha:0 }, 
+          visible: true, inventory: [item], level: 0, classType: 'Item' 
+      };
+      setEntities(prev => [...prev, lootEntity]); 
+      socket.emit('createEntity', { entity: lootEntity, roomId }); 
+      addLog({ text: `🎒 ${item.name} foi jogado no chão!`, type: 'info', sender: 'Sistema' }); 
+      handlePlaySFX('dado', true); 
   };
 
   const handleGiveItemToToken = (item: Item, sourceId: number, targetId: number) => {
@@ -560,7 +594,6 @@ function App() {
       addLog({ text: `🤝 **${sourceEntity.name}** deu **${item.name}** para **${targetEntity.name}**.`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true);
   };
 
-  // 👉 NOVO: SAQUE INTELIGENTE DE OURO OU ITENS!
   const handlePickUpLoot = (lootEntity: Entity) => {
       let receiver: Entity | undefined;
       if (role === 'PLAYER') { 
@@ -570,7 +603,7 @@ function App() {
       }
       
       if (!receiver) { 
-          setToastMsg({ text: role === 'DM' ? "Selecione um token (Alvo) para entregar o item." : "Você não tem um personagem para pegar isso.", id: Date.now() }); 
+          setToastMsg({ text: role === 'DM' ? "Selecione um token (Alvo vermelho) para entregar o item." : "Você não tem um personagem para pegar isso.", id: Date.now() }); 
           return; 
       }
 
@@ -584,18 +617,24 @@ function App() {
       let logMsg = '';
 
       if (item.stats?.isTreasure && item.stats.coins) {
-          // Extrair Moedas para o Cofre
           const currentCoins = receiver.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+          const incCoins = item.stats.coins;
+          
           updates.coins = {
-              cp: currentCoins.cp + (item.stats.coins.cp || 0),
-              sp: currentCoins.sp + (item.stats.coins.sp || 0),
+              cp: currentCoins.cp + (incCoins.cp || 0),
+              sp: currentCoins.sp + (incCoins.sp || 0),
               ep: currentCoins.ep || 0,
-              gp: currentCoins.gp + (item.stats.coins.gp || 0),
+              gp: currentCoins.gp + (incCoins.gp || 0),
               pp: currentCoins.pp || 0
           };
-          logMsg = `💰 **${receiver.name}** recolheu **${item.name}** (${item.value}).`;
+          
+          const coinStrs = [];
+          if (incCoins.gp > 0) coinStrs.push(`${incCoins.gp} PO`);
+          if (incCoins.sp > 0) coinStrs.push(`${incCoins.sp} PP`);
+          if (incCoins.cp > 0) coinStrs.push(`${incCoins.cp} PC`);
+          
+          logMsg = `💰 **${receiver.name}** recolheu **${item.name}** (${coinStrs.join(', ')}).`;
       } else {
-          // Extrair Equipamento para a Mochila
           updates.inventory = [...(receiver.inventory || []), item];
           logMsg = `🎒 **${receiver.name}** pegou **${item.name}** do chão.`;
       }
@@ -660,7 +699,7 @@ function App() {
   const handleEditEntity = (id: number, updates: Partial<Entity>) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, ...updates } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates, roomId }); };
   const handleDeleteEntity = (id: number) => { setEntities(prev => prev.filter(ent => ent.id !== id)); socket.emit('deleteEntity', { entityId: id, roomId }); if (attackerId === id) setAttackerId(null); };
   
-  const createEntity = (type: 'enemy' | 'player', name: string, x: number, y: number, customStats?: Partial<Entity>) => { 
+  const createEntity = (type: 'enemy' | 'player' | 'loot', name: string, x: number, y: number, customStats?: Partial<Entity>) => { 
       const newId = Date.now(); 
       const newEntity: Entity = { id: newId, name, hp: customStats?.hp || 10, maxHp: customStats?.maxHp || customStats?.hp || 10, ac: customStats?.ac || 10, x, y, rotation: 0, mirrored: false, conditions: [], color: type === 'enemy' ? '#ef4444' : '#3b82f6', type, image: customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), visionRadius: 9, stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, classType: customStats?.classType || "NPC", size: customStats?.size || 2, xp: customStats?.xp || 0, level: customStats?.level || 1, inventory: customStats?.inventory || [], race: customStats?.race || 'Humano', visible: true, proficiencies: customStats?.proficiencies || {}, deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, inspiration: customStats?.inspiration || false, spellSlots: customStats?.spellSlots || {}, spells: customStats?.spells || [], coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; 
       setEntities(prev => [...prev, newEntity]); 
@@ -779,7 +818,20 @@ function App() {
 
   const selectedStatusEntity = statusSelectionId ? entities.find(e => e.id === statusSelectionId) : null;
   let modalPosition = { top: 0, left: 0 };
-  if (selectedStatusEntity) { const canvasOffsetX = (windowSize.w - CANVAS_WIDTH) / 2; const canvasOffsetY = (windowSize.h - CANVAS_HEIGHT) / 2; const tokenPixelX = (selectedStatusEntity.x * GRID_SIZE * mapScale) + mapOffset.x + canvasOffsetX; const tokenPixelY = (selectedStatusEntity.y * GRID_SIZE * mapScale) + mapOffset.y + canvasOffsetY; modalPosition = { top: tokenPixelY, left: tokenPixelX + ((selectedStatusEntity.size || 1) * GRID_SIZE * mapScale) + 15 }; if (modalPosition.left + 330 > windowSize.w - 320) { modalPosition.left = tokenPixelX - 340; } if (modalPosition.top + 400 > windowSize.h) { modalPosition.top = windowSize.h - 410; } if (modalPosition.top < 10) modalPosition.top = 10; }
+  if (selectedStatusEntity) { 
+      const canvasOffsetX = (windowSize.w - CANVAS_WIDTH) / 2; 
+      const canvasOffsetY = (windowSize.h - CANVAS_HEIGHT) / 2; 
+      const tokenPixelX = (selectedStatusEntity.x * GRID_SIZE * mapScale) + mapOffset.x + canvasOffsetX; 
+      const tokenPixelY = (selectedStatusEntity.y * GRID_SIZE * mapScale) + mapOffset.y + canvasOffsetY; 
+      
+      modalPosition = { 
+          top: tokenPixelY - 30, 
+          left: tokenPixelX + ((selectedStatusEntity.size || 1) * GRID_SIZE * mapScale) + 30 
+      }; 
+      if (modalPosition.left + 250 > windowSize.w) { modalPosition.left = tokenPixelX - 260; } 
+      if (modalPosition.top + 300 > windowSize.h) { modalPosition.top = windowSize.h - 310; } 
+      if (modalPosition.top < 10) modalPosition.top = 10; 
+  }
 
   const handleSaveNewAlly = (id: number, data: Partial<Entity>) => { 
       const nextNum = entities.filter(e => e.type === 'player').length + 1; 
@@ -880,14 +932,25 @@ function App() {
       ) : (
           <>
             {selectedStatusEntity && (
-                <div className="fixed z-50 bg-gray-900/95 border-2 border-cyan-400 p-4 rounded-xl shadow-[0_0_30px_rgba(34,211,238,0.3)] text-cyan-50 w-80 backdrop-blur-md animate-in fade-in zoom-in duration-100 font-mono transition-all ease-linear" style={{ top: modalPosition.top, left: modalPosition.left }}>
-                <div className="flex justify-between items-center mb-3 pb-2 border-b border-cyan-400/40 relative"><h3 className="text-base font-black tracking-[0.15em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-blue-400">{selectedStatusEntity.classType === 'Item' ? 'LOOT' : 'STATUS'}</h3><button onClick={() => setStatusSelectionId(null)} className="text-cyan-500 hover:text-white transition-colors text-base font-bold">✕</button></div>
-                {selectedStatusEntity.classType === 'Item' ? (
-                    <div className="flex flex-col items-center gap-4 py-2">
-                        <div className="w-24 h-24 bg-black/50 rounded-lg border border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.2)] flex items-center justify-center p-2 relative overflow-hidden group"><div className="absolute inset-0 bg-yellow-500/10 blur-xl"></div>{selectedStatusEntity.image ? (<img src={selectedStatusEntity.image} alt="Item" className="w-full h-full object-contain relative z-10" />) : (<span className="text-2xl">🎁</span>)}</div>
-                        <div className="text-center"><h2 className="text-xl font-bold text-yellow-400 drop-shadow-sm">{selectedStatusEntity.name}</h2><p className="text-[10px] text-gray-400 uppercase tracking-widest mt-1">Item no Chão</p></div>
-                        <button onClick={() => handlePickUpLoot(selectedStatusEntity)} className="w-full py-3 bg-yellow-600/20 hover:bg-yellow-600/40 border border-yellow-500 text-yellow-200 font-bold uppercase tracking-widest rounded transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg"><span>✋</span> Pegar Item</button>
-                        {role === 'DM' && (<p className="text-[9px] text-gray-500 text-center italic mt-1">(Dica: Como Mestre, ao pegar o loot ele vai para o jogador que tiver como Alvo vermelho)</p>)}
+                <div className="fixed z-50 bg-gray-900/95 border border-yellow-500/50 p-3 rounded-xl shadow-2xl text-yellow-50 w-56 backdrop-blur-md animate-in fade-in zoom-in duration-100 font-sans transition-all" style={{ top: modalPosition.top, left: modalPosition.left }}>
+                <div className="flex justify-between items-center mb-2 relative">
+                    <h3 className="text-xs font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600">
+                        {selectedStatusEntity.type === 'loot' || selectedStatusEntity.classType === 'Item' ? 'SAQUE' : 'STATUS'}
+                    </h3>
+                    <button onClick={() => setStatusSelectionId(null)} className="text-yellow-600 hover:text-white transition-colors text-base font-bold">✕</button>
+                </div>
+                
+                {selectedStatusEntity.type === 'loot' || selectedStatusEntity.classType === 'Item' ? (
+                    <div className="flex flex-col items-center gap-3">
+                        <div className="w-16 h-16 bg-black/50 rounded-lg border border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.2)] flex items-center justify-center p-2 relative overflow-hidden group">
+                            <div className="absolute inset-0 bg-yellow-500/10 blur-xl"></div>
+                            {selectedStatusEntity.image ? (<img src={selectedStatusEntity.image} alt="Item" className="w-full h-full object-contain relative z-10" />) : (<span className="text-3xl">🎁</span>)}
+                        </div>
+                        <div className="text-center w-full">
+                            <h2 className="text-sm font-black text-yellow-400 drop-shadow-sm truncate">{selectedStatusEntity.name}</h2>
+                        </div>
+                        <button onClick={() => handlePickUpLoot(selectedStatusEntity)} className="w-full py-2.5 bg-yellow-600/20 hover:bg-yellow-500/40 border border-yellow-500 text-yellow-100 font-black uppercase tracking-widest text-[10px] rounded transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg"><span>✋</span> Pegar Item</button>
+                        {role === 'DM' && (<p className="text-[8px] text-gray-500 text-center italic">(Vai para o Alvo selecionado)</p>)}
                     </div>
                 ) : (
                     <>
@@ -931,27 +994,36 @@ function App() {
                     onFogUpdate={handleFogUpdate} onFogBulkUpdate={handleFogBulkUpdate} fogShape={fogShape}
                     onMoveToken={handleUpdatePosition} onAddToken={handleMapDrop} onRotateToken={handleRotateToken}
                     
-                    // 👉 NOVO: Agora permite clicar em Itens no Chão para ver/pegar
                     onSelectEntity={(entity) => {
                         if (!entity) return;
-                        if (entity.classType === 'Item') {
+                        if (entity.classType === 'Item' || entity.type === 'loot') {
                             setStatusSelectionId(entity.id);
-                            return;
-                        }
-                        setFocusEntity(entity); 
-                        setTimeout(() => setFocusEntity(null), 100);
-                        
-                        if (attackerId === entity.id) {
-                            handleSetAttacker(null);
-                        } else {
-                            handleSetAttacker(entity.id);
                         }
                     }} 
 
-                    onResizeToken={handleResizeToken} onTokenDoubleClick={handleAddToInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget}
+                    onResizeToken={handleResizeToken} 
+                    
+                    onTokenDoubleClick={(entity) => {
+                        if (entity.classType === 'Item' || entity.type === 'loot') {
+                            setStatusSelectionId(entity.id);
+                        } else {
+                            handleAddToInitiative(entity);
+                        }
+                    }} 
+
+                    targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget}
                     onSetAttacker={handleSetAttacker} onFlipToken={handleFlipToken} activeAoE={activeAoE} onAoEComplete={() => setActiveAoE(null)} aoeColor={aoeColor} 
                     externalOffset={mapOffset} externalScale={mapScale} onMapChange={handleMapSync} focusEntity={focusEntity} globalBrightness={globalBrightness}
-                    onDropItem={handleDropLootOnMap} onGiveItemToToken={handleGiveItemToToken} onContextMenu={(e, entity) => { setContextMenu({ x: e.clientX, y: e.clientY, entity }); }} pings={pings} onPing={handlePingMap}
+                    onDropItem={handleDropLootOnMap} onGiveItemToToken={handleGiveItemToToken} 
+                    
+                    onContextMenu={(e, entity) => { 
+                        if (entity.classType === 'Item' || entity.type === 'loot') {
+                            setStatusSelectionId(entity.id); 
+                        } else {
+                            setContextMenu({ x: e.clientX, y: e.clientY, entity }); 
+                        }
+                    }} 
+                    pings={pings} onPing={handlePingMap}
                 />
                 
                 <div className="fixed bottom-6 right-[450px] z-[130] pointer-events-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -966,7 +1038,9 @@ function App() {
                     isFogMode={isFogMode} onToggleFogMode={() => setIsFogMode(!isFogMode)} fogTool={fogTool} onSetFogTool={setFogTool} 
                     fogShape={fogShape} onSetFogShape={setFogShape}
                     onSyncFog={handleSyncFog} onResetFog={handleResetFog} onRevealAll={handleRevealAll} onSaveGame={handleSaveGame} onChangeMap={handleChangeMap} 
-                    initiativeList={initiativeList} activeTurnId={activeTurnId} onAddToInitiative={handleAddToInitiative} onRemoveFromInitiative={handleRemoveFromInitiative} onNextTurn={handleNextTurn} onClearInitiative={handleClearInitiative} onSortInitiative={handleSortInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget} onToggleCondition={handleToggleCondition} onSetAttacker={handleSetAttacker} activeAoE={activeAoE} onSetAoE={setActiveAoE} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} aoeColor={aoeColor} onSetAoEColor={setAoEColor} onOpenCreator={(type) => { if (type === 'player') setShowAllyCreator(true); if (type === 'enemy') setShowEnemyCreator(true); }} onAddXP={handleAddXP} customMonsters={customMonsters} globalBrightness={globalBrightness} onSetGlobalBrightness={handleUpdateGlobalBrightness} onRequestRoll={handleDmRequestRoll} onToggleVisibility={handleToggleVisibility} currentTrack={currentTrack} onPlayMusic={handlePlayMusic} onStopMusic={handleStopMusic} onPlaySFX={handlePlaySFX} audioVolume={audioVolume} onSetAudioVolume={setAudioVolume} onResetView={handleResetView} onGiveItem={handleGiveItem} onApplyDamageFromChat={handleApplyDamageFromChat} onDMRoll={handleDMRoll} /> 
+                    initiativeList={initiativeList} activeTurnId={activeTurnId} onAddToInitiative={handleAddToInitiative} onRemoveFromInitiative={handleRemoveFromInitiative} onNextTurn={handleNextTurn} onClearInitiative={handleClearInitiative} onSortInitiative={handleSortInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget} onToggleCondition={handleToggleCondition} onSetAttacker={handleSetAttacker} activeAoE={activeAoE} onSetAoE={setActiveAoE} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} aoeColor={aoeColor} onSetAoEColor={setAoEColor} onOpenCreator={(type) => { if (type === 'player') setShowAllyCreator(true); if (type === 'enemy') setShowEnemyCreator(true); }} onAddXP={handleAddXP} customMonsters={customMonsters} globalBrightness={globalBrightness} onSetGlobalBrightness={handleUpdateGlobalBrightness} onRequestRoll={handleDmRequestRoll} onToggleVisibility={handleToggleVisibility} currentTrack={currentTrack} onPlayMusic={handlePlayMusic} onStopMusic={handleStopMusic} onPlaySFX={handlePlaySFX} audioVolume={audioVolume} onSetAudioVolume={setAudioVolume} onResetView={handleResetView} onGiveItem={handleGiveItem} onApplyDamageFromChat={handleApplyDamageFromChat} onDMRoll={handleDMRoll} 
+                    onLongRest={handleLongRest} 
+                    /> 
                 : <SidebarPlayer entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name === playerName)?.id || 0} initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} onSelectEntity={(entity) => { setFocusEntity(entity); setTimeout(() => setFocusEntity(null), 100); }} onApplyDamageFromChat={handleApplyDamageFromChat} />
                 }
             </aside>
