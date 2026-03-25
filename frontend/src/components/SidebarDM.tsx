@@ -90,7 +90,7 @@ interface SidebarDMProps {
   onDMRoll: (title: string, subtitle: string, mod: number, rollType?: 'normal' | 'advantage' | 'disadvantage') => void;
   onLongRest: () => void; 
   availableItems?: any[]; 
-  availableConditions?: any[]; // 👉 ADICIONADO AQUI
+  availableConditions?: any[]; 
 }
 
 const AoEColorPicker = ({ selected, onSelect }: { selected: string, onSelect: (c: string) => void }) => {
@@ -133,7 +133,8 @@ const EntityControlRow = ({ entity, onUpdateHP, onDeleteEntity, onClickEdit, onA
       <div className="flex items-center justify-between pr-2 z-10 relative">
         <div className="flex items-center gap-3">
           <div className="relative w-10 h-10 flex-shrink-0">
-            {entity.image ? (<img src={entity.image} alt={entity.name} className={`w-full h-full rounded-full object-cover border border-white/20 shadow-sm ${entity.visible === false ? 'opacity-50 grayscale' : ''}`}/>) : (<div className="w-full h-full rounded-full" style={{ backgroundColor: entity.color }}></div>)}
+            {/* 👉 AQUI: Sidebar usa tokenImage se houver */}
+            {(entity.tokenImage || entity.image) ? (<img src={entity.tokenImage || entity.image} alt={entity.name} className={`w-full h-full rounded-full object-cover border border-white/20 shadow-sm ${entity.visible === false ? 'opacity-50 grayscale' : ''}`}/>) : (<div className="w-full h-full rounded-full" style={{ backgroundColor: entity.color }}></div>)}
             {entity.type === 'player' && (<div className="absolute -bottom-1 -right-1 bg-purple-900 border border-purple-500 text-white text-[9px] font-bold px-1 rounded-full shadow-md">Nv.{getLevelFromXP(entity.xp || 0)}</div>)}
           </div>
           <div className="overflow-hidden">
@@ -211,7 +212,8 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
                     {attacker ? (
                         <>
                             <div className="w-14 h-14 rounded-full border-2 border-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.4)] overflow-hidden bg-black relative group">
-                                <img src={attacker.image || ''} className="w-full h-full object-cover group-hover:scale-110 transition-transform" alt="" />
+                                {/* 👉 AQUI: Painel VS Atacante */}
+                                <img src={attacker.tokenImage || attacker.image || ''} className="w-full h-full object-cover group-hover:scale-110 transition-transform" alt="" />
                             </div>
                             <span className="text-[11px] text-blue-300 font-black mt-2 truncate max-w-full text-center leading-tight drop-shadow-md">{attacker.name}</span>
                             <div className="bg-black/60 border border-blue-500/30 rounded px-2 py-0.5 mt-1">
@@ -235,7 +237,8 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
                             <div className="flex -space-x-3 overflow-hidden justify-center w-full">
                                 {targets.slice(0, 3).map((t: Entity) => (
                                     <div key={t.id} className="w-12 h-12 rounded-full border-2 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)] overflow-hidden bg-black flex-shrink-0 relative z-10">
-                                        <img src={t.image || ''} className="w-full h-full object-cover" alt="" />
+                                        {/* 👉 AQUI: Painel VS Alvo */}
+                                        <img src={t.tokenImage || t.image || ''} className="w-full h-full object-cover" alt="" />
                                     </div>
                                 ))}
                                 {targets.length > 3 && (<div className="w-12 h-12 rounded-full border-2 border-red-500 bg-red-950 text-white text-[10px] font-bold flex items-center justify-center z-0 relative -ml-4 shadow-lg shadow-red-500/20">+{targets.length - 3}</div>)}
@@ -292,7 +295,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   onOpenCreator, onAddXP, customMonsters, globalBrightness = 1, onSetGlobalBrightness, onRequestRoll, onToggleVisibility,
   currentTrack, onPlayMusic, onStopMusic, onPlaySFX, audioVolume, onSetAudioVolume,
   onResetView, onGiveItem, onApplyDamageFromChat,
-  onDMRoll, onLongRest, availableItems, availableConditions // 👉 ADICIONADO AQUI
+  onDMRoll, onLongRest, availableItems, availableConditions 
 }) => {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>('combat');
@@ -305,7 +308,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const [previewMap, setPreviewMap] = useState<{url: string, name: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 👉 ESTADO PARA CONTROLAR A CAIXA FLUTUANTE DE CONDIÇÕES
   const [hoveredCondition, setHoveredCondition] = useState<string | null>(null);
 
   const FULL_MONSTER_LIST = [...MONSTER_LIST, ...(customMonsters || [])];
@@ -361,7 +363,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const rollBulkInitiative = (type: 'npc' | 'selected') => { const targetsToRoll = type === 'npc' ? entities.filter(e => e.type === 'enemy') : entities.filter(e => targetEntityIds.includes(e.id)); if(targetsToRoll.length === 0) return; targetsToRoll.forEach(ent => { if (!initiativeList.find(i => i.id === ent.id)) onAddToInitiative(ent); }); };
   const sidebarStyle = { backgroundColor: '#1a1510', backgroundImage: `url('/assets/bg-couro-sidebar.png')`, backgroundSize: 'cover', backgroundRepeat: 'no-repeat', boxShadow: 'inset 0 0 60px rgba(0,0,0,0.9)', width: '420px', minWidth: '420px', maxWidth: '420px', flex: '0 0 420px' };
 
-  // 👉 NOSSO NOVO MAPA DE CONDIÇÕES OFICIAIS
   const CONDITION_MAP = [
       { id: 'Poisoned', icon: '☠️', label: 'Veneno', bg: 'bg-green-900/40 hover:bg-green-600/60', border: 'border-green-500/30', text: 'text-green-100' },
       { id: 'Stunned', icon: '💫', label: 'Atordoado', bg: 'bg-yellow-900/40 hover:bg-yellow-600/60', border: 'border-yellow-500/30', text: 'text-yellow-100' },
@@ -384,6 +385,13 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                       <p className="text-xs text-gray-400 mb-1">Alvo</p>
                       <p className="text-white font-bold">{targetEntity.name}</p>
                   </div>
+                  
+                  <div className="flex justify-center mb-2">
+                      <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-700 border border-purple-500/50 shadow-lg">
+                          {(targetEntity.tokenImage || targetEntity.image) && <img src={targetEntity.tokenImage || targetEntity.image} className="w-full h-full object-cover" alt="" />}
+                      </div>
+                  </div>
+
                   <div className="mb-6 text-center">
                       <label className="block text-xs text-yellow-500 font-bold mb-2 uppercase">Classe de Dificuldade (CD)</label>
                       <div className="flex items-center justify-center gap-4">
@@ -438,7 +446,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                 {targetEntity ? (
                                     <>
                                         <div className="mb-4 flex items-center gap-3 bg-purple-900/20 p-2 rounded">
-                                            <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-700">{targetEntity.image && <img src={targetEntity.image} className="w-full h-full object-cover" alt="" />}</div>
+                                            <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-700">{targetEntity.image && <img src={targetEntity.tokenImage || targetEntity.image} className="w-full h-full object-cover" alt="" />}</div>
                                             <div><p className="text-sm font-bold text-white">{targetEntity.name}</p><p className="text-[10px] text-gray-400">Solicitando Teste</p></div>
                                         </div>
                                         <SkillList attributes={mapEntityStatsToAttributes(targetEntity)} proficiencyBonus={2} profs={[]} isDmMode={true} onRoll={(skillName, mod) => setPendingSkillRequest({ skillName, mod })}/>
@@ -521,7 +529,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                 {activeAoE && <p className="text-[9px] mt-2 text-center animate-pulse opacity-80" style={{color: aoeColor}}>🖌️ Clique e arraste no mapa</p>}
                             </section>
 
-                            {/* 👉 NOVA SEÇÃO DE CONDIÇÕES OFICIAIS */}
                             <section className="mb-4 bg-black/40 border border-white/10 rounded p-2">
                                 <h3 className="text-[10px] text-gray-400 uppercase mb-2 text-center font-bold tracking-widest">Condições Oficiais</h3>
                                 <div className="grid grid-cols-2 gap-2">
@@ -539,7 +546,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                     ))}
                                 </div>
                                 
-                                {/* O Pergaminho de Regras Flutuante */}
                                 {hoveredCondition && availableConditions?.find(c => c.name === hoveredCondition) && (
                                     <div className="mt-2 p-2.5 bg-black/80 border border-amber-500/30 rounded-lg animate-in fade-in zoom-in-95 shadow-lg relative z-20">
                                         <h4 className="text-[10px] font-black text-amber-400 uppercase mb-1 border-b border-amber-900/50 pb-1">
@@ -683,7 +689,8 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                             className="flex flex-col items-center bg-black/60 hover:bg-red-900/40 border border-white/5 hover:border-red-500/50 p-2 rounded-lg transition-all group cursor-grab active:cursor-grabbing"
                                         >
                                             <div className="w-10 h-10 rounded-full overflow-hidden mb-1.5 border border-white/20 group-hover:border-red-500 shadow-lg">
-                                                <img src={monster.image} alt={monster.name} className="w-full h-full object-cover" />
+                                                {/* 👉 Usando o tokenImage no Bestiário */}
+                                                <img src={monster.tokenImage || monster.image} alt={monster.name} className="w-full h-full object-cover" />
                                             </div>
                                             <span className="text-[10px] font-bold text-gray-300 group-hover:text-white truncate w-full text-center leading-tight">
                                                 {monster.name}

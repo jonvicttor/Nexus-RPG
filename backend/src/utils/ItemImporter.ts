@@ -3,19 +3,19 @@ import path from 'path';
 
 export interface NexusItemDef {
   name: string;
-  type: string; // 'weapon', 'armor', 'potion', 'misc'
+  type: string; 
   rarity: string;
   value: string;
   weight: number;
   damage?: string;
   ac?: number;
   properties?: string[];
+  image?: string; // 👉 NOVA PROPRIEDADE PARA A IMAGEM
 }
 
 export class ItemImporter {
   static loadItems(): NexusItemDef[] {
     const nexusItems: NexusItemDef[] = [];
-    // Vamos carregar tanto os itens base (espadas, escudos normais) quanto os mágicos
     const filesToLoad = ['items-base.json', 'items.json'];
 
     for (const fileName of filesToLoad) {
@@ -30,31 +30,28 @@ export class ItemImporter {
         const rawData = fs.readFileSync(filePath, 'utf-8');
         const data = JSON.parse(rawData);
         
-        // No 5etools, os itens base podem vir em 'baseitem' e os outros em 'item'
         const itemsArray = data.item || data.baseitem || [];
 
         for (const it of itemsArray) {
-          // Vamos focar nos itens oficiais do Livro do Jogador e Guia do Mestre para não poluir
           if (it.source !== 'PHB' && it.source !== 'DMG') continue;
 
-          // Descobrindo o tipo do item
           let type = 'misc';
           if (['M', 'R', 'A'].includes(it.type) || it.weaponCategory) type = 'weapon';
           else if (['HA', 'LA', 'MA', 'S'].includes(it.type) || it.armor) type = 'armor';
           else if (it.type === 'P') type = 'potion';
 
-          // Pegando o dano (se for arma)
+          // 👉 LÓGICA DE IMAGEM DO ITEM (O 5eTools guarda as imagens de itens na raiz /img/items/)
+          const safeItemName = it.name.replace(/</g, '').replace(/>/g, '').replace(/"/g, '').replace(/\//g, '');
+          const itemImagePath = `/img/items/${it.source}/${safeItemName}.webp`;
+
           let damage = undefined;
           if (it.dmg1) damage = it.dmg1;
 
-          // Pegando a CA (se for armadura/escudo)
           let ac = undefined;
           if (it.ac) {
-              // As vezes a CA vem como número, as vezes como string complexa, pegamos o número base
               ac = typeof it.ac === 'number' ? it.ac : parseInt(String(it.ac).replace(/\D/g, ''));
           }
 
-          // Convertendo o valor (5etools salva o valor em Peças de Cobre, dividimos por 100 para Ouro)
           const valueInGold = it.value ? (it.value / 100) : 0;
 
           nexusItems.push({
@@ -65,7 +62,8 @@ export class ItemImporter {
             weight: it.weight || 0,
             damage,
             ac,
-            properties: it.property || []
+            properties: it.property || [],
+            image: itemImagePath // 👉 Anexando a imagem do item!
           });
         }
       } catch (error) {
@@ -73,7 +71,7 @@ export class ItemImporter {
       }
     }
 
-    console.log(`🎒 Arsenal Carregado! ${nexusItems.length} itens afiados e polidos.`);
+    console.log(`🎒 Arsenal Carregado! ${nexusItems.length} itens afiados e polidos (com imagens).`);
     return nexusItems;
   }
 }

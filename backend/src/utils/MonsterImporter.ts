@@ -5,8 +5,9 @@ export interface NexusMonster {
   name: string;
   hp: number;
   ac: number;
-  image: string;
-  size?: number; // Para o tamanho do token no mapa
+  image: string;      // 👉 Imagem completa (Corpo inteiro no Mapa)
+  tokenImage: string; // 👉 Imagem do Token (Rosto redondo na Sidebar)
+  size?: number; 
 }
 
 export class MonsterImporter {
@@ -30,10 +31,12 @@ export class MonsterImporter {
 
           const name = m.name;
 
-          // --- 1. GERAÇÃO DINÂMICA DO CAMINHO DA IMAGEM ---
-          // Exemplo: "Adult Black Dragon" -> "adult_black_dragon"
-          const safeName = name.toLowerCase().replace(/[\s-]+/g, '_').replace(/[^\w]/g, '');
-          const imagePath = `/tokens/${safeName}.png`; // <-- AGORA É ÚNICO POR MONSTRO
+          // Limpando o nome para montar a URL
+          const safeName = name.replace(/</g, '').replace(/>/g, '').replace(/"/g, '').replace(/\//g, '');
+          
+          // --- 1. GERAÇÃO DINÂMICA DAS DUAS IMAGENS ---
+          const tokenImagePath = `/img/bestiary/tokens/${m.source}/${safeName}.webp`; // Token Redondo
+          const fullImagePath = `/img/bestiary/${m.source}/${safeName}.webp`;         // Corpo Inteiro
 
           let hp = 10;
           if (m.hp && m.hp.average) {
@@ -63,13 +66,14 @@ export class MonsterImporter {
             name,
             hp,
             ac,
-            image: imagePath, // Usa o caminho único gerado
+            image: fullImagePath,       // Vai para o mapa
+            tokenImage: tokenImagePath, // Vai para a lista do Mestre
             size
           });
         }
       }
 
-      console.log(`🐉 Livro dos Monstros importado com sucesso! ${nexusMonsters.length} feras estão prontas para a batalha (com nomes de arquivo de imagem únicos).`);
+      console.log(`🐉 Livro dos Monstros importado com sucesso! ${nexusMonsters.length} feras estão prontas (com tokens e artes de corpo inteiro).`);
       return nexusMonsters;
 
     } catch (error) {

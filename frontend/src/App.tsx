@@ -54,6 +54,7 @@ export interface Entity {
   color: string;
   type: 'player' | 'enemy' | 'loot'; 
   image?: string;
+  tokenImage?: string; // 👉 ADICIONADO: Para mostrar o token redondo na sidebar
   visionRadius?: number; 
   stats?: {
     str: number; dex: number; con: number; int: number; wis: number; cha: number;
@@ -78,6 +79,7 @@ export interface MonsterPreset {
   hp: number;
   ac: number;
   image: string;
+  tokenImage?: string; // 👉 ADICIONADO: Imagem do token redondo
   size?: number;
 }
 
@@ -98,8 +100,8 @@ const InitiativeModal = ({ entity, onClose, onConfirm }: { entity: Entity, onClo
     <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-gray-900 border border-yellow-600/50 p-6 rounded-lg shadow-2xl w-80 animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
         <div className="flex flex-col items-center mb-4">
-          <div className="w-16 h-16 rounded-full border-2 border-yellow-500 overflow-hidden mb-2 shadow-lg">
-             {entity.image ? <img src={entity.image} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full bg-gray-700" />}
+          <div className="w-16 h-16 rounded-full border-2 border-yellow-500 overflow-hidden mb-2 shadow-lg bg-black flex justify-center items-center">
+             {entity.tokenImage || entity.image ? <img src={entity.tokenImage || entity.image} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full bg-gray-700" />}
           </div>
           <h3 className="text-yellow-500 font-bold text-lg uppercase tracking-widest text-center">{entity.name}</h3>
           <p className="text-gray-400 text-xs font-mono">Mod. Destreza: <span className="text-white">{modString}</span></p>
@@ -165,7 +167,7 @@ function App() {
   const [availableSpells, setAvailableSpells] = useState<any[]>([]); 
   const [availableItems, setAvailableItems] = useState<any[]>([]); 
   const [availableRaces, setAvailableRaces] = useState<any[]>([]); 
-  const [availableConditions, setAvailableConditions] = useState<any[]>([]); // 👉 NOVA REGRA DE CONDIÇÕES
+  const [availableConditions, setAvailableConditions] = useState<any[]>([]); 
 
   const [focusEntity, setFocusEntity] = useState<Entity | null>(null);       
   const [globalBrightness, setGlobalBrightness] = useState(1);              
@@ -307,7 +309,7 @@ function App() {
       if (gameState.availableSpells) setAvailableSpells(gameState.availableSpells);
       if (gameState.availableItems) setAvailableItems(gameState.availableItems);
       if (gameState.availableRaces) setAvailableRaces(gameState.availableRaces);
-      if (gameState.availableConditions) setAvailableConditions(gameState.availableConditions); // 👉 SETANDO AS CONDIÇÕES
+      if (gameState.availableConditions) setAvailableConditions(gameState.availableConditions); 
     });
 
     socket.on('notification', (data: any) => { 
@@ -712,9 +714,40 @@ function App() {
   const handleEditEntity = (id: number, updates: Partial<Entity>) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, ...updates } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates, roomId }); };
   const handleDeleteEntity = (id: number) => { setEntities(prev => prev.filter(ent => ent.id !== id)); socket.emit('deleteEntity', { entityId: id, roomId }); if (attackerId === id) setAttackerId(null); };
   
-  const createEntity = (type: 'enemy' | 'player' | 'loot', name: string, x: number, y: number, customStats?: Partial<Entity>) => { 
+  // 👉 REPASSANDO O TOKENIMAGE NA CRIAÇÃO DA ENTIDADE
+  const createEntity = (type: 'enemy' | 'player' | 'loot', name: string, x: number, y: number, customStats?: Partial<Entity> & { tokenImage?: string }) => { 
       const newId = Date.now(); 
-      const newEntity: Entity = { id: newId, name, hp: customStats?.hp || 10, maxHp: customStats?.maxHp || customStats?.hp || 10, ac: customStats?.ac || 10, x, y, rotation: 0, mirrored: false, conditions: [], color: type === 'enemy' ? '#ef4444' : '#3b82f6', type, image: customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), visionRadius: 9, stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, classType: customStats?.classType || "NPC", size: customStats?.size || 2, xp: customStats?.xp || 0, level: customStats?.level || 1, inventory: customStats?.inventory || [], race: customStats?.race || 'Humano', visible: true, proficiencies: customStats?.proficiencies || {}, deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, inspiration: customStats?.inspiration || false, spellSlots: customStats?.spellSlots || {}, spells: customStats?.spells || [], coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; 
+      const newEntity: Entity = { 
+          id: newId, 
+          name, 
+          hp: customStats?.hp || 10, 
+          maxHp: customStats?.maxHp || customStats?.hp || 10, 
+          ac: customStats?.ac || 10, 
+          x, 
+          y, 
+          rotation: 0, 
+          mirrored: false, 
+          conditions: [], 
+          color: type === 'enemy' ? '#ef4444' : '#3b82f6', 
+          type, 
+          image: customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), 
+          tokenImage: customStats?.tokenImage || customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), // 👉 AQUI
+          visionRadius: 9, 
+          stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, 
+          classType: customStats?.classType || "NPC", 
+          size: customStats?.size || 2, 
+          xp: customStats?.xp || 0, 
+          level: customStats?.level || 1, 
+          inventory: customStats?.inventory || [], 
+          race: customStats?.race || 'Humano', 
+          visible: true, 
+          proficiencies: customStats?.proficiencies || {}, 
+          deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, 
+          inspiration: customStats?.inspiration || false, 
+          spellSlots: customStats?.spellSlots || {}, 
+          spells: customStats?.spells || [], 
+          coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } 
+      }; 
       setEntities(prev => [...prev, newEntity]); 
       socket.emit('createEntity', { entity: newEntity, roomId }); 
       addLog({ text: `${name} entrou na mesa.`, type: 'info', sender: 'Sistema' }); 
@@ -810,7 +843,7 @@ function App() {
                   const existing = prev.find(e => e.name.toLowerCase() === name.toLowerCase() && e.type === 'player');
                   
                   if (!existing) { 
-                      const newEntity: Entity = { id: charData.id || Date.now(), name, hp: charData.hp, maxHp: charData.maxHp, ac: charData.ac, x: 8, y: 6, rotation: charData.rotation || 0, mirrored: charData.mirrored || false, conditions: charData.conditions || [], color: '#3b82f6', type: 'player', image: charData.image, stats: charData.stats, classType: charData.classType, visionRadius: charData.visionRadius || 9, size: charData.size || 2, xp: charData.xp || 0, level: charData.level || 1, inventory: charData.inventory || [], race: charData.race || 'Humano', visible: charData.visible !== false, proficiencies: charData.proficiencies || {}, deathSaves: charData.deathSaves || { successes: 0, failures: 0 }, inspiration: charData.inspiration || false, spellSlots: charData.spellSlots || {}, spells: charData.spells || [], coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; 
+                      const newEntity: Entity = { id: charData.id || Date.now(), name, hp: charData.hp, maxHp: charData.maxHp, ac: charData.ac, x: 8, y: 6, rotation: charData.rotation || 0, mirrored: charData.mirrored || false, conditions: charData.conditions || [], color: '#3b82f6', type: 'player', image: charData.image, tokenImage: charData.tokenImage || charData.image, stats: charData.stats, classType: charData.classType, visionRadius: charData.visionRadius || 9, size: charData.size || 2, xp: charData.xp || 0, level: charData.level || 1, inventory: charData.inventory || [], race: charData.race || 'Humano', visible: charData.visible !== false, proficiencies: charData.proficiencies || {}, deathSaves: charData.deathSaves || { successes: 0, failures: 0 }, inspiration: charData.inspiration || false, spellSlots: charData.spellSlots || {}, spells: charData.spells || [], coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; 
                       socket.emit('createEntity', { entity: newEntity, roomId: sessionRoomId }); 
                       return [...prev, newEntity]; 
                   } else {
@@ -945,7 +978,6 @@ function App() {
 
       {initModalEntity && (<InitiativeModal entity={initModalEntity} onClose={() => setInitModalEntity(null)} onConfirm={handleSubmitInitiative} />)}
       
-      {/* O EDIT ENTITY MODAL DO MESTRE RECEBENDO APENAS CLASSES E RAÇAS */}
       {editingEntity && (<EditEntityModal entity={editingEntity} onSave={(id, updates) => { handleEditEntity(id, updates); setEditingEntity(null); }} onClose={() => setEditingEntity(null)} availableClasses={availableClasses} availableRaces={availableRaces} />)}
       
       <BaldursDiceRoller isOpen={showBgDice} onClose={() => setShowBgDice(false)} title={diceContext.title} subtitle={diceContext.subtitle} difficultyClass={diceContext.dc} baseModifier={diceContext.mod || 0} proficiency={diceContext.prof || 0} rollType={diceContext.rollType || 'normal'} extraBonuses={diceContext.bonuses} onComplete={handleDiceComplete} />
@@ -992,7 +1024,7 @@ function App() {
                             <div className="w-24 h-24 relative flex items-center justify-center group">
                                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(217,119,6,0.3)_0%,transparent_70%)] group-hover:scale-110 transition-transform duration-500"></div>
                                 {selectedStatusEntity.image ? (
-                                    <img src={selectedStatusEntity.image} alt={selectedStatusEntity.name} className="w-16 h-16 object-contain relative z-10 drop-shadow-[0_5px_10px_rgba(0,0,0,0.5)]" />
+                                    <img src={selectedStatusEntity.image} alt="Item" className="w-16 h-16 object-contain relative z-10 drop-shadow-[0_5px_10px_rgba(0,0,0,0.5)]" />
                                 ) : (
                                     <span className="text-4xl relative z-10">🎁</span>
                                 )}
@@ -1006,7 +1038,8 @@ function App() {
                         <>
                             <div className="flex gap-3 mb-4 items-center">
                                 <div onClick={() => role === 'DM' && setEditingEntity(selectedStatusEntity)} className={`w-14 h-14 rounded-lg border-2 border-cyan-400/50 overflow-hidden shrink-0 relative ${role === 'DM' ? 'cursor-pointer hover:border-cyan-400' : ''}`}>
-                                    {selectedStatusEntity.image ? <img src={selectedStatusEntity.image} alt={selectedStatusEntity.name} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-cyan-900" />}
+                                    {/* 👉 Exibindo o Token Redondo no Modal de Status */}
+                                    {selectedStatusEntity.image ? <img src={selectedStatusEntity.tokenImage || selectedStatusEntity.image} alt={selectedStatusEntity.name} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-cyan-900" />}
                                 </div>
                                 <div className="overflow-hidden">
                                     <div className="text-white font-bold text-sm truncate uppercase tracking-tighter">{selectedStatusEntity.name}</div>
@@ -1081,7 +1114,7 @@ function App() {
                     onLongRest={handleLongRest} 
                     
                     availableItems={availableItems} 
-                    availableConditions={availableConditions} // 👉 ENVIANDO PARA O MESTRE
+                    availableConditions={availableConditions}
                     /> 
                 : <SidebarPlayer entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name === playerName)?.id || 0} initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} onSelectEntity={(entity) => { setFocusEntity(entity); setTimeout(() => setFocusEntity(null), 100); }} onApplyDamageFromChat={handleApplyDamageFromChat} />
                 }
