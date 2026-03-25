@@ -161,11 +161,11 @@ function App() {
 
   const [customMonsters, setCustomMonsters] = useState<MonsterPreset[]>([]); 
   
-  // 👉 NOVO ESTADO: CLASSES, MAGIAS, ITENS E RAÇAS
   const [availableClasses, setAvailableClasses] = useState<any[]>([]); 
   const [availableSpells, setAvailableSpells] = useState<any[]>([]); 
   const [availableItems, setAvailableItems] = useState<any[]>([]); 
-  const [availableRaces, setAvailableRaces] = useState<any[]>([]); // 👉 Raças adicionadas
+  const [availableRaces, setAvailableRaces] = useState<any[]>([]); 
+  const [availableConditions, setAvailableConditions] = useState<any[]>([]); // 👉 NOVA REGRA DE CONDIÇÕES
 
   const [focusEntity, setFocusEntity] = useState<Entity | null>(null);       
   const [globalBrightness, setGlobalBrightness] = useState(1);              
@@ -303,11 +303,11 @@ function App() {
       if (gameState.globalBrightness !== undefined) setGlobalBrightness(gameState.globalBrightness);
       if (gameState.currentTrack) handlePlayMusic(gameState.currentTrack, false);
       
-      // 👉 RECEBENDO RECURSOS DO BACKEND
       if (gameState.availableClasses) setAvailableClasses(gameState.availableClasses);
       if (gameState.availableSpells) setAvailableSpells(gameState.availableSpells);
       if (gameState.availableItems) setAvailableItems(gameState.availableItems);
-      if (gameState.availableRaces) setAvailableRaces(gameState.availableRaces); // 👉 RAÇAS CHEGANDO
+      if (gameState.availableRaces) setAvailableRaces(gameState.availableRaces);
+      if (gameState.availableConditions) setAvailableConditions(gameState.availableConditions); // 👉 SETANDO AS CONDIÇÕES
     });
 
     socket.on('notification', (data: any) => { 
@@ -945,8 +945,8 @@ function App() {
 
       {initModalEntity && (<InitiativeModal entity={initModalEntity} onClose={() => setInitModalEntity(null)} onConfirm={handleSubmitInitiative} />)}
       
-      {/* 👉 O EDIT ENTITY MODAL RECEBENDO AS RAÇAS */}
-      {editingEntity && (<EditEntityModal entity={editingEntity} onSave={(id, updates) => { handleEditEntity(id, updates); setEditingEntity(null); }} onClose={() => setEditingEntity(null)} availableClasses={availableClasses} availableSpells={availableSpells} availableItems={availableItems} availableRaces={availableRaces} />)}
+      {/* O EDIT ENTITY MODAL DO MESTRE RECEBENDO APENAS CLASSES E RAÇAS */}
+      {editingEntity && (<EditEntityModal entity={editingEntity} onSave={(id, updates) => { handleEditEntity(id, updates); setEditingEntity(null); }} onClose={() => setEditingEntity(null)} availableClasses={availableClasses} availableRaces={availableRaces} />)}
       
       <BaldursDiceRoller isOpen={showBgDice} onClose={() => setShowBgDice(false)} title={diceContext.title} subtitle={diceContext.subtitle} difficultyClass={diceContext.dc} baseModifier={diceContext.mod || 0} proficiency={diceContext.prof || 0} rollType={diceContext.rollType || 'normal'} extraBonuses={diceContext.bonuses} onComplete={handleDiceComplete} />
 
@@ -961,6 +961,7 @@ function App() {
               onSendMessage={handleSendMessage}
               onApplyDamageFromChat={handleApplyDamageFromChat}
               onDropItem={handlePlayerDropItem} 
+              availableSpells={availableSpells} 
           />
       ) : (
           <>
@@ -1041,8 +1042,7 @@ function App() {
                 </div>
             )}
             
-            {/* 👉 O EDIT ENTITY MODAL DO 'NOVO ALIADO' RECEBENDO AS RAÇAS */}
-            {showAllyCreator && (<EditEntityModal entity={{ id: 0, name: '', hp: 20, maxHp: 20, ac: 12, x:0, y:0, type: 'player', color: '', conditions: [], mirrored: false, size: 2, inventory: [] }} onSave={(id, updates) => handleSaveNewAlly(id, updates)} onClose={() => setShowAllyCreator(false)} availableClasses={availableClasses} availableSpells={availableSpells} availableItems={availableItems} availableRaces={availableRaces} />)}
+            {showAllyCreator && (<EditEntityModal entity={{ id: 0, name: '', hp: 20, maxHp: 20, ac: 12, x:0, y:0, type: 'player', color: '', conditions: [], mirrored: false, size: 2, inventory: [] }} onSave={(id, updates) => handleSaveNewAlly(id, updates)} onClose={() => setShowAllyCreator(false)} availableClasses={availableClasses} availableRaces={availableRaces} />)}
             {showEnemyCreator && (<MonsterCreatorModal onSave={handleSaveNewEnemy} onSavePreset={handleSaveMonsterPreset} onClose={() => setShowEnemyCreator(false)} />)}
             {contextMenu && (<ContextMenu x={contextMenu.x} y={contextMenu.y} entity={contextMenu.entity} role={role} onClose={() => setContextMenu(null)} onAction={handleContextMenuAction} />)}
             
@@ -1061,7 +1061,7 @@ function App() {
                     onSelectEntity={(entity) => { if (entity.classType === 'Item' || entity.type === 'loot') setStatusSelectionId(entity.id); }} 
                     onTokenDoubleClick={(entity) => { if (entity.classType === 'Item' || entity.type === 'loot') setStatusSelectionId(entity.id); else handleAddToInitiative(entity); }} 
                     onContextMenu={(e, entity) => { 
-                        e.preventDefault(); // 👉 FEITIÇO SECUNDÁRIO (Garantia extra)
+                        e.preventDefault();
                         if (entity.classType === 'Item' || entity.type === 'loot') setStatusSelectionId(entity.id); 
                         else setContextMenu({ x: e.clientX, y: e.clientY, entity }); 
                     }} 
@@ -1080,9 +1080,8 @@ function App() {
                     initiativeList={initiativeList} activeTurnId={activeTurnId} onAddToInitiative={handleAddToInitiative} onRemoveFromInitiative={handleRemoveFromInitiative} onNextTurn={handleNextTurn} onClearInitiative={handleClearInitiative} onSortInitiative={handleSortInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget} onToggleCondition={handleToggleCondition} onSetAttacker={handleSetAttacker} activeAoE={activeAoE} onSetAoE={setActiveAoE} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} aoeColor={aoeColor} onSetAoEColor={setAoEColor} onOpenCreator={(type) => { if (type === 'player') setShowAllyCreator(true); if (type === 'enemy') setShowEnemyCreator(true); }} onAddXP={handleAddXP} customMonsters={customMonsters} globalBrightness={globalBrightness} onSetGlobalBrightness={handleUpdateGlobalBrightness} onRequestRoll={handleDmRequestRoll} onToggleVisibility={handleToggleVisibility} currentTrack={currentTrack} onPlayMusic={handlePlayMusic} onStopMusic={handleStopMusic} onPlaySFX={handlePlaySFX} audioVolume={audioVolume} onSetAudioVolume={setAudioVolume} onResetView={handleResetView} onGiveItem={handleGiveItem} onApplyDamageFromChat={handleApplyDamageFromChat} onDMRoll={handleDMRoll} 
                     onLongRest={handleLongRest} 
                     
-                    availableSpells={availableSpells} 
-                    availableItems={availableItems}
-                    availableRaces={availableRaces} // 👉 REPASSANDO PARA A SIDEBAR
+                    availableItems={availableItems} 
+                    availableConditions={availableConditions} // 👉 ENVIANDO PARA O MESTRE
                     /> 
                 : <SidebarPlayer entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name === playerName)?.id || 0} initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} onSelectEntity={(entity) => { setFocusEntity(entity); setTimeout(() => setFocusEntity(null), 100); }} onApplyDamageFromChat={handleApplyDamageFromChat} />
                 }

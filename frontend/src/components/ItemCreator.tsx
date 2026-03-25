@@ -5,13 +5,16 @@ import { Item } from '../App';
 interface ItemCreatorProps {
   onCreateItem: (item: Item) => void;
   targetName?: string;
+  availableItems?: any[]; 
 }
 
-const RARITY_COLORS = {
+const RARITY_COLORS: Record<string, string> = {
   common: 'border-white/10 text-gray-400 bg-white/5',
+  uncommon: 'border-green-500/30 text-green-400 bg-green-500/10',
   rare: 'border-blue-500/30 text-blue-400 bg-blue-500/10',
-  epic: 'border-purple-500/30 text-purple-400 bg-purple-500/10',
+  veryrare: 'border-purple-500/30 text-purple-400 bg-purple-500/10',
   legendary: 'border-amber-500/30 text-amber-400 bg-amber-500/10',
+  artifact: 'border-red-500/30 text-red-400 bg-red-500/10'
 };
 
 const ITEM_TYPES = [
@@ -21,27 +24,39 @@ const ITEM_TYPES = [
   { id: 'misc', label: 'Item Geral', icon: <Package size={16} /> },
 ];
 
-const ItemCreator: React.FC<ItemCreatorProps> = ({ onCreateItem, targetName }) => {
+const ItemCreator: React.FC<ItemCreatorProps> = ({ onCreateItem, targetName, availableItems = [] }) => {
   const [mode, setMode] = useState<'forge' | 'treasure'>('forge');
 
-  // Estado partilhado
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [itemImage, setItemImage] = useState<string | null>(null);
 
-  // Estado da Forja (Equipamentos)
   const [type, setType] = useState<Item['type']>('weapon');
   const [rarity, setRarity] = useState<Item['rarity']>('common');
   const [statValue, setStatValue] = useState('');
   const [cost, setCost] = useState('');
   const [quantity, setQuantity] = useState(1);
 
-  // Estado do Tesouro (Moedas)
   const [gold, setGold] = useState('');
   const [silver, setSilver] = useState('');
   const [copper, setCopper] = useState('');
   
+  const [itemSearch, setItemSearch] = useState(''); 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const filteredItems = itemSearch.trim() === '' ? [] : availableItems.filter(i => i.name.toLowerCase().includes(itemSearch.toLowerCase())).slice(0, 15);
+
+  const handleSelectCompendiumItem = (compItem: any) => {
+      setName(compItem.name);
+      setType(compItem.type as any);
+      setRarity(compItem.rarity?.toLowerCase() || 'common');
+      setCost(compItem.value || '');
+      if (compItem.type === 'weapon' && compItem.damage) setStatValue(compItem.damage);
+      else if (compItem.type === 'armor' && compItem.ac) setStatValue(compItem.ac.toString());
+      else setStatValue('');
+      
+      setItemSearch('');
+  };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -73,10 +88,7 @@ const ItemCreator: React.FC<ItemCreatorProps> = ({ onCreateItem, targetName }) =
           if (type === 'potion') newItem.stats = { properties: ['heal', statValue || '1d4'] };
           return newItem;
       } else {
-          const g = parseInt(gold) || 0;
-          const s = parseInt(silver) || 0;
-          const c = parseInt(copper) || 0;
-          
+          const g = parseInt(gold) || 0; const s = parseInt(silver) || 0; const c = parseInt(copper) || 0;
           let parts = [];
           if (g > 0) parts.push(`${g} Moedas de Ouro (PO)`);
           if (s > 0) parts.push(`${s} Moedas de Prata (PP)`);
@@ -85,40 +97,28 @@ const ItemCreator: React.FC<ItemCreatorProps> = ({ onCreateItem, targetName }) =
           const defaultName = g >= 50 ? 'Baú do Tesouro' : 'Bolsa de Moedas';
 
           return {
-              id: Date.now().toString(),
-              name: name.trim() || defaultName,
+              id: Date.now().toString(), name: name.trim() || defaultName,
               description: desc.trim() || `Contém a seguinte riqueza:\n\n• ${parts.join('\n• ')}`,
-              type: 'misc',
-              rarity: g >= 100 ? 'rare' : (g >= 500 ? 'epic' : 'common'),
-              quantity: 1,
-              image: itemImage || '', 
-              value: `${g} PO, ${s} PP, ${c} PC`,
-              // Usamos "as any" para o TypeScript ignorar as propriedades dinâmicas do tesouro
+              type: 'misc', rarity: g >= 100 ? 'rare' : (g >= 500 ? 'epic' : 'common'),
+              quantity: 1, image: itemImage || '', value: `${g} PO, ${s} PP, ${c} PC`,
               stats: { isTreasure: true, coins: { gp: g, sp: s, cp: c } } as any 
           };
       }
   };
 
   const resetFields = () => {
-      setName(''); setDesc(''); setItemImage(null);
-      setStatValue(''); setCost(''); setQuantity(1);
-      setGold(''); setSilver(''); setCopper('');
+      setName(''); setDesc(''); setItemImage(null); setStatValue(''); setCost(''); setQuantity(1); setGold(''); setSilver(''); setCopper('');
       if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!targetName) return; 
-    
-    const item = createItemObject();
-    onCreateItem(item);
+    onCreateItem(createItemObject());
     resetFields();
   };
 
-  const handleDragStart = (e: React.DragEvent) => {
-      const item = createItemObject();
-      e.dataTransfer.setData('application/json', JSON.stringify({ type: 'LOOT_DROP', item, sourceId: 0 }));
-  };
+  const handleDragStart = (e: React.DragEvent) => { e.dataTransfer.setData('application/json', JSON.stringify({ type: 'LOOT_DROP', item: createItemObject(), sourceId: 0 })); };
 
   const hasCoins = (parseInt(gold) || 0) > 0 || (parseInt(silver) || 0) > 0 || (parseInt(copper) || 0) > 0;
   const isForgeValid = name.trim().length > 0;
@@ -147,6 +147,26 @@ const ItemCreator: React.FC<ItemCreatorProps> = ({ onCreateItem, targetName }) =
       <form onSubmit={handleSubmit} className="space-y-4 relative z-10 min-h-[320px] flex flex-col justify-between">
         
         <div className="space-y-4">
+            
+            {mode === 'forge' && (
+                <div className="relative z-20">
+                    <div className="relative">
+                        <input type="text" placeholder="🔍 Buscar arma, armadura ou item mágico..." value={itemSearch} onChange={e => setItemSearch(e.target.value)} className="w-full bg-black/60 border border-amber-500/30 rounded p-2 text-xs text-white outline-none focus:border-amber-400 transition-colors" />
+                    </div>
+                    {itemSearch.trim() !== '' && (
+                        <div className="absolute top-full left-0 w-full mt-1 bg-black/95 border border-amber-500/50 rounded shadow-xl max-h-40 overflow-y-auto custom-scrollbar">
+                            {filteredItems.map((item, idx) => (
+                                <div key={idx} onClick={() => handleSelectCompendiumItem(item)} className="p-2 border-b border-white/5 hover:bg-amber-900/30 cursor-pointer transition-colors flex justify-between items-center">
+                                    <span className="text-xs font-bold text-amber-100">{item.name}</span>
+                                    <span className="text-[9px] text-gray-500 uppercase">{item.type}</span>
+                                </div>
+                            ))}
+                            {filteredItems.length === 0 && <div className="p-2 text-xs text-gray-500 text-center">Nenhum item encontrado.</div>}
+                        </div>
+                    )}
+                </div>
+            )}
+
             <input type="text" placeholder={mode === 'forge' ? "Nome do Item (Obrigatório)" : "Nome (Opcional, Ex: Tesouro Goblin)"} className="w-full bg-black/30 border border-white/10 rounded p-3 text-sm text-white placeholder-white/30 outline-none focus:border-amber-500/50 focus:bg-black/50 transition-all font-serif" value={name} onChange={e => setName(e.target.value)} />
 
             {mode === 'forge' && (
@@ -157,8 +177,8 @@ const ItemCreator: React.FC<ItemCreatorProps> = ({ onCreateItem, targetName }) =
                             <button key={t.id} type="button" onClick={() => setType(t.id as any)} className={`flex-1 rounded flex items-center justify-center transition-all py-1.5 ${type === t.id ? 'bg-white/10 text-white shadow-sm border border-white/10' : 'text-gray-600 hover:text-gray-300 hover:bg-white/5'}`} title={t.label}>{t.icon}</button>
                         ))}
                     </div>
-                    <select value={rarity} onChange={(e) => setRarity(e.target.value as any)} className={`w-28 text-[10px] font-bold uppercase rounded outline-none px-2 border appearance-none text-center cursor-pointer transition-colors ${RARITY_COLORS[rarity || 'common']}`}>
-                        <option value="common">Comum</option><option value="rare">Raro</option><option value="epic">Épico</option><option value="legendary">Lendário</option>
+                    <select value={rarity} onChange={(e) => setRarity(e.target.value as any)} className={`w-28 text-[9px] font-bold uppercase rounded outline-none px-1 border appearance-none text-center cursor-pointer transition-colors ${RARITY_COLORS[rarity || 'common'] || RARITY_COLORS['common']}`}>
+                        <option value="common">Comum</option><option value="uncommon">Incomum</option><option value="rare">Raro</option><option value="veryrare">M. Raro</option><option value="legendary">Lendário</option><option value="artifact">Artefato</option>
                     </select>
                 </div>
 
@@ -200,7 +220,6 @@ const ItemCreator: React.FC<ItemCreatorProps> = ({ onCreateItem, targetName }) =
             </div>
             )}
 
-            {/* Imagem e Descrição (Partilhados) */}
             <div className="w-full h-14 border border-dashed border-white/10 rounded bg-black/30 flex flex-col items-center justify-center cursor-pointer hover:border-amber-500/30 hover:bg-amber-500/5 transition-all overflow-hidden relative group" onClick={() => fileInputRef.current?.click()}>
                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
                 {itemImage ? <img src={itemImage} alt="Preview" className="h-full w-full object-contain opacity-50 group-hover:opacity-100 transition-all p-1" /> : <div className="flex flex-col items-center text-gray-600 group-hover:text-amber-500/80 transition-colors"><Upload size={14} className="mb-1 opacity-50" /><span className="text-[9px] uppercase font-bold tracking-widest">Imagem (Opcional)</span></div>}
@@ -209,7 +228,6 @@ const ItemCreator: React.FC<ItemCreatorProps> = ({ onCreateItem, targetName }) =
             <textarea placeholder="Descrição (Opcional)..." className="w-full bg-black/30 border border-white/10 rounded p-3 text-xs text-gray-400 h-16 resize-none outline-none focus:border-amber-500/30 transition-all custom-scrollbar placeholder-white/20" value={desc} onChange={e => setDesc(e.target.value)} />
         </div>
 
-        {/* Action Buttons */}
         <div className="flex gap-2 pt-2 border-t border-white/5 mt-4">
            <button 
                type="submit" 

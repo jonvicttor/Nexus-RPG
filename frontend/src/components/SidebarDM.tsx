@@ -89,9 +89,8 @@ interface SidebarDMProps {
   onApplyDamageFromChat: (targetId: number, damageExpression: string) => void;
   onDMRoll: (title: string, subtitle: string, mod: number, rollType?: 'normal' | 'advantage' | 'disadvantage') => void;
   onLongRest: () => void; 
-  availableSpells?: any[]; 
   availableItems?: any[]; 
-  availableRaces?: any[]; // 👉 ADICIONADO AQUI
+  availableConditions?: any[]; // 👉 ADICIONADO AQUI
 }
 
 const AoEColorPicker = ({ selected, onSelect }: { selected: string, onSelect: (c: string) => void }) => {
@@ -293,7 +292,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   onOpenCreator, onAddXP, customMonsters, globalBrightness = 1, onSetGlobalBrightness, onRequestRoll, onToggleVisibility,
   currentTrack, onPlayMusic, onStopMusic, onPlaySFX, audioVolume, onSetAudioVolume,
   onResetView, onGiveItem, onApplyDamageFromChat,
-  onDMRoll, onLongRest, availableSpells, availableItems, availableRaces // 👉 ADICIONADO AQUI
+  onDMRoll, onLongRest, availableItems, availableConditions // 👉 ADICIONADO AQUI
 }) => {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>('combat');
@@ -305,6 +304,9 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const [customMapUrl, setCustomMapUrl] = useState('');
   const [previewMap, setPreviewMap] = useState<{url: string, name: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 👉 ESTADO PARA CONTROLAR A CAIXA FLUTUANTE DE CONDIÇÕES
+  const [hoveredCondition, setHoveredCondition] = useState<string | null>(null);
 
   const FULL_MONSTER_LIST = [...MONSTER_LIST, ...(customMonsters || [])];
   const targetId = targetEntityIds[0];
@@ -359,10 +361,19 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const rollBulkInitiative = (type: 'npc' | 'selected') => { const targetsToRoll = type === 'npc' ? entities.filter(e => e.type === 'enemy') : entities.filter(e => targetEntityIds.includes(e.id)); if(targetsToRoll.length === 0) return; targetsToRoll.forEach(ent => { if (!initiativeList.find(i => i.id === ent.id)) onAddToInitiative(ent); }); };
   const sidebarStyle = { backgroundColor: '#1a1510', backgroundImage: `url('/assets/bg-couro-sidebar.png')`, backgroundSize: 'cover', backgroundRepeat: 'no-repeat', boxShadow: 'inset 0 0 60px rgba(0,0,0,0.9)', width: '420px', minWidth: '420px', maxWidth: '420px', flex: '0 0 420px' };
 
+  // 👉 NOSSO NOVO MAPA DE CONDIÇÕES OFICIAIS
+  const CONDITION_MAP = [
+      { id: 'Poisoned', icon: '☠️', label: 'Veneno', bg: 'bg-green-900/40 hover:bg-green-600/60', border: 'border-green-500/30', text: 'text-green-100' },
+      { id: 'Stunned', icon: '💫', label: 'Atordoado', bg: 'bg-yellow-900/40 hover:bg-yellow-600/60', border: 'border-yellow-500/30', text: 'text-yellow-100' },
+      { id: 'Prone', icon: '⏬', label: 'Caído', bg: 'bg-orange-900/40 hover:bg-orange-600/60', border: 'border-orange-500/30', text: 'text-orange-100' },
+      { id: 'Unconscious', icon: '💤', label: 'Inconsciente', bg: 'bg-purple-900/40 hover:bg-purple-600/60', border: 'border-purple-500/30', text: 'text-purple-100' },
+      { id: 'Blinded', icon: '🦇', label: 'Cego', bg: 'bg-gray-800/40 hover:bg-gray-600/60', border: 'border-gray-500/30', text: 'text-gray-200' },
+      { id: 'Restrained', icon: '⛓️', label: 'Impedido', bg: 'bg-red-900/40 hover:bg-red-600/60', border: 'border-red-500/30', text: 'text-red-100' },
+  ];
+
   return (
     <>
-      {/* 👉 O EDIT ENTITY MODAL RECEBE AS RAÇAS */}
-      {editingEntity && (<EditEntityModal entity={editingEntity} onSave={onEditEntity} onClose={() => setEditingEntity(null)} availableSpells={availableSpells} availableItems={availableItems} availableRaces={availableRaces} />)}
+      {editingEntity && (<EditEntityModal entity={editingEntity} onSave={onEditEntity} onClose={() => setEditingEntity(null)} />)}
       
       {pendingSkillRequest && targetEntity && (
           <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPendingSkillRequest(null)}>
@@ -439,6 +450,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                             <ItemCreator 
                                 onCreateItem={(item) => targetEntity && onGiveItem(targetEntity.id, item)} 
                                 targetName={targetEntity?.name}
+                                availableItems={availableItems}
                             />
                             <Scratchpad />
                         </div>
@@ -509,15 +521,37 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                 {activeAoE && <p className="text-[9px] mt-2 text-center animate-pulse opacity-80" style={{color: aoeColor}}>🖌️ Clique e arraste no mapa</p>}
                             </section>
 
+                            {/* 👉 NOVA SEÇÃO DE CONDIÇÕES OFICIAIS */}
                             <section className="mb-4 bg-black/40 border border-white/10 rounded p-2">
-                                <h3 className="text-[10px] text-gray-400 uppercase mb-2 text-center font-bold tracking-widest">Condições</h3>
+                                <h3 className="text-[10px] text-gray-400 uppercase mb-2 text-center font-bold tracking-widest">Condições Oficiais</h3>
                                 <div className="grid grid-cols-2 gap-2">
-                                        <button onClick={() => toggleConditionForAll('poison')} className="flex items-center gap-2 px-3 py-2 bg-green-900/40 hover:bg-green-600/60 border border-green-500/30 hover:border-green-400 rounded transition-all active:scale-95 group" title="Envenenado"><span className="text-lg filter drop-shadow-md group-hover:scale-110 transition-transform">☠️</span><span className="text-[10px] font-bold text-green-100 uppercase tracking-wider">Veneno</span></button>
-                                        <button onClick={() => toggleConditionForAll('stun')} className="flex items-center gap-2 px-3 py-2 bg-yellow-900/40 hover:bg-yellow-600/60 border border-yellow-500/30 hover:border-yellow-400 rounded transition-all active:scale-95 group" title="Atordoado"><span className="text-lg filter drop-shadow-md group-hover:scale-110 transition-transform">💫</span><span className="text-[10px] font-bold text-yellow-100 uppercase tracking-wider">Atordoar</span></button>
-                                        <button onClick={() => toggleConditionForAll('fire')} className="flex items-center gap-2 px-3 py-2 bg-red-900/40 hover:bg-red-600/60 border border-red-500/30 hover:border-red-400 rounded transition-all active:scale-95 group" title="Em Chamas"><span className="text-lg filter drop-shadow-md group-hover:scale-110 transition-transform">🔥</span><span className="text-[10px] font-bold text-red-100 uppercase tracking-wider">Fogo</span></button>
-                                        <button onClick={() => toggleConditionForAll('sleep')} className="flex items-center gap-2 px-3 py-2 bg-purple-900/40 hover:bg-purple-600/60 border border-purple-500/30 hover:border-purple-400 rounded transition-all active:scale-95 group" title="Dormindo"><span className="text-lg filter drop-shadow-md group-hover:scale-110 transition-transform">💤</span><span className="text-[10px] font-bold text-purple-100 uppercase tracking-wider">Sono</span></button>
+                                    {CONDITION_MAP.map(cond => (
+                                        <button 
+                                            key={cond.id}
+                                            onClick={() => toggleConditionForAll(cond.id)}
+                                            onMouseEnter={() => setHoveredCondition(cond.id)}
+                                            onMouseLeave={() => setHoveredCondition(null)}
+                                            className={`flex items-center justify-center gap-2 px-2 py-2 ${cond.bg} border ${cond.border} rounded transition-all active:scale-95 group`}
+                                        >
+                                            <span className="text-sm filter drop-shadow-md group-hover:scale-110 transition-transform">{cond.icon}</span>
+                                            <span className={`text-[10px] font-bold ${cond.text} uppercase tracking-wider`}>{cond.label}</span>
+                                        </button>
+                                    ))}
                                 </div>
+                                
+                                {/* O Pergaminho de Regras Flutuante */}
+                                {hoveredCondition && availableConditions?.find(c => c.name === hoveredCondition) && (
+                                    <div className="mt-2 p-2.5 bg-black/80 border border-amber-500/30 rounded-lg animate-in fade-in zoom-in-95 shadow-lg relative z-20">
+                                        <h4 className="text-[10px] font-black text-amber-400 uppercase mb-1 border-b border-amber-900/50 pb-1">
+                                            {availableConditions.find(c => c.name === hoveredCondition)?.name}
+                                        </h4>
+                                        <p className="text-[9px] text-gray-300 leading-relaxed whitespace-pre-wrap">
+                                            {availableConditions.find(c => c.name === hoveredCondition)?.description}
+                                        </p>
+                                    </div>
+                                )}
                             </section>
+
                             <section className="mb-8">
                                 <h3 className="text-rpgText font-mono text-[10px] uppercase mb-3 opacity-50 tracking-widest">Entidades no Mapa</h3>
                                 <div className="space-y-2">{entities.map((entity) => (<EntityControlRow key={entity.id} entity={entity} onUpdateHP={onUpdateHP} onDeleteEntity={onDeleteEntity} onClickEdit={() => setEditingEntity(entity)} onAddToInit={() => onAddToInitiative(entity)} isTarget={targetEntityIds.includes(entity.id)} isAttacker={attackerId === entity.id} onSetTarget={onSetTarget} onSetAttacker={onSetAttacker} onToggleCondition={onToggleCondition} onAddXP={onAddXP} onToggleVisibility={() => onToggleVisibility(entity.id)} />))}</div>

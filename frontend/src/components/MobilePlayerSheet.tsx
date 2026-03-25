@@ -12,7 +12,8 @@ interface MobileSheetProps {
     chatMessages: ChatMessage[];
     onSendMessage: (text: string) => void;
     onApplyDamageFromChat: (targetId: number, damageExpression: string) => void;
-    onDropItem?: (itemId: string) => void; // 👉 NOVA PROP ADICIONADA!
+    onDropItem?: (itemId: string) => void; 
+    availableSpells?: any[]; // 👉 RECEBENDO O GRIMÓRIO
 }
 
 const SKILLS = [
@@ -33,12 +34,13 @@ const SAVING_THROWS = [
     { name: 'Sabedoria', attr: 'wis' }, { name: 'Carisma', attr: 'cha' }
 ];
 
-export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribute, onOpenDiceRoller, onUpdateCharacter, chatMessages, onSendMessage, onApplyDamageFromChat, onDropItem }: MobileSheetProps) {
+export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribute, onOpenDiceRoller, onUpdateCharacter, chatMessages, onSendMessage, onApplyDamageFromChat, onDropItem, availableSpells = [] }: MobileSheetProps) {
     const [activeTab, setActiveTab] = useState<'STATUS' | 'ACTIONS' | 'SPELLS' | 'INVENTORY' | 'CHAT'>('STATUS');
     
     const [unreadMessages, setUnreadMessages] = useState(false);
     const lastMessageCount = useRef(chatMessages.length);
 
+    const [spellSearch, setSpellSearch] = useState(''); // 👉 Busca de Magias
     const [newSpellName, setNewSpellName] = useState('');
     const [newSpellLevel, setNewSpellLevel] = useState(1);
 
@@ -132,6 +134,16 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
         setNewSpellName('');
     };
 
+    // 👉 FUNÇÃO PARA APRENDER MAGIA DO COMPÊNDIO
+    const handleLearnCompendiumSpell = (spell: any) => {
+        const hasSpell = character.spells?.find(s => s.name === spell.name);
+        if (!hasSpell) {
+            const newSpell = { id: Date.now().toString() + Math.random(), name: spell.name, level: spell.level };
+            onUpdateCharacter(character.id, { spells: [...(character.spells || []), newSpell] });
+            setSpellSearch(''); 
+        }
+    };
+
     const handleRemoveSpell = (spellId: string) => {
         const updatedSpells = (character.spells || []).filter(s => s.id !== spellId);
         onUpdateCharacter(character.id, { spells: updatedSpells });
@@ -189,20 +201,17 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
             if (item.id === itemId) {
                 const willEquip = !item.isEquipped;
                 
-                // 👉 LÓGICA DE CLASSE DE ARMADURA AUTOMÁTICA
                 if (item.type === 'armor' && item.stats?.armorClass) {
                     if (willEquip) {
                         newAC = item.stats.armorClass; 
                         onSendMessage(`🛡️ **${character.name}** vestiu **${item.name}** (CA alterada para ${newAC}).`);
                     } else {
-                        // Se desequipar, tenta achar a próxima armadura ou volta pro base 10 + DEX
                         newAC = 10 + getMod((character.stats as any)?.dex || 10);
                         onSendMessage(`👕 **${character.name}** removeu **${item.name}** (CA voltou para ${newAC}).`);
                     }
                 }
                 return { ...item, isEquipped: willEquip };
             } else if (item.type === 'armor') {
-                // Desequipa outras armaduras automaticamente
                 return { ...item, isEquipped: false }; 
             }
             return item;
@@ -218,6 +227,8 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
     };
 
     const equippedWeapons = character.inventory?.filter(i => i.type === 'weapon' && i.isEquipped) || [];
+    
+    const filteredSpells = (availableSpells || []).filter(s => s.name.toLowerCase().includes(spellSearch.toLowerCase())).slice(0, 15);
 
     return (
         <div className="flex flex-col h-[100dvh] w-screen bg-[#050505] text-amber-50 font-serif items-center justify-center overflow-hidden">
@@ -429,26 +440,67 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                                 </p>
                             </div>
 
-                            <form onSubmit={handleAddSpell} className="flex gap-2 mb-6 bg-black/40 p-3 rounded-xl border border-purple-900/30 shadow-inner">
+                            {/* 👉 BUSCA DE MAGIAS NO COMPÊNDIO */}
+                            <div className="mb-4 relative">
                                 <input 
                                     type="text" 
-                                    value={newSpellName}
-                                    onChange={e => setNewSpellName(e.target.value)}
-                                    placeholder="Nova Magia..."
-                                    className="flex-1 bg-black/50 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
-                                    style={{ fontSize: '16px' }} 
-                                />
-                                <select 
-                                    value={newSpellLevel}
-                                    onChange={e => setNewSpellLevel(Number(e.target.value))}
-                                    className="bg-black/50 border border-gray-800 rounded-lg px-2 py-2 text-xs text-white outline-none focus:border-purple-500"
+                                    placeholder="🔍 Buscar magia no compêndio..." 
+                                    value={spellSearch}
+                                    onChange={e => setSpellSearch(e.target.value)}
+                                    className="w-full bg-black/50 border border-purple-900/50 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-purple-500 transition-colors"
                                     style={{ fontSize: '16px' }}
-                                >
-                                    <option value={0}>Truque</option>
-                                    {[1,2,3,4,5,6,7,8,9].map(l => <option key={l} value={l}>Círculo {l}</option>)}
-                                </select>
-                                <button type="submit" disabled={!newSpellName.trim()} className="bg-purple-700 hover:bg-purple-600 disabled:bg-gray-800 text-white px-4 rounded-lg font-bold transition-all active:scale-95">+</button>
-                            </form>
+                                />
+                                {spellSearch.trim() !== '' && (
+                                    <div className="absolute top-full left-0 w-full mt-2 bg-black/95 border border-purple-500/50 rounded-xl shadow-2xl z-50 max-h-48 overflow-y-auto custom-scrollbar flex flex-col p-2 gap-1.5">
+                                        {filteredSpells.length > 0 ? filteredSpells.map(s => {
+                                            const isKnown = character.spells?.some(known => known.name === s.name);
+                                            return (
+                                                <div key={s.name} className="flex justify-between items-center bg-purple-900/20 p-2 rounded border border-purple-500/30">
+                                                    <div>
+                                                        <div className="text-xs font-bold text-gray-200">{s.name}</div>
+                                                        <div className="text-[9px] text-gray-500">{s.school} | {s.level === 0 ? 'Truque' : `Círculo ${s.level}`}</div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => handleLearnCompendiumSpell(s)}
+                                                        disabled={isKnown}
+                                                        className={`px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest transition-all ${isKnown ? 'bg-gray-800 text-gray-500' : 'bg-purple-600 text-white hover:bg-purple-500 active:scale-95'}`}
+                                                    >
+                                                        {isKnown ? 'Aprendida' : 'Aprender'}
+                                                    </button>
+                                                </div>
+                                            )
+                                        }) : (
+                                            <p className="text-gray-500 text-xs text-center py-3">Magia não encontrada.</p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            <details className="mb-6 group">
+                                <summary className="text-[10px] text-gray-500 uppercase tracking-widest cursor-pointer text-center hover:text-purple-400 transition-colors list-none flex justify-center items-center gap-1">
+                                    <span>➕ Adicionar Magia Manualmente</span>
+                                </summary>
+                                <form onSubmit={handleAddSpell} className="flex gap-2 mt-3 bg-black/40 p-3 rounded-xl border border-purple-900/30 shadow-inner animate-in fade-in slide-in-from-top-2">
+                                    <input 
+                                        type="text" 
+                                        value={newSpellName}
+                                        onChange={e => setNewSpellName(e.target.value)}
+                                        placeholder="Nova Magia..."
+                                        className="flex-1 bg-black/50 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+                                        style={{ fontSize: '16px' }} 
+                                    />
+                                    <select 
+                                        value={newSpellLevel}
+                                        onChange={e => setNewSpellLevel(Number(e.target.value))}
+                                        className="bg-black/50 border border-gray-800 rounded-lg px-2 py-2 text-xs text-white outline-none focus:border-purple-500"
+                                        style={{ fontSize: '16px' }}
+                                    >
+                                        <option value={0}>Truque</option>
+                                        {[1,2,3,4,5,6,7,8,9].map(l => <option key={l} value={l}>Círculo {l}</option>)}
+                                    </select>
+                                    <button type="submit" disabled={!newSpellName.trim()} className="bg-purple-700 hover:bg-purple-600 disabled:bg-gray-800 text-white px-4 rounded-lg font-bold transition-all active:scale-95">+</button>
+                                </form>
+                            </details>
 
                             <div className="space-y-5">
                                 {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(level => {
@@ -581,7 +633,6 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                                               {item.quantity > 1 && <span className="text-[10px] bg-gray-700 text-white font-bold px-2 py-0.5 rounded">x{item.quantity}</span>}
                                               
                                               <div className="flex gap-1 mt-1">
-                                                  {/* 👉 NOVO: BOTÃO DE LARGAR ITEM */}
                                                   {onDropItem && (
                                                       <button 
                                                           onClick={() => {
