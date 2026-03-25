@@ -160,6 +160,13 @@ function App() {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
 
   const [customMonsters, setCustomMonsters] = useState<MonsterPreset[]>([]); 
+  
+  // 👉 NOVO ESTADO: CLASSES, MAGIAS, ITENS E RAÇAS
+  const [availableClasses, setAvailableClasses] = useState<any[]>([]); 
+  const [availableSpells, setAvailableSpells] = useState<any[]>([]); 
+  const [availableItems, setAvailableItems] = useState<any[]>([]); 
+  const [availableRaces, setAvailableRaces] = useState<any[]>([]); // 👉 Raças adicionadas
+
   const [focusEntity, setFocusEntity] = useState<Entity | null>(null);       
   const [globalBrightness, setGlobalBrightness] = useState(1);              
 
@@ -295,6 +302,12 @@ function App() {
       if (gameState.customMonsters) setCustomMonsters(gameState.customMonsters);
       if (gameState.globalBrightness !== undefined) setGlobalBrightness(gameState.globalBrightness);
       if (gameState.currentTrack) handlePlayMusic(gameState.currentTrack, false);
+      
+      // 👉 RECEBENDO RECURSOS DO BACKEND
+      if (gameState.availableClasses) setAvailableClasses(gameState.availableClasses);
+      if (gameState.availableSpells) setAvailableSpells(gameState.availableSpells);
+      if (gameState.availableItems) setAvailableItems(gameState.availableItems);
+      if (gameState.availableRaces) setAvailableRaces(gameState.availableRaces); // 👉 RAÇAS CHEGANDO
     });
 
     socket.on('notification', (data: any) => { 
@@ -818,19 +831,29 @@ function App() {
 
   const selectedStatusEntity = statusSelectionId ? entities.find(e => e.id === statusSelectionId) : null;
   let modalPosition = { top: 0, left: 0 };
+  
   if (selectedStatusEntity) { 
       const canvasOffsetX = (windowSize.w - CANVAS_WIDTH) / 2; 
       const canvasOffsetY = (windowSize.h - CANVAS_HEIGHT) / 2; 
       const tokenPixelX = (selectedStatusEntity.x * GRID_SIZE * mapScale) + mapOffset.x + canvasOffsetX; 
       const tokenPixelY = (selectedStatusEntity.y * GRID_SIZE * mapScale) + mapOffset.y + canvasOffsetY; 
       
-      modalPosition = { 
-          top: tokenPixelY - 30, 
-          left: tokenPixelX + ((selectedStatusEntity.size || 1) * GRID_SIZE * mapScale) + 30 
-      }; 
-      if (modalPosition.left + 250 > windowSize.w) { modalPosition.left = tokenPixelX - 260; } 
-      if (modalPosition.top + 300 > windowSize.h) { modalPosition.top = windowSize.h - 310; } 
-      if (modalPosition.top < 10) modalPosition.top = 10; 
+      const SIDEBAR_WIDTH = 420; 
+      const MODAL_WIDTH = 260;
+      const MODAL_HEIGHT = 320;
+
+      modalPosition.left = tokenPixelX + ((selectedStatusEntity.size || 1) * GRID_SIZE * mapScale) + 20;
+      modalPosition.top = tokenPixelY;
+
+      if (modalPosition.left + MODAL_WIDTH > windowSize.w - SIDEBAR_WIDTH) {
+          modalPosition.left = tokenPixelX - MODAL_WIDTH - 20;
+      }
+
+      if (modalPosition.left < 10) modalPosition.left = 10;
+      if (modalPosition.top + MODAL_HEIGHT > windowSize.h - 20) {
+          modalPosition.top = windowSize.h - MODAL_HEIGHT - 20;
+      }
+      if (modalPosition.top < 20) modalPosition.top = 20;
   }
 
   const handleSaveNewAlly = (id: number, data: Partial<Entity>) => { 
@@ -845,6 +868,14 @@ function App() {
       const pos = getCenterGridPosition();
       createEntity('enemy', data.name || `Monstro ${nextNum}`, pos.x, pos.y, data); 
       setShowEnemyCreator(false); 
+  };
+
+  const handlePlayerDropItem = (itemId: string) => {
+      const myEntity = entities.find(e => e.name === playerName && e.type === 'player');
+      if (!myEntity) return;
+      const itemToDrop = myEntity.inventory?.find(i => i.id === itemId);
+      if (!itemToDrop) return;
+      handleDropLootOnMap(itemToDrop, myEntity.id, myEntity.x, myEntity.y);
   };
 
   if (!isLoggedIn) return <LoginScreen onLogin={handleLogin} />;
@@ -887,7 +918,6 @@ function App() {
                   <span className="text-pink-100 font-bold text-xs uppercase tracking-widest flex items-center gap-2">🤫 {privateChatTarget}</span>
                   <button onClick={() => setPrivateChatTarget(null)} className="text-pink-300 hover:text-white transition-colors text-lg">✕</button>
               </div>
-              
               <div className="h-64 overflow-y-auto p-3 flex flex-col gap-2 bg-[#111] custom-scrollbar">
                   {privateMessages.length === 0 && (<p className="text-gray-600 text-xs italic text-center mt-4">Início da conversa secreta...</p>)}
                   {privateMessages.map(msg => (
@@ -898,7 +928,6 @@ function App() {
                   ))}
                   <div ref={chatEndRef} />
               </div>
-
               <form onSubmit={(e) => {
                   e.preventDefault();
                   const input = e.currentTarget.elements.namedItem('msg') as HTMLInputElement;
@@ -915,7 +944,10 @@ function App() {
       )}
 
       {initModalEntity && (<InitiativeModal entity={initModalEntity} onClose={() => setInitModalEntity(null)} onConfirm={handleSubmitInitiative} />)}
-      {editingEntity && (<EditEntityModal entity={editingEntity} onSave={(id, updates) => { handleEditEntity(id, updates); setEditingEntity(null); }} onClose={() => setEditingEntity(null)} />)}
+      
+      {/* 👉 O EDIT ENTITY MODAL RECEBENDO AS RAÇAS */}
+      {editingEntity && (<EditEntityModal entity={editingEntity} onSave={(id, updates) => { handleEditEntity(id, updates); setEditingEntity(null); }} onClose={() => setEditingEntity(null)} availableClasses={availableClasses} availableSpells={availableSpells} availableItems={availableItems} availableRaces={availableRaces} />)}
+      
       <BaldursDiceRoller isOpen={showBgDice} onClose={() => setShowBgDice(false)} title={diceContext.title} subtitle={diceContext.subtitle} difficultyClass={diceContext.dc} baseModifier={diceContext.mod || 0} proficiency={diceContext.prof || 0} rollType={diceContext.rollType || 'normal'} extraBonuses={diceContext.bonuses} onComplete={handleDiceComplete} />
 
       {isMobilePlayer && myCharacter ? (
@@ -928,109 +960,116 @@ function App() {
               chatMessages={publicChatMessages}
               onSendMessage={handleSendMessage}
               onApplyDamageFromChat={handleApplyDamageFromChat}
+              onDropItem={handlePlayerDropItem} 
           />
       ) : (
           <>
             {selectedStatusEntity && (
-                <div className="fixed z-50 bg-gray-900/95 border border-yellow-500/50 p-3 rounded-xl shadow-2xl text-yellow-50 w-56 backdrop-blur-md animate-in fade-in zoom-in duration-100 font-sans transition-all" style={{ top: modalPosition.top, left: modalPosition.left }}>
-                <div className="flex justify-between items-center mb-2 relative">
-                    <h3 className="text-xs font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600">
-                        {selectedStatusEntity.type === 'loot' || selectedStatusEntity.classType === 'Item' ? 'SAQUE' : 'STATUS'}
-                    </h3>
-                    <button onClick={() => setStatusSelectionId(null)} className="text-yellow-600 hover:text-white transition-colors text-base font-bold">✕</button>
-                </div>
-                
-                {selectedStatusEntity.type === 'loot' || selectedStatusEntity.classType === 'Item' ? (
-                    <div className="flex flex-col items-center gap-3">
-                        <div className="w-16 h-16 bg-black/50 rounded-lg border border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.2)] flex items-center justify-center p-2 relative overflow-hidden group">
-                            <div className="absolute inset-0 bg-yellow-500/10 blur-xl"></div>
-                            {selectedStatusEntity.image ? (<img src={selectedStatusEntity.image} alt="Item" className="w-full h-full object-contain relative z-10" />) : (<span className="text-3xl">🎁</span>)}
-                        </div>
-                        <div className="text-center w-full">
-                            <h2 className="text-sm font-black text-yellow-400 drop-shadow-sm truncate">{selectedStatusEntity.name}</h2>
-                        </div>
-                        <button onClick={() => handlePickUpLoot(selectedStatusEntity)} className="w-full py-2.5 bg-yellow-600/20 hover:bg-yellow-500/40 border border-yellow-500 text-yellow-100 font-black uppercase tracking-widest text-[10px] rounded transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg"><span>✋</span> Pegar Item</button>
-                        {role === 'DM' && (<p className="text-[8px] text-gray-500 text-center italic">(Vai para o Alvo selecionado)</p>)}
+                <div 
+                    className="fixed z-[500] bg-gradient-to-b from-slate-900/98 to-black border border-amber-500/40 p-4 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.9)] text-amber-50 w-64 backdrop-blur-2xl animate-in fade-in zoom-in duration-200 font-sans pointer-events-auto" 
+                    style={{ top: modalPosition.top, left: modalPosition.left }}
+                >
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-amber-500/50 to-transparent"></div>
+                    <div className="flex justify-between items-center mb-3 relative z-10">
+                        <h3 className="text-[10px] font-black tracking-[0.2em] text-amber-500 uppercase flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                            {selectedStatusEntity.type === 'loot' || selectedStatusEntity.classType === 'Item' ? 'Tesouro' : 'Status'}
+                        </h3>
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setStatusSelectionId(null);
+                            }} 
+                            className="w-6 h-6 flex items-center justify-center rounded-full bg-white/5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-all border border-white/10"
+                        >
+                            ✕
+                        </button>
                     </div>
-                ) : (
-                    <>
-                        <div className="flex gap-3 mb-4">
-                            <div onClick={() => role === 'DM' && setEditingEntity(selectedStatusEntity)} className={`w-16 h-16 rounded-lg border-2 border-cyan-400 overflow-hidden shrink-0 relative shadow-lg shadow-cyan-500/20 group ${role === 'DM' ? 'cursor-pointer' : ''}`}>
-                            {selectedStatusEntity.image ? (<img src={selectedStatusEntity.image} alt={selectedStatusEntity.name} className="w-full h-full object-cover" />) : (<div className="w-full h-full flex items-center justify-center font-bold text-xl" style={{ backgroundColor: selectedStatusEntity.color }}>{selectedStatusEntity.name[0]}</div>)}
-                            {role === 'DM' && (<div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-[10px] font-bold text-cyan-300 uppercase tracking-widest border border-cyan-300 px-1 rounded">Editar</span></div>)}
+                    
+                    {selectedStatusEntity.type === 'loot' || selectedStatusEntity.classType === 'Item' ? (
+                        <div className="flex flex-col items-center gap-4 relative z-10">
+                            <div className="w-24 h-24 relative flex items-center justify-center group">
+                                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(217,119,6,0.3)_0%,transparent_70%)] group-hover:scale-110 transition-transform duration-500"></div>
+                                {selectedStatusEntity.image ? (
+                                    <img src={selectedStatusEntity.image} alt={selectedStatusEntity.name} className="w-16 h-16 object-contain relative z-10 drop-shadow-[0_5px_10px_rgba(0,0,0,0.5)]" />
+                                ) : (
+                                    <span className="text-4xl relative z-10">🎁</span>
+                                )}
                             </div>
-                            <div className="flex flex-col justify-center gap-1 text-xs w-full">
-                            <div className="flex justify-between items-end border-b border-white/10 pb-1"><span className="text-cyan-400 font-bold uppercase tracking-wider text-[10px]">Nome</span><span className="font-bold truncate ml-1 text-white text-sm max-w-[140px]">{selectedStatusEntity.name}</span></div>
-                            <div className="flex justify-between items-end border-b border-white/10 pb-1"><span className="text-cyan-400 font-bold uppercase tracking-wider text-[10px]">Classe</span><span className="font-bold text-white text-xs">{selectedStatusEntity.classType || 'N/A'}</span></div>
-                            <div className="flex justify-between items-center bg-cyan-950/50 px-2 py-1 rounded border border-cyan-500/20 mt-1"><span className="text-cyan-400 font-bold text-[10px] uppercase">Nível</span><span className="font-black text-yellow-400 text-sm drop-shadow-sm">{getLevelFromXP(selectedStatusEntity.xp || 0)}</span></div>
-                            </div>
+                            <h2 className="text-sm font-black text-amber-100 text-center uppercase tracking-tight">{selectedStatusEntity.name}</h2>
+                            <button onClick={() => handlePickUpLoot(selectedStatusEntity)} className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-black font-black uppercase text-[10px] rounded-lg transition-all active:scale-95 border border-amber-400/50 shadow-lg">
+                                Recolher Saque
+                            </button>
                         </div>
-                        <div className="mb-4">
-                            <div className="flex justify-between text-[10px] font-bold mb-1 px-1 uppercase tracking-wider"><span className="text-cyan-400">Integridade</span><span className={selectedStatusEntity.hp < selectedStatusEntity.maxHp / 2 ? "text-red-400" : "text-cyan-100"}>{selectedStatusEntity.hp} / {selectedStatusEntity.maxHp}</span></div>
-                            <div className="w-full h-3 bg-gray-800 rounded border border-cyan-500/30 overflow-hidden relative shadow-inner"><div className={`h-full transition-all duration-300 relative ${selectedStatusEntity.hp <= selectedStatusEntity.maxHp * 0.25 ? 'bg-red-600' : selectedStatusEntity.hp <= selectedStatusEntity.maxHp * 0.5 ? 'bg-yellow-500' : 'bg-gradient-to-r from-cyan-500 to-blue-600'}`} style={{ width: `${Math.max(0, Math.min(100, (selectedStatusEntity.hp / selectedStatusEntity.maxHp) * 100))}%` }}></div></div>
-                        </div>
-                        {selectedStatusEntity.stats && (
-                            <div className="grid grid-cols-2 gap-2 text-xs bg-black/40 p-2 rounded-lg border border-cyan-500/20">
-                            {Object.entries(selectedStatusEntity.stats).map(([stat, value]) => {
-                                const mod = Math.floor((value - 10) / 2); const modStr = mod >= 0 ? `+${mod}` : `${mod}`; const labels: Record<string, string> = { str: 'FOR', dex: 'DES', con: 'CON', int: 'INT', wis: 'SAB', cha: 'CAR' };
-                                return (<div key={stat} className="flex justify-between items-center px-2 py-1.5 bg-cyan-900/20 rounded border border-white/5 hover:border-cyan-500/30 transition-colors"><span className="font-bold text-cyan-500 text-[10px] uppercase">{labels[stat]}</span><div className="flex gap-1.5 items-baseline"><span className="text-white font-bold">{value}</span><span className={`font-black text-[10px] ${mod > 0 ? 'text-green-400' : mod < 0 ? 'text-red-400' : 'text-gray-500'}`}>{modStr}</span></div></div>);
-                            })}
+                    ) : (
+                        <>
+                            <div className="flex gap-3 mb-4 items-center">
+                                <div onClick={() => role === 'DM' && setEditingEntity(selectedStatusEntity)} className={`w-14 h-14 rounded-lg border-2 border-cyan-400/50 overflow-hidden shrink-0 relative ${role === 'DM' ? 'cursor-pointer hover:border-cyan-400' : ''}`}>
+                                    {selectedStatusEntity.image ? <img src={selectedStatusEntity.image} alt={selectedStatusEntity.name} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-cyan-900" />}
+                                </div>
+                                <div className="overflow-hidden">
+                                    <div className="text-white font-bold text-sm truncate uppercase tracking-tighter">{selectedStatusEntity.name}</div>
+                                    <div className="text-cyan-400 text-[10px] font-black uppercase">{selectedStatusEntity.classType || 'N/A'}</div>
+                                </div>
                             </div>
-                        )}
-                    </>
-                )}
+                            <div className="space-y-3">
+                                <div>
+                                    <div className="flex justify-between text-[9px] font-black mb-1 uppercase tracking-widest text-cyan-500">
+                                        <span>Integridade</span>
+                                        <span>{selectedStatusEntity.hp}/{selectedStatusEntity.maxHp}</span>
+                                    </div>
+                                    <div className="w-full h-2 bg-gray-950 rounded-full border border-white/5 overflow-hidden">
+                                        <div className="h-full bg-gradient-to-r from-cyan-600 to-blue-500 transition-all duration-500" style={{ width: `${(selectedStatusEntity.hp / selectedStatusEntity.maxHp) * 100}%` }}></div>
+                                    </div>
+                                </div>
+                                {selectedStatusEntity.stats && (
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                        {Object.entries(selectedStatusEntity.stats).map(([stat, value]) => {
+                                            const mod = Math.floor((Number(value) - 10) / 2);
+                                            return (
+                                                <div key={stat} className="bg-white/5 border border-white/5 rounded p-1 text-center">
+                                                    <div className="text-[8px] text-gray-500 uppercase font-bold">{stat}</div>
+                                                    <div className="text-xs font-black text-white">{mod >= 0 ? `+${mod}` : mod}</div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
             
-            {showAllyCreator && (<EditEntityModal entity={{ id: 0, name: '', hp: 20, maxHp: 20, ac: 12, x:0, y:0, type: 'player', color: '', conditions: [], mirrored: false, size: 2, inventory: [] }} onSave={(id, updates) => handleSaveNewAlly(id, updates)} onClose={() => setShowAllyCreator(false)} />)}
+            {/* 👉 O EDIT ENTITY MODAL DO 'NOVO ALIADO' RECEBENDO AS RAÇAS */}
+            {showAllyCreator && (<EditEntityModal entity={{ id: 0, name: '', hp: 20, maxHp: 20, ac: 12, x:0, y:0, type: 'player', color: '', conditions: [], mirrored: false, size: 2, inventory: [] }} onSave={(id, updates) => handleSaveNewAlly(id, updates)} onClose={() => setShowAllyCreator(false)} availableClasses={availableClasses} availableSpells={availableSpells} availableItems={availableItems} availableRaces={availableRaces} />)}
             {showEnemyCreator && (<MonsterCreatorModal onSave={handleSaveNewEnemy} onSavePreset={handleSaveMonsterPreset} onClose={() => setShowEnemyCreator(false)} />)}
             {contextMenu && (<ContextMenu x={contextMenu.x} y={contextMenu.y} entity={contextMenu.entity} role={role} onClose={() => setContextMenu(null)} onAction={handleContextMenuAction} />)}
             
             <main className="relative flex-grow h-full overflow-hidden bg-black text-white">
                 <div className="absolute top-4 left-4 z-[150] pointer-events-none opacity-50"><span className={`text-[10px] font-bold px-2 py-1 rounded border ${role === 'DM' ? 'bg-red-900 border-red-500' : 'bg-blue-900 border-blue-500'}`}>{role === 'DM' ? 'Mestre Supremo' : `Jogador: ${playerName}`}</span></div>
-
                 <GameMap 
                     mapUrl={currentMap} gridSize={GRID_SIZE} entities={entities} role={role} fogGrid={fogGrid} isFogMode={isFogMode} fogTool={fogTool} activeTurnId={activeTurnId}
                     onFogUpdate={handleFogUpdate} onFogBulkUpdate={handleFogBulkUpdate} fogShape={fogShape}
                     onMoveToken={handleUpdatePosition} onAddToken={handleMapDrop} onRotateToken={handleRotateToken}
-                    
-                    onSelectEntity={(entity) => {
-                        if (!entity) return;
-                        if (entity.classType === 'Item' || entity.type === 'loot') {
-                            setStatusSelectionId(entity.id);
-                        }
-                    }} 
-
                     onResizeToken={handleResizeToken} 
-                    
-                    onTokenDoubleClick={(entity) => {
-                        if (entity.classType === 'Item' || entity.type === 'loot') {
-                            setStatusSelectionId(entity.id);
-                        } else {
-                            handleAddToInitiative(entity);
-                        }
-                    }} 
-
                     targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget}
                     onSetAttacker={handleSetAttacker} onFlipToken={handleFlipToken} activeAoE={activeAoE} onAoEComplete={() => setActiveAoE(null)} aoeColor={aoeColor} 
                     externalOffset={mapOffset} externalScale={mapScale} onMapChange={handleMapSync} focusEntity={focusEntity} globalBrightness={globalBrightness}
                     onDropItem={handleDropLootOnMap} onGiveItemToToken={handleGiveItemToToken} 
-                    
-                    onContextMenu={(e, entity) => { 
-                        if (entity.classType === 'Item' || entity.type === 'loot') {
-                            setStatusSelectionId(entity.id); 
-                        } else {
-                            setContextMenu({ x: e.clientX, y: e.clientY, entity }); 
-                        }
-                    }} 
                     pings={pings} onPing={handlePingMap}
+                    onSelectEntity={(entity) => { if (entity.classType === 'Item' || entity.type === 'loot') setStatusSelectionId(entity.id); }} 
+                    onTokenDoubleClick={(entity) => { if (entity.classType === 'Item' || entity.type === 'loot') setStatusSelectionId(entity.id); else handleAddToInitiative(entity); }} 
+                    onContextMenu={(e, entity) => { 
+                        e.preventDefault(); // 👉 FEITIÇO SECUNDÁRIO (Garantia extra)
+                        if (entity.classType === 'Item' || entity.type === 'loot') setStatusSelectionId(entity.id); 
+                        else setContextMenu({ x: e.clientX, y: e.clientY, entity }); 
+                    }} 
                 />
-                
                 <div className="fixed bottom-6 right-[450px] z-[130] pointer-events-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <button onClick={openDiceRoller} className="group relative flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-900 to-purple-900 rounded-full border-2 border-yellow-500 shadow-[0_0_20px_rgba(168,85,247,0.6)] hover:scale-110 transition-all duration-300" title="Rolar Dado (Estilo BG3)"><span className="text-3xl filter drop-shadow-md group-hover:rotate-12 transition-transform">🎲</span><div className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full text-[10px] flex items-center justify-center border border-white font-bold animate-pulse">!</div></button>
                 </div>
             </main>
-
             <aside className="w-auto flex-shrink-0 border-l border-rpgAccent/20 bg-rpgPanel shadow-2xl z-[140]">
                 {role === 'DM' 
                 ? <SidebarDM 
@@ -1040,6 +1079,10 @@ function App() {
                     onSyncFog={handleSyncFog} onResetFog={handleResetFog} onRevealAll={handleRevealAll} onSaveGame={handleSaveGame} onChangeMap={handleChangeMap} 
                     initiativeList={initiativeList} activeTurnId={activeTurnId} onAddToInitiative={handleAddToInitiative} onRemoveFromInitiative={handleRemoveFromInitiative} onNextTurn={handleNextTurn} onClearInitiative={handleClearInitiative} onSortInitiative={handleSortInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget} onToggleCondition={handleToggleCondition} onSetAttacker={handleSetAttacker} activeAoE={activeAoE} onSetAoE={setActiveAoE} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} aoeColor={aoeColor} onSetAoEColor={setAoEColor} onOpenCreator={(type) => { if (type === 'player') setShowAllyCreator(true); if (type === 'enemy') setShowEnemyCreator(true); }} onAddXP={handleAddXP} customMonsters={customMonsters} globalBrightness={globalBrightness} onSetGlobalBrightness={handleUpdateGlobalBrightness} onRequestRoll={handleDmRequestRoll} onToggleVisibility={handleToggleVisibility} currentTrack={currentTrack} onPlayMusic={handlePlayMusic} onStopMusic={handleStopMusic} onPlaySFX={handlePlaySFX} audioVolume={audioVolume} onSetAudioVolume={setAudioVolume} onResetView={handleResetView} onGiveItem={handleGiveItem} onApplyDamageFromChat={handleApplyDamageFromChat} onDMRoll={handleDMRoll} 
                     onLongRest={handleLongRest} 
+                    
+                    availableSpells={availableSpells} 
+                    availableItems={availableItems}
+                    availableRaces={availableRaces} // 👉 REPASSANDO PARA A SIDEBAR
                     /> 
                 : <SidebarPlayer entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name === playerName)?.id || 0} initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} onSelectEntity={(entity) => { setFocusEntity(entity); setTimeout(() => setFocusEntity(null), 100); }} onApplyDamageFromChat={handleApplyDamageFromChat} />
                 }

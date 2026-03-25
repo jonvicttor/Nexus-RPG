@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Heart, Sword, Backpack, Dices, Circle, CheckCircle2, Star, Skull, Flame, MessageSquare, Send, Coins, Scale, Trash2 } from 'lucide-react';
+import { Shield, Heart, Sword, Backpack, Dices, Circle, CheckCircle2, Star, Skull, Flame, MessageSquare, Send, Coins, Scale, Trash2, ArrowDown } from 'lucide-react';
 import { Entity } from '../App';
 import Chat, { ChatMessage } from './Chat';
 
@@ -12,6 +12,7 @@ interface MobileSheetProps {
     chatMessages: ChatMessage[];
     onSendMessage: (text: string) => void;
     onApplyDamageFromChat: (targetId: number, damageExpression: string) => void;
+    onDropItem?: (itemId: string) => void; // 👉 NOVA PROP ADICIONADA!
 }
 
 const SKILLS = [
@@ -32,13 +33,12 @@ const SAVING_THROWS = [
     { name: 'Sabedoria', attr: 'wis' }, { name: 'Carisma', attr: 'cha' }
 ];
 
-export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribute, onOpenDiceRoller, onUpdateCharacter, chatMessages, onSendMessage, onApplyDamageFromChat }: MobileSheetProps) {
+export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribute, onOpenDiceRoller, onUpdateCharacter, chatMessages, onSendMessage, onApplyDamageFromChat, onDropItem }: MobileSheetProps) {
     const [activeTab, setActiveTab] = useState<'STATUS' | 'ACTIONS' | 'SPELLS' | 'INVENTORY' | 'CHAT'>('STATUS');
     
     const [unreadMessages, setUnreadMessages] = useState(false);
     const lastMessageCount = useRef(chatMessages.length);
 
-    // Estados para o formulário de Magias
     const [newSpellName, setNewSpellName] = useState('');
     const [newSpellLevel, setNewSpellLevel] = useState(1);
 
@@ -63,7 +63,6 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
     const getMod = (val: number) => Math.floor((val - 10) / 2);
     const formatMod = (mod: number) => mod >= 0 ? `+${mod}` : `${mod}`;
 
-    // --- CÁLCULO DE PESO E RIQUEZA ---
     const totalWeight = (character.inventory || []).reduce((acc, item) => acc + (item.weight || 0) * item.quantity, 0);
     const maxWeight = ((character.stats as any)?.str || 10) * 7.5;
     const weightPercent = Math.min(100, (totalWeight / maxWeight) * 100);
@@ -124,7 +123,6 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
         }
     };
 
-    // --- NOVA LÓGICA DE MAGIAS ---
     const handleAddSpell = (e: React.FormEvent) => {
         e.preventDefault();
         if (!newSpellName.trim()) return;
@@ -173,9 +171,9 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
         }
         if (action === 'toggle_used' && slotIndex !== undefined) {
              if (newUsed === slotIndex + 1) {
-                 newUsed--; // Desmarcar
+                 newUsed--; 
              } else {
-                 newUsed = slotIndex + 1; // Marcar até aqui
+                 newUsed = slotIndex + 1; 
              }
         }
 
@@ -185,10 +183,32 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
     };
 
     const toggleEquip = (itemId: string) => {
-        const newInventory = character.inventory?.map(item => 
-            item.id === itemId ? { ...item, isEquipped: !item.isEquipped } : item
-        ) || [];
-        onUpdateCharacter(character.id, { inventory: newInventory });
+        let newAC = character.ac;
+        
+        const newInventory = character.inventory?.map(item => {
+            if (item.id === itemId) {
+                const willEquip = !item.isEquipped;
+                
+                // 👉 LÓGICA DE CLASSE DE ARMADURA AUTOMÁTICA
+                if (item.type === 'armor' && item.stats?.armorClass) {
+                    if (willEquip) {
+                        newAC = item.stats.armorClass; 
+                        onSendMessage(`🛡️ **${character.name}** vestiu **${item.name}** (CA alterada para ${newAC}).`);
+                    } else {
+                        // Se desequipar, tenta achar a próxima armadura ou volta pro base 10 + DEX
+                        newAC = 10 + getMod((character.stats as any)?.dex || 10);
+                        onSendMessage(`👕 **${character.name}** removeu **${item.name}** (CA voltou para ${newAC}).`);
+                    }
+                }
+                return { ...item, isEquipped: willEquip };
+            } else if (item.type === 'armor') {
+                // Desequipa outras armaduras automaticamente
+                return { ...item, isEquipped: false }; 
+            }
+            return item;
+        }) || [];
+        
+        onUpdateCharacter(character.id, { inventory: newInventory, ac: newAC });
     };
 
     const ProfBubble = ({ level }: { level: number }) => {
@@ -513,7 +533,6 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                     {activeTab === 'INVENTORY' && (
                         <div className="space-y-6 animate-in fade-in duration-300">
                              
-                             {/* PAINEL DE TESOURO E PESO */}
                              <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-3 shadow-md">
                                 <div className="flex justify-between items-center mb-3">
                                     <h3 className="text-[10px] uppercase font-bold text-yellow-500 tracking-widest flex items-center gap-1.5">
@@ -560,11 +579,30 @@ export default function MobilePlayerSheet({ character, onUpdateHP, onRollAttribu
                                             <div className="flex-grow"><p className="text-sm font-bold text-white leading-tight">{item.name}</p><p className="text-[10px] text-gray-400 line-clamp-2">{item.description}</p></div>
                                             <div className="flex flex-col items-end gap-1">
                                               {item.quantity > 1 && <span className="text-[10px] bg-gray-700 text-white font-bold px-2 py-0.5 rounded">x{item.quantity}</span>}
-                                              {(item.type === 'weapon' || item.type === 'armor') && (
-                                                <button onClick={() => toggleEquip(item.id)} className={`text-[9px] px-2 py-1 rounded font-bold uppercase tracking-wider transition-all active:scale-95 ${item.isEquipped ? 'bg-amber-600 text-black' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
-                                                  {item.isEquipped ? 'Equipado' : 'Equipar'}
-                                                </button>
-                                              )}
+                                              
+                                              <div className="flex gap-1 mt-1">
+                                                  {/* 👉 NOVO: BOTÃO DE LARGAR ITEM */}
+                                                  {onDropItem && (
+                                                      <button 
+                                                          onClick={() => {
+                                                              if (window.confirm(`Deseja largar ${item.name} no chão?`)) {
+                                                                  onDropItem(item.id);
+                                                              }
+                                                          }}
+                                                          className="text-[9px] px-2 py-1 rounded font-bold uppercase tracking-wider transition-all active:scale-95 bg-red-900/30 text-red-400 hover:bg-red-800 hover:text-white border border-red-900/50"
+                                                          title="Largar no chão"
+                                                      >
+                                                          <ArrowDown size={12} className="inline-block" /> Largar
+                                                      </button>
+                                                  )}
+
+                                                  {(item.type === 'weapon' || item.type === 'armor') && (
+                                                      <button onClick={() => toggleEquip(item.id)} className={`text-[9px] px-2 py-1 rounded font-bold uppercase tracking-wider transition-all active:scale-95 ${item.isEquipped ? 'bg-amber-600 text-black' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                                                        {item.isEquipped ? 'Equipado' : 'Equipar'}
+                                                      </button>
+                                                  )}
+                                              </div>
+
                                             </div>
                                         </div>
                                     ))}

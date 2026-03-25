@@ -9,7 +9,7 @@ import SkillList from './SkillList';
 import ItemCreator from './ItemCreator';
 import Scratchpad from './Scratchpad'; 
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
-import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent } from 'lucide-react'; // 👉 Importado o ícone Tent
+import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent } from 'lucide-react'; 
 
 export interface InitiativeItem { id: number; name: string; value: number; }
 
@@ -88,7 +88,10 @@ interface SidebarDMProps {
   onGiveItem: (targetId: number, item: any) => void;
   onApplyDamageFromChat: (targetId: number, damageExpression: string) => void;
   onDMRoll: (title: string, subtitle: string, mod: number, rollType?: 'normal' | 'advantage' | 'disadvantage') => void;
-  onLongRest: () => void; // 👉 PROP DECLARADA!
+  onLongRest: () => void; 
+  availableSpells?: any[]; 
+  availableItems?: any[]; 
+  availableRaces?: any[]; // 👉 ADICIONADO AQUI
 }
 
 const AoEColorPicker = ({ selected, onSelect }: { selected: string, onSelect: (c: string) => void }) => {
@@ -290,7 +293,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   onOpenCreator, onAddXP, customMonsters, globalBrightness = 1, onSetGlobalBrightness, onRequestRoll, onToggleVisibility,
   currentTrack, onPlayMusic, onStopMusic, onPlaySFX, audioVolume, onSetAudioVolume,
   onResetView, onGiveItem, onApplyDamageFromChat,
-  onDMRoll, onLongRest
+  onDMRoll, onLongRest, availableSpells, availableItems, availableRaces // 👉 ADICIONADO AQUI
 }) => {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>('combat');
@@ -358,7 +361,8 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
 
   return (
     <>
-      {editingEntity && (<EditEntityModal entity={editingEntity} onSave={onEditEntity} onClose={() => setEditingEntity(null)} />)}
+      {/* 👉 O EDIT ENTITY MODAL RECEBE AS RAÇAS */}
+      {editingEntity && (<EditEntityModal entity={editingEntity} onSave={onEditEntity} onClose={() => setEditingEntity(null)} availableSpells={availableSpells} availableItems={availableItems} availableRaces={availableRaces} />)}
       
       {pendingSkillRequest && targetEntity && (
           <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPendingSkillRequest(null)}>
@@ -440,7 +444,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                         </div>
                     )}
 
-                    {/* 👉 MUDANÇA AQUI: O botão de Descanso Longo entra na aba Campanha! */}
                     {activeTab === 'campaign' && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-6">
                             <CampaignManager />

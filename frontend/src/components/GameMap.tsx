@@ -77,11 +77,12 @@ const GameMap: React.FC<GameMapProps> = (props) => {
 
     const [isMeasuring, setIsMeasuring] = useState(false);
     const [rulerStart, setRulerStart] = useState<{ x: number, y: number } | null>(null);
-    const rulerLineRef = useRef<SVGLineElement>(null);
-    const rulerTextRef = useRef<SVGTextElement>(null);
+    const [rulerEnd, setRulerEnd] = useState<{ x: number, y: number, distance: number, isCapped: boolean } | null>(null);
     
-    // 👉 ESTADOS DA NAVEGAÇÃO MÁGICA
-    const isMPressed = useRef(false);
+    // 👉 ESTADOS DAS TECLAS
+    const [isRulerKeyHeld, setIsRulerKeyHeld] = useState(false);
+    const isMeasuringMode = useRef<'free' | 'movement' | null>(null);
+
     const isSpacePressed = useRef(false);
     const isPanning = useRef(false);
     const panStartPos = useRef({ x: 0, y: 0 });
@@ -99,7 +100,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         id: string; 
     } | null>(null);
 
-    // 👉 LOOP DO MOTOR DE CÂMERA (WASD / Setas)
     const updateCameraLoop = useCallback(() => {
         if (activeKeys.current.size > 0 && !isFogMode) {
             setOffset(prev => {
@@ -196,7 +196,15 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
             const key = e.key.toLowerCase();
             
-            if (key === 'm') isMPressed.current = true;
+            if (key === 'm' && !isMeasuringMode.current) { 
+                isMeasuringMode.current = 'free'; 
+                setIsRulerKeyHeld(true);
+            }
+            if (key === 'n' && !isMeasuringMode.current) { 
+                isMeasuringMode.current = 'movement'; 
+                setIsRulerKeyHeld(true);
+            }
+
             if (key === ' ') {
                 e.preventDefault(); 
                 isSpacePressed.current = true;
@@ -214,6 +222,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 if (isMeasuring) {
                     setIsMeasuring(false);
                     setRulerStart(null);
+                    setRulerEnd(null);
                 }
             }
 
@@ -229,11 +238,13 @@ const GameMap: React.FC<GameMapProps> = (props) => {
 
         const handleGlobalKeyUp = (e: KeyboardEvent) => {
             const key = e.key.toLowerCase();
-            if (key === 'm') {
-                isMPressed.current = false;
+            if ((key === 'm' || key === 'n')) {
+                isMeasuringMode.current = null;
+                setIsRulerKeyHeld(false);
                 if (isMeasuring) {
                     setIsMeasuring(false);
                     setRulerStart(null);
+                    setRulerEnd(null);
                 }
             }
             if (key === ' ') {
@@ -321,7 +332,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         isMapMouseDown.current = true;
         mapMouseDownPos.current = { x: e.clientX, y: e.clientY };
 
-        if (isMPressed.current && e.button === 0) { 
+        if (isMeasuringMode.current !== null && e.button === 0) { 
             const rect = containerRef.current?.getBoundingClientRect();
             if (!rect) return;
             const mouseX = e.clientX - rect.left;
@@ -329,6 +340,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             
             setIsMeasuring(true);
             setRulerStart({ x: mouseX, y: mouseY });
+            setRulerEnd({ x: mouseX, y: mouseY, distance: 0, isCapped: false });
         }
     };
 
@@ -345,24 +357,39 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             return;
         }
 
-        if (isMeasuring && rulerStart && rulerLineRef.current) {
+        if (isMeasuring && rulerStart) {
             const rect = containerRef.current?.getBoundingClientRect();
             if (!rect) return;
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
             
-            rulerLineRef.current.setAttribute('x2', mouseX.toString());
-            rulerLineRef.current.setAttribute('y2', mouseY.toString());
+            const dx = mouseX - rulerStart.x;
+            const dy = mouseY - rulerStart.y;
+            const rawDistancePx = Math.hypot(dx, dy);
+            
+            const distSquares = rawDistancePx / (gridSize * scale);
+            const currentMeters = distSquares * 1.5;
+            
+            let finalX = mouseX;
+            let finalY = mouseY;
+            let isCapped = false;
 
-            if (rulerTextRef.current) {
-                const distPx = Math.hypot(mouseX - rulerStart.x, mouseY - rulerStart.y);
-                const distSquares = distPx / (gridSize * scale);
-                const distMeters = (distSquares * 1.5).toFixed(1); 
+            if (isMeasuringMode.current === 'movement' && currentMeters > 9) {
+                isCapped = true;
+                const maxSquares = 9 / 1.5; 
+                const maxPx = maxSquares * (gridSize * scale);
                 
-                rulerTextRef.current.setAttribute('x', (mouseX + 15).toString());
-                rulerTextRef.current.setAttribute('y', (mouseY + 20).toString());
-                rulerTextRef.current.textContent = `${distMeters}m`;
+                const angle = Math.atan2(dy, dx);
+                finalX = rulerStart.x + Math.cos(angle) * maxPx;
+                finalY = rulerStart.y + Math.sin(angle) * maxPx;
             }
+
+            setRulerEnd({ 
+                x: finalX, 
+                y: finalY, 
+                distance: isCapped ? 9.0 : currentMeters, 
+                isCapped 
+            });
         }
     };
 
@@ -376,6 +403,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         if (isMeasuring) {
             setIsMeasuring(false);
             setRulerStart(null);
+            setRulerEnd(null);
         }
 
         if (!isMapMouseDown.current) return;
@@ -469,6 +497,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp} 
+            onContextMenu={(e) => e.preventDefault()} /* 👉 O FEITIÇO SUPREMO: BLOQUEIA O MENU DO NAVEGADOR NO MAPA TODO */
         >
             <CanvasMap 
                 mapUrl={mapUrl}
@@ -541,70 +570,81 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 );
             })()}
 
-            {isMeasuring && rulerStart && (
+            {isMeasuring && rulerStart && rulerEnd && (
                 <svg className="absolute inset-0 w-full h-full pointer-events-none z-[150]">
                     <line 
-                        ref={rulerLineRef}
                         x1={rulerStart.x} y1={rulerStart.y} 
-                        x2={rulerStart.x} y2={rulerStart.y} 
-                        stroke="yellow" strokeWidth="3" strokeDasharray="6,4" 
-                        className="drop-shadow-[0_0_2px_black]"
+                        x2={rulerEnd.x} y2={rulerEnd.y} 
+                        stroke={rulerEnd.isCapped ? "red" : "yellow"} 
+                        strokeWidth="3" 
+                        strokeDasharray="6,4" 
+                        className="drop-shadow-[0_0_2px_black] transition-colors"
                     />
                     <text 
-                        ref={rulerTextRef}
-                        x={rulerStart.x + 15} y={rulerStart.y + 20} 
-                        fill="yellow" fontSize="16" fontWeight="900"
-                        className="drop-shadow-[0_0_4px_black] font-mono"
+                        x={rulerEnd.x + 15} y={rulerEnd.y + 20} 
+                        fill={rulerEnd.isCapped ? "red" : "yellow"} 
+                        fontSize="16" fontWeight="900"
+                        className="drop-shadow-[0_0_4px_black] font-mono transition-colors"
                     >
-                        0m
+                        {rulerEnd.distance.toFixed(1)}m
                     </text>
                 </svg>
             )}
 
-            <TokenLayer 
-                entities={entities}
-                gridSize={gridSize}
-                offset={offset}
-                scale={scale}
-                role={role}
-                activeTurnId={activeTurnId}
-                attackerId={attackerId}
-                targetEntityIds={targetEntityIds}
-                onMoveToken={onMoveToken}
-                
-                onSelectToken={(entity, multi) => {
-                    if (!entity) return; 
-                    if (entity.classType === 'Item' || entity.type === 'loot') {
-                        onSelectEntity(entity, 0, 0); 
-                        return; 
+            {isRulerKeyHeld && (
+                <style>{`
+                    .token-layer-container * {
+                        pointer-events: none !important;
                     }
+                `}</style>
+            )}
+            
+            <div className="token-layer-container absolute inset-0 z-[100]" style={{ pointerEvents: isRulerKeyHeld ? 'none' : 'auto' }}>
+                <TokenLayer 
+                    entities={entities}
+                    gridSize={gridSize}
+                    offset={offset}
+                    scale={scale}
+                    role={role}
+                    activeTurnId={activeTurnId}
+                    attackerId={attackerId}
+                    targetEntityIds={targetEntityIds}
+                    onMoveToken={onMoveToken}
                     
-                    // 👉 LÓGICA DE ATACANTE
-                    if (attackerId === entity.id) {
-                        onSetAttacker(null); 
-                    } else {
-                        onSetAttacker(entity.id); 
-                    }
-                }} 
-                
-                onTokenDoubleClick={(entity) => {
-                    if (entity.classType === 'Item' || entity.type === 'loot') {
-                        onSelectEntity(entity, 0, 0); 
-                    } else {
-                        onTokenDoubleClick(entity);
-                    }
-                }} 
+                    onSelectToken={(entity) => {
+                        if (!entity) return; 
+                        if (entity.classType === 'Item' || entity.type === 'loot') {
+                            onSelectEntity(entity, 0, 0); 
+                            return; 
+                        }
+                        
+                        if (attackerId === entity.id) {
+                            onSetAttacker(null); 
+                        } else {
+                            onSetAttacker(entity.id); 
+                        }
+                    }} 
+                    
+                    onTokenDoubleClick={(entity) => {
+                        if (entity.classType === 'Item' || entity.type === 'loot') {
+                            onSelectEntity(entity, 0, 0); 
+                        } else {
+                            onTokenDoubleClick(entity);
+                        }
+                    }} 
 
-                onTokenContextMenu={(e, entity) => { 
-                    if (entity.classType === 'Item' || entity.type === 'loot') {
-                        onSelectEntity(entity, 0, 0); 
-                    } else if (onContextMenu) {
-                        onContextMenu(e, entity); 
-                    }
-                }} 
-                
-                onGiveItemToToken={onGiveItemToToken || (() => {})} 
-            />
+                    onTokenContextMenu={(e, entity) => { 
+                        e.preventDefault(); // 👉 FEITIÇO SECUNDÁRIO: BLOQUEIA O MENU NO TOKEN
+                        if (entity.classType === 'Item' || entity.type === 'loot') {
+                            onSelectEntity(entity, 0, 0); 
+                        } else if (onContextMenu) {
+                            onContextMenu(e, entity); 
+                        }
+                    }} 
+                    
+                    onGiveItemToToken={onGiveItemToToken || (() => {})} 
+                />
+            </div>
             
             <div className="absolute top-4 right-4 z-[250] flex flex-col items-end">
                 {isFogMode && (
@@ -644,9 +684,14 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                                 <span className="font-medium">Sinalizar no Mapa</span> 
                                 <kbd className="bg-white/10 border border-white/5 px-2 py-0.5 rounded text-cyan-300 text-[10px] font-mono shadow-inner">Alt + Clique</kbd>
                             </li>
+
                             <li className="flex justify-between items-center">
-                                <span className="font-medium">Régua (Medir)</span> 
+                                <span className="font-medium">Medir (Livre)</span> 
                                 <kbd className="bg-white/10 border border-white/5 px-2 py-0.5 rounded text-cyan-300 text-[10px] font-mono shadow-inner">Segure 'M' + Arraste</kbd>
+                            </li>
+                            <li className="flex justify-between items-center">
+                                <span className="font-medium text-yellow-400">Deslocamento (9m)</span> 
+                                <kbd className="bg-yellow-900/30 border border-yellow-500/30 px-2 py-0.5 rounded text-yellow-300 text-[10px] font-mono shadow-inner">Segure 'N' + Arraste</kbd>
                             </li>
                             
                             <li className="flex justify-between items-center mt-3 pt-3 border-t border-white/5">

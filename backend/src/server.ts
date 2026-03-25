@@ -2,6 +2,11 @@ import Fastify from 'fastify';
 import { Server } from 'socket.io';
 import fs from 'fs';
 import path from 'path';
+import { MonsterImporter, NexusMonster } from './utils/MonsterImporter'; 
+import { ClassImporter } from './utils/ClassImporter'; 
+import { SpellImporter } from './utils/SpellImporter'; 
+import { ItemImporter } from './utils/ItemImporter'; 
+import { RaceImporter } from './utils/RaceImporter'; // 👉 IMPORTADO O MESTRE DAS RAÇAS
 
 const fastify = Fastify();
 
@@ -13,16 +18,23 @@ const io = new Server(fastify.server, {
     origin: "*", 
     methods: ["GET", "POST"] 
   },
-  maxHttpBufferSize: 50 * 1024 * 1024 // 50MB para mapas grandes
+  maxHttpBufferSize: 50 * 1024 * 1024 
 });
 
-// --- 1. CONFIGURAÇÃO DO MAPA ---
+// --- 1. CONFIGURAÇÃO DO MAPA E IMPORTAÇÃO DO LIVRO ---
 const MAP_LIMIT = 8000; 
 const GRID_SIZE = 70;
 const COLS = Math.ceil(MAP_LIMIT / GRID_SIZE);
 const ROWS = Math.ceil(MAP_LIMIT / GRID_SIZE);
 
 const createInitialFog = (): boolean[][] => Array(ROWS).fill(null).map(() => Array(COLS).fill(false));
+
+// 👉 CARREGA TODOS OS RECURSOS DO 5ETOOLS ASSIM QUE O SERVIDOR LIGA
+const FULL_CLASSES = ClassImporter.loadClasses();
+const FULL_BESTIARY = MonsterImporter.loadBestiary();
+const FULL_SPELLS = SpellImporter.loadSpells();
+const FULL_ITEMS = ItemImporter.loadItems(); 
+const FULL_RACES = RaceImporter.loadRaces(); // 👉 CARREGA AS RAÇAS
 
 // --- 2. ESTADO INICIAL ---
 interface GameState {
@@ -33,22 +45,25 @@ interface GameState {
   activeTurnId: number | null;
   chatHistory: any[];
   customMonsters: any[];    
+  availableClasses: any[]; 
+  availableSpells: any[]; 
+  availableItems: any[]; 
+  availableRaces: any[]; // 👉 NOVO: O frontend precisa saber quais raças existem!
   globalBrightness: number; 
   weather: 'none' | 'rain' | 'snow';
-  currentTrack: string | null; // 👉 NOVO: O Servidor agora lembra qual música está a tocar!
+  currentTrack: string | null; 
 }
 
-// 👉 Cria um caminho de ficheiro único baseado no nome da sala
 const getSaveFilePath = (roomId: string) => {
     const safeRoomId = roomId.replace(/[^a-z0-9-]/gi, '_');
     return path.join(process.cwd(), `savegame_${safeRoomId}.json`);
 };
 
-// Gestão de estado por Sala
 let roomsState: Record<string, GameState> = {}; 
 
 const getRoomState = (roomId: string): GameState => {
     if (!roomsState[roomId]) {
+        // 👉 A SALA NASCE AGORA COM AS RAÇAS EMBUTIDAS!
         roomsState[roomId] = {
             entities: [], 
             fogGrid: createInitialFog(), 
@@ -56,7 +71,11 @@ const getRoomState = (roomId: string): GameState => {
             initiativeList: [],
             activeTurnId: null,
             chatHistory: [],
-            customMonsters: [],    
+            customMonsters: FULL_BESTIARY,
+            availableClasses: FULL_CLASSES, 
+            availableSpells: FULL_SPELLS, 
+            availableItems: FULL_ITEMS, 
+            availableRaces: FULL_RACES, // 👉 INJEÇÃO DAS RAÇAS AQUI
             globalBrightness: 1,
             weather: 'none',
             currentTrack: null
@@ -67,10 +86,18 @@ const getRoomState = (roomId: string): GameState => {
              try {
                 const rawData = fs.readFileSync(saveFile, 'utf-8');
                 const loadedData = JSON.parse(rawData);
+                
+                const savedCustomMonsters = loadedData.customMonsters || [];
+                const mergedMonsters = [...FULL_BESTIARY, ...savedCustomMonsters.filter((sm: any) => !FULL_BESTIARY.some(bm => bm.name === sm.name))];
+
                 roomsState[roomId] = { 
                     ...roomsState[roomId], 
                     ...loadedData,
-                    customMonsters: loadedData.customMonsters || [],
+                    customMonsters: mergedMonsters, 
+                    availableClasses: FULL_CLASSES, 
+                    availableSpells: FULL_SPELLS, 
+                    availableItems: FULL_ITEMS, 
+                    availableRaces: FULL_RACES, // 👉 FORÇA AS RAÇAS ATUALIZADAS MESMO EM SAVES ANTIGOS
                     weather: loadedData.weather || 'none',
                     currentTrack: loadedData.currentTrack || null
                 };
@@ -146,7 +173,7 @@ io.on('connection', (socket) => {
         initiativeList: data.initiativeList,
         activeTurnId: data.activeTurnId,
         chatHistory: data.chatMessages || [],
-        customMonsters: data.customMonsters || [],
+        customMonsters: (data.customMonsters || []).filter((cm: any) => !FULL_BESTIARY.some((bm) => bm.name === cm.name)),
         globalBrightness: data.globalBrightness,
         weather: data.weather || roomState.weather,
         currentTrack: data.currentTrack || roomState.currentTrack
@@ -228,15 +255,13 @@ io.on('connection', (socket) => {
     socket.to(data.roomId).emit('initiativeUpdated', data);
   });
 
-  // --- 🔊 A MÁGICA DOS SONS AQUI ---
   socket.on('playSFX', (data: any) => {
-      // Quando alguém pede para tocar um SFX (espada, magia, dado), repassa para TODOS os outros na sala!
       socket.to(data.roomId).emit('playSFX', { sfxId: data.sfxId });
   });
 
   socket.on('playMusic', (data: any) => {
       const roomState = getRoomState(data.roomId);
-      roomState.currentTrack = data.trackId; // Servidor memoriza a música
+      roomState.currentTrack = data.trackId; 
       socket.to(data.roomId).emit('playMusic', { trackId: data.trackId });
   });
 
@@ -246,7 +271,6 @@ io.on('connection', (socket) => {
       socket.to(data.roomId).emit('stopMusic');
   });
 
-  // --- CHAT, DADOS E OUTROS ---
   socket.on('sendMessage', (data: any) => {
     const roomState = getRoomState(data.roomId);
     roomState.chatHistory.push(data.message);
