@@ -79,16 +79,12 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     const [rulerStart, setRulerStart] = useState<{ x: number, y: number } | null>(null);
     const [rulerEnd, setRulerEnd] = useState<{ x: number, y: number, distance: number, isCapped: boolean } | null>(null);
     
-    // 👉 ESTADOS DAS TECLAS
     const [isRulerKeyHeld, setIsRulerKeyHeld] = useState(false);
     const isMeasuringMode = useRef<'free' | 'movement' | null>(null);
 
-    const isSpacePressed = useRef(false);
     const isPanning = useRef(false);
     const panStartPos = useRef({ x: 0, y: 0 });
     const offsetOnPanStart = useRef({ x: 0, y: 0 });
-    const activeKeys = useRef<Set<string>>(new Set());
-    const animationFrameId = useRef<number | null>(null);
     
     const isMapMouseDown = useRef(false);
     const mapMouseDownPos = useRef({ x: 0, y: 0 });
@@ -100,29 +96,14 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         id: string; 
     } | null>(null);
 
-    const updateCameraLoop = useCallback(() => {
-        if (activeKeys.current.size > 0 && !isFogMode) {
-            setOffset(prev => {
-                const moveSpeed = 15;
-                let dx = 0; let dy = 0;
-                
-                if (activeKeys.current.has('w') || activeKeys.current.has('arrowup')) dy += moveSpeed;
-                if (activeKeys.current.has('s') || activeKeys.current.has('arrowdown')) dy -= moveSpeed;
-                if (activeKeys.current.has('a') || activeKeys.current.has('arrowleft')) dx += moveSpeed;
-                if (activeKeys.current.has('d') || activeKeys.current.has('arrowright')) dx -= moveSpeed;
-                
-                const newOffset = { x: prev.x + dx, y: prev.y + dy };
-                if (role === 'DM' && onMapChange) onMapChange(newOffset, scale);
-                return newOffset;
-            });
-        }
-        animationFrameId.current = requestAnimationFrame(updateCameraLoop);
-    }, [isFogMode, role, scale, onMapChange]);
-
+    // Refs para acessar os valores atuais dentro dos event listeners sem closures antigas
+    const scaleRef = useRef(scale);
+    const offsetRef = useRef(offset);
+    
     useEffect(() => {
-        animationFrameId.current = requestAnimationFrame(updateCameraLoop);
-        return () => { if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current); };
-    }, [updateCameraLoop]);
+        scaleRef.current = scale;
+        offsetRef.current = offset;
+    }, [scale, offset]);
 
     useEffect(() => { targetIdsRef.current = targetEntityIds; }, [targetEntityIds]);
     useEffect(() => { attackerIdRef.current = attackerId; }, [attackerId]);
@@ -178,20 +159,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     }, [role, onMapChange]);
 
     useEffect(() => {
-        const container = containerRef.current;
-        if (!container) return;
-
-        const preventBrowserZoom = (e: WheelEvent) => {
-            if (e.ctrlKey || e.metaKey) {
-                e.preventDefault(); 
-            }
-        };
-
-        container.addEventListener('wheel', preventBrowserZoom, { passive: false });
-        return () => container.removeEventListener('wheel', preventBrowserZoom);
-    }, []);
-
-    useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
             const key = e.key.toLowerCase();
@@ -203,16 +170,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             if (key === 'n' && !isMeasuringMode.current) { 
                 isMeasuringMode.current = 'movement'; 
                 setIsRulerKeyHeld(true);
-            }
-
-            if (key === ' ') {
-                e.preventDefault(); 
-                isSpacePressed.current = true;
-                if (containerRef.current) containerRef.current.style.cursor = 'grab';
-            }
-            
-            if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
-                activeKeys.current.add(key);
             }
             
             if (e.key === 'Escape') {
@@ -247,20 +204,27 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                     setRulerEnd(null);
                 }
             }
-            if (key === ' ') {
-                isSpacePressed.current = false;
-                isPanning.current = false;
-                if (containerRef.current) containerRef.current.style.cursor = 'default';
-            }
-            
-            if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
-                activeKeys.current.delete(key);
-            }
         };
 
-        const handleGlobalWheel = (e: WheelEvent) => {
-            if (role !== 'DM') return;
+        window.addEventListener('keydown', handleGlobalKeyDown);
+        window.addEventListener('keyup', handleGlobalKeyUp);
+        
+        return () => { 
+            window.removeEventListener('keydown', handleGlobalKeyDown); 
+            window.removeEventListener('keyup', handleGlobalKeyUp); 
+        };
+    }, [role, entities, onFlipToken, isMeasuring, activeAoE, targetEntityIds, attackerId, onAoEComplete, onSetTarget, onSetAttacker]);
+
+    // 👉 ZOOM SUPREMO COM SCROLL NO MOUSE
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const handleWheel = (e: WheelEvent) => {
+            e.preventDefault(); 
+            
             if (e.shiftKey || e.altKey) {
+                if (role !== 'DM') return;
                 const primaryTarget = attackerIdRef.current !== null ? attackerIdRef.current : targetIdsRef.current[0];
                 if (!primaryTarget) return;
 
@@ -269,19 +233,45 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                     if (e.shiftKey) onRotateToken(primaryTarget, (entity.rotation || 0) + (e.deltaY > 0 ? 15 : -15));
                     if (e.altKey) onResizeToken(primaryTarget, parseFloat(Math.max(0.1, (entity.size || 1) + (e.deltaY > 0 ? -0.1 : 0.1)).toFixed(1)));
                 }
+                return;
+            }
+
+            const rect = container.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const currentScale = scaleRef.current;
+            const currentOffset = offsetRef.current;
+
+            // Determina onde o mouse está no "mundo real" do mapa antes do zoom
+            const worldX = (mouseX - currentOffset.x) / currentScale;
+            const worldY = (mouseY - currentOffset.y) / currentScale;
+
+            // Aplica o zoom
+            const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+            let newScale = currentScale * zoomFactor;
+            newScale = Math.min(Math.max(0.2, newScale), 5); // Aumentado o zoom in máximo para 5x
+
+            if (newScale === currentScale) return;
+
+            // Reposiciona o mapa para que o "mundo real" continue exatamente embaixo do ponteiro
+            const newOffsetX = mouseX - (worldX * newScale);
+            const newOffsetY = mouseY - (worldY * newScale);
+
+            const newOffset = { x: newOffsetX, y: newOffsetY };
+
+            setScale(newScale);
+            setOffset(newOffset);
+            
+            if (role === 'DM' && onMapChange) {
+                onMapChange(newOffset, newScale);
             }
         };
-        
-        window.addEventListener('wheel', handleGlobalWheel, { passive: false });
-        window.addEventListener('keydown', handleGlobalKeyDown);
-        window.addEventListener('keyup', handleGlobalKeyUp);
-        
-        return () => { 
-            window.removeEventListener('wheel', handleGlobalWheel); 
-            window.removeEventListener('keydown', handleGlobalKeyDown); 
-            window.removeEventListener('keyup', handleGlobalKeyUp); 
-        };
-    }, [role, entities, onRotateToken, onResizeToken, onFlipToken, isMeasuring, activeAoE, targetEntityIds, attackerId, onAoEComplete, onSetTarget, onSetAttacker]);
+
+        container.addEventListener('wheel', handleWheel, { passive: false });
+        return () => container.removeEventListener('wheel', handleWheel);
+    }, [role, entities, onRotateToken, onResizeToken, onMapChange]);
+
 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault(); 
@@ -318,7 +308,10 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     };
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        if ((isSpacePressed.current && e.button === 0) || e.button === 1) {
+        const isToolActive = isFogMode || activeAoE || isMeasuringMode.current !== null || e.altKey;
+
+        // Se usar qualquer botão e não houver ferramenta, arrasta o mapa
+        if (e.button === 1 || e.button === 2 || (e.button === 0 && !isToolActive)) {
             e.preventDefault();
             isPanning.current = true;
             panStartPos.current = { x: e.clientX, y: e.clientY };
@@ -348,10 +341,12 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         if (isPanning.current) {
             const dx = e.clientX - panStartPos.current.x;
             const dy = e.clientY - panStartPos.current.y;
-            const newOffset = { 
-                x: offsetOnPanStart.current.x + dx, 
-                y: offsetOnPanStart.current.y + dy 
+            
+            const newOffset = {
+                x: offsetOnPanStart.current.x + dx,
+                y: offsetOnPanStart.current.y + dy
             };
+
             setOffset(newOffset);
             if (role === 'DM' && onMapChange) onMapChange(newOffset, scale);
             return;
@@ -396,7 +391,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     const handleMouseUp = (e: React.MouseEvent) => {
         if (isPanning.current) {
             isPanning.current = false;
-            if (containerRef.current) containerRef.current.style.cursor = isSpacePressed.current ? 'grab' : 'default';
+            if (containerRef.current) containerRef.current.style.cursor = activeAoE ? 'crosshair' : (isFogMode ? 'cell' : 'grab');
             return;
         }
 
@@ -490,14 +485,14 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     return (
         <div 
             ref={containerRef}
-            className="w-full h-full bg-[#1a1a1a] overflow-hidden relative transition-colors"
+            className={`w-full h-full bg-[#1a1a1a] overflow-hidden relative transition-colors ${activeAoE ? 'cursor-crosshair' : (isFogMode ? 'cursor-cell' : 'cursor-grab')}`}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp} 
-            onContextMenu={(e) => e.preventDefault()} /* 👉 O FEITIÇO SUPREMO: BLOQUEIA O MENU DO NAVEGADOR NO MAPA TODO */
+            onContextMenu={(e) => e.preventDefault()} 
         >
             <CanvasMap 
                 mapUrl={mapUrl}
@@ -511,7 +506,9 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 onFogBulkUpdate={onFogBulkUpdate}
                 onFogUpdate={onFogUpdate}
                 onMapTransform={(newOff, newSc) => { 
-                    if(!isMeasuring && !isMapMouseDown.current && !isPanning.current) handleMapTransform(newOff, newSc) 
+                    if(!isMeasuring && !isMapMouseDown.current && !isPanning.current) {
+                        handleMapTransform(newOff, newSc);
+                    }
                 }}
                 activeAoE={activeAoE}
                 aoeColor={aoeColor}
@@ -634,7 +631,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                     }} 
 
                     onTokenContextMenu={(e, entity) => { 
-                        e.preventDefault(); // 👉 FEITIÇO SECUNDÁRIO: BLOQUEIA O MENU NO TOKEN
+                        e.preventDefault(); 
                         if (entity.classType === 'Item' || entity.type === 'loot') {
                             onSelectEntity(entity, 0, 0); 
                         } else if (onContextMenu) {
@@ -646,9 +643,9 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 />
             </div>
             
-            <div className="absolute top-4 right-4 z-[250] flex flex-col items-end">
+            <div className="absolute top-4 right-4 z-[250] flex flex-col items-end gap-3">
                 {isFogMode && (
-                    <div className="bg-yellow-900/80 border border-yellow-500 text-yellow-300 text-xs font-bold px-3 py-1.5 rounded-full shadow-lg mb-3">
+                    <div className="bg-yellow-900/80 border border-yellow-500 text-yellow-300 text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
                         Neblina: {fogTool === 'reveal' ? 'REVELAR' : 'ESCONDER'}
                     </div>
                 )}
@@ -676,8 +673,8 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                             <li className="flex justify-between items-center bg-white/5 p-2 rounded">
                                 <span className="font-medium text-cyan-200">Mover Câmera</span> 
                                 <div className="flex flex-col items-end gap-1">
-                                    <kbd className="bg-black/50 border border-white/10 px-2 py-0.5 rounded text-cyan-400 text-[10px] font-mono shadow-inner">W A S D</kbd>
-                                    <span className="text-[9px] text-gray-500 font-bold uppercase">ou Arrastar com 'Espaço'</span>
+                                    <kbd className="bg-black/50 border border-white/10 px-2 py-0.5 rounded text-cyan-400 text-[10px] font-mono shadow-inner text-center whitespace-nowrap">Clique + Arrastar</kbd>
+                                    <span className="text-[9px] text-gray-500 font-bold uppercase">(No fundo do mapa)</span>
                                 </div>
                             </li>
                             <li className="flex justify-between items-center">
@@ -711,7 +708,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                                 <>
                                     <li className="flex justify-between items-center mt-3 pt-3 border-t border-white/5">
                                         <span className="font-medium">Zoom no Mapa</span> 
-                                        <kbd className="bg-white/10 border border-white/5 px-2 py-0.5 rounded text-yellow-400 text-[10px] font-mono shadow-inner">Ctrl + Scroll</kbd>
+                                        <kbd className="bg-white/10 border border-white/5 px-2 py-0.5 rounded text-yellow-400 text-[10px] font-mono shadow-inner">Scroll do Mouse</kbd>
                                     </li>
                                     <li className="flex justify-between items-center">
                                         <span className="font-medium">Rotacionar Token</span> 

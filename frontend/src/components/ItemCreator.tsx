@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Package, Upload, Sword, Shield, FlaskConical, Coins, Gem, Search } from 'lucide-react';
+import React, { useState, useRef, useMemo } from 'react';
+import { Package, Upload, Sword, Shield, FlaskConical, Coins, Gem, Search, BookOpen, Weight, Sparkles } from 'lucide-react';
 import { Item } from '../App';
 
 interface ItemCreatorProps {
@@ -9,12 +9,23 @@ interface ItemCreatorProps {
 }
 
 const RARITY_COLORS: Record<string, string> = {
-  common: 'border-white/10 text-gray-400 bg-white/5',
-  uncommon: 'border-green-500/30 text-green-400 bg-green-500/10',
-  rare: 'border-blue-500/30 text-blue-400 bg-blue-500/10',
-  veryrare: 'border-purple-500/30 text-purple-400 bg-purple-500/10',
-  legendary: 'border-amber-500/30 text-amber-400 bg-amber-500/10',
-  artifact: 'border-red-500/30 text-red-400 bg-red-500/10'
+  common: 'border-white/20 text-gray-400 bg-white/5',
+  uncommon: 'border-green-500/50 text-green-400 bg-green-500/10',
+  rare: 'border-blue-500/50 text-blue-400 bg-blue-500/10',
+  veryrare: 'border-purple-500/50 text-purple-400 bg-purple-500/10',
+  legendary: 'border-amber-500/50 text-amber-400 bg-amber-500/10',
+  artifact: 'border-red-500/50 text-red-400 bg-red-500/10'
+};
+
+// 👉 TRADUTOR DE RARIDADE PARA PORTUGUÊS
+const RARITY_TRANSLATION: Record<string, string> = {
+  common: 'Comum',
+  uncommon: 'Incomum',
+  rare: 'Raro',
+  veryrare: 'M. Raro',
+  legendary: 'Lendário',
+  artifact: 'Artefato',
+  unknown: 'Desconhecido'
 };
 
 const ITEM_TYPES = [
@@ -24,8 +35,39 @@ const ITEM_TYPES = [
   { id: 'misc', label: 'Item Geral', icon: <Package size={16} /> },
 ];
 
+const COMPENDIUM_CATEGORIES = [
+    { id: 'all', label: 'Todos' },
+    { id: 'weapon', label: 'Armas' },
+    { id: 'armor', label: 'Armaduras' },
+    { id: 'potion', label: 'Poções' },
+    { id: 'wondrous', label: 'Mágicos' },
+    { id: 'gear', label: 'Equipamento' }
+];
+
+const formatValue = (val: any): string => {
+    if (val === undefined || val === null) return '';
+    if (typeof val === 'number') {
+        if (val >= 100 && val % 100 === 0) return `${val / 100} PO`;
+        if (val >= 10 && val % 10 === 0) return `${val / 10} PP`;
+        return `${val} PC`;
+    }
+    return String(val);
+};
+
+const formatEntries = (entries: any): string => {
+    if (!entries) return '';
+    if (typeof entries === 'string') return entries.replace(/{@\w+ (.*?)(?:\|.*?)?}/g, '$1'); 
+    if (Array.isArray(entries)) return entries.map(e => formatEntries(e)).filter(Boolean).join('\n\n');
+    if (typeof entries === 'object') {
+        if (entries.entries) return formatEntries(entries.entries);
+        if (entries.items) return formatEntries(entries.items);
+        if (entries.text) return formatEntries(entries.text);
+        return '';
+    }
+    return '';
+};
+
 const ItemCreator: React.FC<ItemCreatorProps> = ({ onCreateItem, targetName, availableItems = [] }) => {
-  // 👉 AGORA TEMOS 3 ABAS
   const [mode, setMode] = useState<'compendium' | 'forge' | 'treasure'>('compendium');
 
   const [name, setName] = useState('');
@@ -43,30 +85,99 @@ const ItemCreator: React.FC<ItemCreatorProps> = ({ onCreateItem, targetName, ava
   const [copper, setCopper] = useState('');
   
   const [itemSearch, setItemSearch] = useState(''); 
+  const [filterCategory, setFilterCategory] = useState('all'); 
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
 
-  // 👉 SE NÃO TIVER BUSCA, MOSTRA OS PRIMEIROS 40 ITENS. SE TIVER, FILTRA E MOSTRA ATÉ 40.
-  const filteredItems = availableItems
-    .filter(i => itemSearch.trim() === '' ? true : i.name.toLowerCase().includes(itemSearch.toLowerCase()))
-    .slice(0, 40);
+  const getCompendiumItemImage = (compItem: any) => {
+      let imgUrl = compItem.image || '';
+      
+      if (!imgUrl && compItem.name && compItem.source) {
+          imgUrl = `/img/items/${compItem.source}/${compItem.name}.webp`;
+      } else if (imgUrl && !imgUrl.startsWith('http')) {
+          imgUrl = imgUrl.replace(/^\/+/, '');
+          if (!imgUrl.startsWith('img/')) {
+              imgUrl = `img/${imgUrl}`;
+          }
+          imgUrl = `/${imgUrl}`;
+      }
+      return imgUrl;
+  };
 
-  // 👉 CONVERTE O ITEM DO COMPÊNDIO PARA O FORMATO DO NEXUS RPG
+  const getCategory = (item: any) => {
+      let t = '';
+      if (typeof item.type === 'string') {
+          t = item.type.toLowerCase();
+      } else if (Array.isArray(item.type)) {
+          t = item.type.join(' ').toLowerCase();
+      } else if (item.type && typeof item.type === 'object') {
+          t = JSON.stringify(item.type).toLowerCase();
+      }
+      
+      const rawTypes = t.split(/[\s,]+/).map(s => s.trim());
+
+      if (rawTypes.includes('p') || t.includes('potion')) return 'potion';
+      if (rawTypes.some(rt => ['la', 'ma', 'ha', 's'].includes(rt)) || t.includes('armor') || t.includes('shield')) return 'armor';
+      if (item.weaponCategory || rawTypes.some(rt => ['m', 'r', 'a', 'af', 'amm'].includes(rt)) || t.includes('weapon') || t.includes('firearm')) return 'weapon';
+      if (rawTypes.some(rt => ['w', 'rg', 'rd', 'st', 'wd', 'sc'].includes(rt)) || t.includes('wondrous') || t.includes('ring') || t.includes('wand') || t.includes('rod') || t.includes('staff') || t.includes('scroll') || item.wondrous) return 'wondrous';
+      
+      return 'gear';
+  };
+
+  const { filteredItems, totalMatches } = useMemo(() => {
+      const matchedItems = availableItems.filter(i => {
+          const matchesSearch = itemSearch.trim() === '' || i.name.toLowerCase().includes(itemSearch.toLowerCase());
+          const matchesCategory = filterCategory === 'all' || getCategory(i) === filterCategory;
+          return matchesSearch && matchesCategory;
+      });
+
+      return {
+          totalMatches: matchedItems.length,
+          filteredItems: matchedItems.slice(0, 100) 
+      };
+  }, [availableItems, itemSearch, filterCategory]);
+
   const mapCompendiumToItem = (compItem: any): Item => {
+      const rarityVal = compItem.rarity?.toLowerCase().replace(/\s/g, '') || 'common';
+      const weightVal = compItem.weight ? `${compItem.weight} lb.` : '';
+      const valueVal = formatValue(compItem.value);
+      const reqAttune = !!compItem.reqAttune;
+      const sourceVal = compItem.source || '';
+      
+      let damageStr = compItem.damage || '';
+      if (!damageStr && compItem.dmg1) {
+          damageStr = compItem.dmg1;
+          if (compItem.dmgType) damageStr += ` ${compItem.dmgType.toUpperCase()}`; 
+      }
+      
+      let fullDesc = formatEntries(compItem.entries) || compItem.properties?.join(', ') || '';
+
       return {
           id: Date.now().toString() + Math.random().toString(),
-          name: compItem.name,
-          description: compItem.properties?.join(', ') || '',
+          name: compItem.name, 
+          description: fullDesc.trim(),
           type: compItem.type as any,
-          rarity: compItem.rarity?.toLowerCase().replace(/\s/g, '') || 'common',
+          rarity: rarityVal as any,
           quantity: 1,
-          image: compItem.image || '',
-          value: compItem.value,
-          weight: compItem.weight || 0,
+          image: getCompendiumItemImage(compItem), 
+          value: valueVal,
+          weight: weightVal as any,
           stats: {
-              damage: compItem.damage,
+              damage: damageStr,
               ac: compItem.ac,
-          }
+              attunement: reqAttune,
+              source: sourceVal
+          } as any 
       };
+  };
+
+  const getItemFallbackIcon = (category: string, className: string) => {
+      if (category === 'weapon') return <Sword size={16} className={className} />;
+      if (category === 'armor') return <Shield size={16} className={className} />;
+      if (category === 'potion') return <FlaskConical size={16} className={className} />;
+      if (category === 'wondrous') return <Sparkles size={16} className={className} />;
+      return <Package size={16} className={className} />;
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -139,7 +250,7 @@ const ItemCreator: React.FC<ItemCreatorProps> = ({ onCreateItem, targetName, ava
   const isValid = mode === 'forge' ? isForgeValid : isTreasureValid;
 
   return (
-    <div className="bg-[#0f0f13] border border-white/10 rounded-xl p-4 shadow-2xl relative overflow-hidden font-sans flex flex-col h-full max-h-[500px]">
+    <div className="bg-[#0f0f13] border border-white/10 rounded-xl p-4 shadow-2xl relative overflow-hidden font-sans flex flex-col h-[550px]">
       <div className="absolute -top-10 -right-10 w-40 h-40 bg-amber-600/10 rounded-full blur-[50px] pointer-events-none"></div>
 
       <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-3 relative z-10 shrink-0">
@@ -151,19 +262,17 @@ const ItemCreator: React.FC<ItemCreatorProps> = ({ onCreateItem, targetName, ava
         </div>
       </div>
 
-      {/* 👉 ABAS REFORMULADAS */}
       <div className="flex border-b border-white/10 mb-4 relative z-10 shrink-0">
         <button type="button" onClick={() => setMode('compendium')} className={`flex-1 pb-2 text-[10px] uppercase font-bold tracking-widest transition-colors flex items-center justify-center gap-1.5 ${mode === 'compendium' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-gray-500 hover:text-gray-300'}`}><Search size={12}/> Arsenal</button>
         <button type="button" onClick={() => setMode('forge')} className={`flex-1 pb-2 text-[10px] uppercase font-bold tracking-widest transition-colors flex items-center justify-center gap-1.5 ${mode === 'forge' ? 'text-amber-500 border-b-2 border-amber-500' : 'text-gray-500 hover:text-gray-300'}`}><Sword size={12}/> Criar</button>
         <button type="button" onClick={() => setMode('treasure')} className={`flex-1 pb-2 text-[10px] uppercase font-bold tracking-widest transition-colors flex items-center justify-center gap-1.5 ${mode === 'treasure' ? 'text-yellow-400 border-b-2 border-yellow-400' : 'text-gray-500 hover:text-gray-300'}`}><Gem size={12}/> Tesouro</button>
       </div>
 
-      <div className="flex-1 overflow-hidden relative z-10">
+      <div className="flex-1 min-h-0 overflow-hidden relative z-10 flex flex-col">
         
-        {/* 👉 1. MODO ARSENAL (COMPÊNDIO VISUAL) */}
         {mode === 'compendium' && (
-            <div className="flex flex-col h-full space-y-3 animate-in fade-in duration-200">
-                <div className="relative shrink-0">
+            <div className="flex flex-col h-full min-h-0 animate-in fade-in duration-200">
+                <div className="relative shrink-0 mb-3">
                     <Search size={14} className="absolute left-3 top-2.5 text-amber-500/50" />
                     <input 
                         type="text" 
@@ -173,47 +282,101 @@ const ItemCreator: React.FC<ItemCreatorProps> = ({ onCreateItem, targetName, ava
                         className="w-full bg-black/60 border border-amber-500/30 rounded-lg pl-9 pr-3 py-2 text-xs text-white outline-none focus:border-amber-400 transition-colors" 
                     />
                 </div>
-                
-                <div className="flex-1 overflow-y-auto custom-scrollbar grid grid-cols-2 gap-2 pr-1">
-                    {filteredItems.map((item, idx) => (
-                        <button 
-                            key={idx} 
-                            type="button"
-                            draggable 
-                            onDragStart={(e) => {
-                                e.dataTransfer.setData('application/json', JSON.stringify({ type: 'LOOT_DROP', item: mapCompendiumToItem(item), sourceId: 0 }));
-                            }}
-                            onClick={() => {
-                                if (targetName) onCreateItem(mapCompendiumToItem(item));
-                            }}
-                            className="flex flex-col items-center bg-black/60 hover:bg-amber-900/30 border border-white/5 hover:border-amber-500/50 p-2 rounded-lg transition-all group cursor-grab active:cursor-grabbing text-left"
-                            title={targetName ? `Clique para dar para ${targetName}` : "Arraste para jogar no mapa"}
+
+                <div className="flex gap-1.5 overflow-x-auto custom-scrollbar pb-2 mb-2 shrink-0">
+                    {COMPENDIUM_CATEGORIES.map(cat => (
+                        <button
+                            key={cat.id}
+                            onClick={() => setFilterCategory(cat.id)}
+                            className={`px-3 py-1.5 text-[9px] uppercase font-bold tracking-wider rounded border transition-colors whitespace-nowrap ${filterCategory === cat.id ? 'bg-amber-900/50 border-amber-500/50 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 'bg-black/50 border-white/5 text-gray-500 hover:border-white/20 hover:text-gray-300'}`}
                         >
-                            <div className="w-10 h-10 rounded-md overflow-hidden mb-1.5 border border-white/20 group-hover:border-amber-500 shadow-lg bg-black flex items-center justify-center shrink-0">
-                                {item.image ? <img src={item.image} alt={item.name} className="w-full h-full object-contain p-0.5" /> : <Package size={16} className="text-gray-500" />}
-                            </div>
-                            <span className="text-[9px] font-bold text-gray-300 group-hover:text-white truncate w-full text-center leading-tight">
-                                {item.name}
-                            </span>
-                            <div className="flex gap-2 text-[9px] text-gray-500 font-mono mt-0.5">
-                                {item.damage && <span className="text-red-400">⚔️ {item.damage}</span>}
-                                {item.ac !== undefined && <span className="text-blue-400">🛡️ {item.ac}</span>}
-                            </div>
+                            {cat.label}
                         </button>
                     ))}
+                </div>
+                
+                <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar grid grid-cols-2 gap-2 pr-1 pb-4">
+                    {filteredItems.map((rawItem, idx) => {
+                        const item = mapCompendiumToItem(rawItem); 
+                        const category = getCategory(rawItem);
+                        const rarityColor = RARITY_COLORS[item.rarity || 'common'] || RARITY_COLORS['common'];
+                        const translatedRarity = RARITY_TRANSLATION[item.rarity || 'common'] || 'Comum';
+
+                        const itemStats = item.stats as any || {};
+                        const tooltipText = `${item.name}\n\nRaridade: ${translatedRarity}\nValor: ${item.value || '-'}\nPeso: ${item.weight || '-'}\nFonte: ${itemStats.source || '-'}\nSintonização: ${itemStats.attunement ? 'Sim' : 'Não'}\n\n${item.description ? item.description.substring(0, 150) + (item.description.length > 150 ? '...' : '') : ''}\n\n[Clique para dar ao alvo ou Arraste para o mapa]`;
+
+                        return (
+                            <button 
+                                key={idx} 
+                                type="button"
+                                draggable 
+                                onDragStart={(e) => {
+                                    e.dataTransfer.setData('application/json', JSON.stringify({ type: 'LOOT_DROP', item: item, sourceId: 0 }));
+                                }}
+                                onClick={() => {
+                                    if (targetName) onCreateItem(item);
+                                }}
+                                className="flex flex-col items-center bg-black/60 hover:bg-amber-900/30 border border-white/5 hover:border-amber-500/50 p-2.5 rounded-lg transition-all group cursor-grab active:cursor-grabbing text-left relative"
+                                title={tooltipText}
+                            >
+                                <div className={`w-12 h-12 rounded-md overflow-hidden mb-2 border shadow-lg bg-black flex items-center justify-center shrink-0 relative transition-colors ${rarityColor}`}>
+                                    {getItemFallbackIcon(category, "text-gray-500 absolute z-0 opacity-50")}
+                                    
+                                    {item.image && !imgErrors[item.name] && (
+                                        <img 
+                                            src={item.image} 
+                                            alt={item.name} 
+                                            className="w-full h-full object-contain p-0.5 absolute inset-0 z-10 bg-black" 
+                                            onError={(e) => { 
+                                                const target = e.currentTarget;
+                                                if (target.src.includes('.webp')) {
+                                                    target.src = target.src.replace('.webp', '.png');
+                                                } else {
+                                                    target.style.display = 'none';
+                                                    setImgErrors(prev => ({...prev, [item.name]: true}));
+                                                }
+                                            }}
+                                        />
+                                    )}
+                                </div>
+                                
+                                <span className="text-[10px] font-bold text-gray-300 group-hover:text-white truncate w-full text-center leading-tight mb-1.5">
+                                    {item.name}
+                                </span>
+
+                                <div className="flex flex-wrap justify-center gap-1 w-full">
+                                    {/* 👉 ETIQUETA NOVA: RARIDADE */}
+                                    {item.rarity && (item.rarity as string) !== 'none' && (item.rarity as string) !== 'unknown' && (
+                                        <span className={`text-[8px] font-mono px-1 rounded flex items-center border ${rarityColor}`} title="Raridade">
+                                            {translatedRarity}
+                                        </span>
+                                    )}
+                                    
+                                    {item.stats?.damage && <span className="text-[8px] font-mono text-red-300 bg-red-900/40 px-1 rounded flex items-center border border-red-500/20">⚔️ {item.stats.damage}</span>}
+                                    {item.stats?.ac !== undefined && <span className="text-[8px] font-mono text-blue-300 bg-blue-900/40 px-1 rounded flex items-center border border-blue-500/20">🛡️ {item.stats.ac}</span>}
+                                    {item.value && <span className="text-[8px] font-mono text-yellow-300 bg-yellow-900/40 px-1 rounded flex items-center border border-yellow-500/20"><Coins size={8} className="mr-0.5"/> {item.value}</span>}
+                                    {item.weight && <span className="text-[8px] font-mono text-gray-400 bg-gray-800 px-1 rounded flex items-center border border-gray-600/50"><Weight size={8} className="mr-0.5"/> {item.weight}</span>}
+                                    {itemStats.attunement && <span className="text-[8px] font-mono text-purple-300 bg-purple-900/40 px-1 rounded flex items-center border border-purple-500/20" title="Requer Sintonização"><Sparkles size={8} className="mr-0.5"/>Sintoniza</span>}
+                                    {itemStats.source && <span className="text-[8px] font-mono text-gray-500 bg-black/80 px-1 rounded flex items-center border border-white/10" title={`Fonte: ${itemStats.source}`}><BookOpen size={8} className="mr-0.5"/> {itemStats.source}</span>}
+                                </div>
+                            </button>
+                        );
+                    })}
                     {filteredItems.length === 0 && (
                         <div className="col-span-2 text-center py-6 text-xs text-gray-500 italic">
-                            Nenhum item encontrado no arsenal.
+                            Nenhum item encontrado nesta categoria.
                         </div>
                     )}
                 </div>
-                <div className="shrink-0 text-center mt-2">
-                    <p className="text-[8px] text-gray-500 uppercase tracking-widest">Arraste para o mapa ou clique para entregar ao alvo.</p>
-                </div>
+
+                {totalMatches > filteredItems.length && (
+                    <div className="shrink-0 text-center py-2 text-[9px] border-t border-white/5 text-amber-500/70 font-bold uppercase tracking-widest bg-black/50">
+                        Exibindo 100 de {totalMatches} itens. Use a busca para refinar.
+                    </div>
+                )}
             </div>
         )}
 
-        {/* 👉 2. MODO FORJA (MANUAL) OU MODO TESOURO */}
         {mode !== 'compendium' && (
             <form onSubmit={handleSubmit} className="flex flex-col h-full justify-between overflow-y-auto custom-scrollbar pr-1 animate-in fade-in duration-200">
                 <div className="space-y-4 pb-4">
