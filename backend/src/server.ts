@@ -7,7 +7,6 @@ import { ClassImporter } from './utils/ClassImporter';
 import { SpellImporter } from './utils/SpellImporter'; 
 import { ItemImporter } from './utils/ItemImporter'; 
 import { RaceImporter } from './utils/RaceImporter';
-// 👉 IMPORTAÇÃO DO GERADOR DE LOOT
 import { LootGenerator } from './utils/LootGenerator'; 
 
 const fastify = Fastify();
@@ -117,6 +116,19 @@ const getRoomState = (roomId: string): GameState => {
 // --- 4. EVENTOS DO SOCKET ---
 io.on('connection', (socket) => {
   console.log('🔌 Nova conexão:', socket.id);
+
+  // 👉 Envia imediatamente ao conectar, mas também responde ao pedido explícito
+  socket.emit('compendiumSync', { 
+      availableClasses: FULL_CLASSES, 
+      availableRaces: FULL_RACES 
+  });
+
+  socket.on('requestCompendium', () => {
+      socket.emit('compendiumSync', { 
+          availableClasses: FULL_CLASSES, 
+          availableRaces: FULL_RACES 
+      });
+  });
 
   socket.on('joinRoom', (roomId: string) => {
     socket.join(roomId);
@@ -295,7 +307,6 @@ io.on('connection', (socket) => {
     io.in(data.roomId).emit('dmRequestRoll', data);
   });
 
-  // 👉 NOVO EVENTO: SOLICITAÇÃO DE LOOT ALEATÓRIO
   socket.on('requestRandomLoot', (data: { rarity: string, type: string, count: number, roomId: string }) => {
       const roomState = getRoomState(data.roomId);
       
@@ -305,7 +316,6 @@ io.on('connection', (socket) => {
           count: data.count
       });
       
-      // Emite de volta para a sala (ou poderia ser só para o Mestre)
       io.in(data.roomId).emit('randomLootGenerated', { loot });
   });
 

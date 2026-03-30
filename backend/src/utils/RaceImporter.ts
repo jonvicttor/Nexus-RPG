@@ -6,6 +6,7 @@ export interface NexusRace {
   size: number;
   visionRadius: number;
   speed: number;
+  source: string; // 👉 NOVO: Adicionado a propriedade source
 }
 
 export class RaceImporter {
@@ -26,10 +27,8 @@ export class RaceImporter {
       const racesArray = data.race || [];
 
       for (const r of racesArray) {
-        // 👉 REMOVIDO: Agora aceita todas as raças do arquivo, não apenas PHB
         if (!r.name) continue;
 
-        // Tratamento de Tamanho
         let sizeValue = 1; 
         if (r.size) {
             const sz = Array.isArray(r.size) ? r.size[0] : r.size;
@@ -37,7 +36,6 @@ export class RaceImporter {
             if (sz === 'L') sizeValue = 2.0;
         }
 
-        // Tratamento de Visão (converte pés para quadrados de 1.5m)
         let visionRadius = 9; 
         if (r.darkvision) {
             visionRadius = Math.floor(r.darkvision / 5);
@@ -54,7 +52,8 @@ export class RaceImporter {
           name: r.name,
           size: sizeValue,
           visionRadius,
-          speed
+          speed,
+          source: r.source || 'PHB' // 👉 NOVO: Pega o source ou usa PHB de padrão
         });
       }
       

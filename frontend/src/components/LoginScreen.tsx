@@ -1,37 +1,35 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'react';
 import socket from '../services/socket';
 import { Howl } from 'howler';
-import { Trash2, Plus, Play, Sword, Crown, ChevronRight, Search, UserPlus, Sparkles, XCircle, Scroll, Map as MapIcon, Key, ChevronLeft } from 'lucide-react';
+import { Trash2, Plus, Play, Sword, Crown, ChevronRight, Search, UserPlus, Sparkles, XCircle, Scroll, Map as MapIcon, Key, ChevronLeft, Upload } from 'lucide-react';
 
-// --- DADOS E REGRAS ---
-const RACES = {
-  'HUMANO':    { bonus: { str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1 }, desc: '+1 em Todos' },
-  'ANAO':      { bonus: { str: 0, dex: 0, con: 2, int: 0, wis: 0, cha: 0 }, desc: '+2 Cons.' },
-  'ELFO':      { bonus: { str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 0 }, desc: '+2 Destreza' },
-  'HALFLING':  { bonus: { str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 0 }, desc: '+2 Destreza' },
-  'DRACONATO': { bonus: { str: 2, dex: 0, con: 0, int: 0, wis: 0, cha: 1 }, desc: '+2 Força, +1 Car.' },
-  'GNOMO':     { bonus: { str: 0, dex: 0, con: 0, int: 2, wis: 0, cha: 0 }, desc: '+2 Int.' },
-  'MEIO-ELFO': { bonus: { str: 0, dex: 1, con: 1, int: 0, wis: 0, cha: 2 }, desc: '+2 Car., +1 Dex/Con' },
-  'MEIO-ORC':  { bonus: { str: 2, dex: 0, con: 1, int: 0, wis: 0, cha: 0 }, desc: '+2 Força, +1 Cons.' },
-  'TIEFLING':  { bonus: { str: 0, dex: 0, con: 0, int: 1, wis: 0, cha: 2 }, desc: '+2 Car., +1 Int.' },
+const CLASS_METADATA: Record<string, { icon: string, ac: number, fileKey: string }> = {
+  'barbarian': { icon: '🪓', ac: 14, fileKey: 'barbarian' },
+  'bard':      { icon: '🎵', ac: 13, fileKey: 'bard' },
+  'cleric':    { icon: '✨', ac: 18, fileKey: 'cleric' },
+  'druid':     { icon: '🌿', ac: 14, fileKey: 'druid' },
+  'fighter':   { icon: '⚔️', ac: 16, fileKey: 'fighter' },
+  'monk':      { icon: '👊', ac: 15, fileKey: 'monk' },
+  'paladin':   { icon: '🛡️', ac: 18, fileKey: 'paladin' },
+  'ranger':    { icon: '🏹', ac: 15, fileKey: 'ranger' },
+  'rogue':     { icon: '👥', ac: 14, fileKey: 'rogue' },
+  'sorcerer':  { icon: '🔥', ac: 12, fileKey: 'sorcerer' },
+  'warlock':   { icon: '👁️', ac: 13, fileKey: 'warlock' },
+  'wizard':    { icon: '🔮', ac: 12, fileKey: 'wizard' },
+  'artificer': { icon: '🔧', ac: 14, fileKey: 'artificer' },
 };
 
-// 👉 CLASSES ATUALIZADAS (Batendo com as pastas das imagens)
-const CLASSES = {
-  'BARBARO':    { hpBase: 12, ac: 14, icon: '🪓' },
-  'BARDO':       { hpBase: 8,  ac: 13, icon: '🎵' },
-  'CLERIGO':     { hpBase: 8,  ac: 18, icon: '✨' },
-  'DRUIDA':      { hpBase: 8,  ac: 14, icon: '🌿' },
-  'GUERREIRO':   { hpBase: 10, ac: 16, icon: '⚔️' },
-  'MONGE':       { hpBase: 8,  ac: 15, icon: '👊' },
-  'PALADINO':    { hpBase: 10, ac: 18, icon: '🛡️' },
-  'PATRULHEIRO': { hpBase: 10, ac: 15, icon: '🏹' }, // Ranger
-  'LADINO':      { hpBase: 8,  ac: 14, icon: '👥' }, // Rogue
-  'ASSASSINO':   { hpBase: 8,  ac: 14, icon: '🗡️' },
-  'FEITICEIRO':  { hpBase: 6,  ac: 12, icon: '🔥' }, // Sorcerer
-  'BRUXO':       { hpBase: 8,  ac: 13, icon: '👁️' }, // Warlock
-  'MAGO':        { hpBase: 6,  ac: 12, icon: '🔮' }, // Wizard
-  'ARTIFICE':    { hpBase: 8,  ac: 14, icon: '🔧' },
+const RACE_BONUS_FALLBACK: Record<string, any> = {
+    'human': { str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1, desc: '+1 em Todos' },
+    'dwarf': { str: 0, dex: 0, con: 2, int: 0, wis: 0, cha: 0, desc: '+2 Cons.' },
+    'elf': { str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 0, desc: '+2 Destreza' },
+    'halfling': { str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 0, desc: '+2 Destreza' },
+    'gnome': { str: 0, dex: 0, con: 0, int: 2, wis: 0, cha: 0, desc: '+2 Int.' },
+    'goliath': { str: 2, dex: 0, con: 1, int: 0, wis: 0, cha: 0, desc: '+2 Força, +1 Con' },
+    'orc': { str: 2, dex: 0, con: 1, int: 0, wis: 0, cha: 0, desc: '+2 Força, +1 Con' },
+    'tiefling': { str: 0, dex: 0, con: 0, int: 1, wis: 0, cha: 2, desc: '+2 Car., +1 Int' },
+    'githzerai': { str: 0, dex: 0, con: 0, int: 1, wis: 2, cha: 0, desc: '+2 Sab., +1 Int' },
+    'dragonborn': { str: 2, dex: 0, con: 0, int: 0, wis: 0, cha: 1, desc: '+2 Força, +1 Car.' },
 };
 
 const POINT_COST: Record<number, number> = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 };
@@ -39,10 +37,9 @@ const POINT_COST: Record<number, number> = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13
 interface LoginScreenProps {
   onLogin: (role: 'DM' | 'PLAYER', name: string, charData?: any) => void;
   availableClasses?: any[]; 
-  availableRaces?: any[];
+  availableRaces?: any[]; 
 }
 
-// --- COMPONENTES DE UI (Sem alterações) ---
 const ArcaneContainer = ({ children, className = '', width = 'w-full md:w-[500px]' }: { children: React.ReactNode, className?: string, width?: string }) => (
   <div className={`relative ${width} p-1 rounded-3xl overflow-hidden group/container ${className} transition-all duration-500`}>
       <div className="absolute inset-0 bg-gradient-to-br from-amber-600/30 via-transparent to-blue-900/30 opacity-50 group-hover/container:opacity-100 transition-opacity duration-700"></div>
@@ -86,10 +83,7 @@ const StoneInput = (props: any) => (
 
 const BackgroundWrapper = ({ children, isMuted, toggleMute }: { children: React.ReactNode, isMuted: boolean, toggleMute: () => void }) => (
   <div className="relative w-screen h-[100dvh] flex flex-col overflow-hidden bg-[#050505] font-serif">
-    <div 
-      className="absolute inset-0 bg-cover bg-center opacity-60 animate-in fade-in duration-[2s]"
-      style={{ backgroundImage: "url('/login-bg.jpg')" }}
-    ></div>
+    <div className="absolute inset-0 bg-cover bg-center opacity-60 animate-in fade-in duration-[2s]" style={{ backgroundImage: "url('/login-bg.jpg')" }}></div>
     <div className="absolute inset-0 bg-black/80 mix-blend-multiply"></div>
     <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,1)_90%)] pointer-events-none"></div>
     <div className="absolute inset-0 opacity-[0.15] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] contrast-150 brightness-100 mix-blend-overlay"></div>
@@ -132,14 +126,17 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
 
   const [savedCampaigns, setSavedCampaigns] = useState<{name: string, roomId: string}[]>([]);
 
-  const [selectedRace, setSelectedRace] = useState<keyof typeof RACES>('HUMANO');
-  const [selectedClass, setSelectedClass] = useState<keyof typeof CLASSES>('GUERREIRO');
+  // Estados Dinâmicos baseados no JSON
+  const [selectedRaceName, setSelectedRaceName] = useState<string>(''); 
+  const [selectedClassName, setSelectedClassName] = useState<string>(''); 
+
   const [stats, setStats] = useState({ str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 });
   const [pointsLeft, setPointsLeft] = useState(27);
   const [showFullImage, setShowFullImage] = useState(false);
 
   const [tokenGender, setTokenGender] = useState<'male' | 'female'>('male');
   const [tokenVariant, setTokenVariant] = useState<number>(1);
+  const [customImageURL, setCustomImageURL] = useState<string>(''); // 👉 NOVO ESTADO: Guarda a imagem que o player enviou
 
   const [campaignName, setCampaignName] = useState('A Mina Perdida de Phandelver');
   const [roomPassword, setRoomPassword] = useState('mesa-do-victor');
@@ -147,10 +144,95 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
   const raceScrollRef = useRef<HTMLDivElement>(null);
   const classScrollRef = useRef<HTMLDivElement>(null);
   const statsScrollRef = useRef<HTMLDivElement>(null); 
+  const fileInputRef = useRef<HTMLInputElement>(null); // 👉 NOVO: Referência pro input de arquivo
 
   const prevRaceScrollTop = useRef(0);
   const prevClassScrollTop = useRef(0);
   const prevStatsScrollTop = useRef(0); 
+
+  useEffect(() => {
+      socket.emit('requestCompendium');
+      
+      const handleCompendium = (data: any) => {
+          console.log("📜 O Servidor enviou o compêndio para a Forja!");
+      };
+
+      socket.on('compendiumSync', handleCompendium);
+      return () => { socket.off('compendiumSync', handleCompendium); };
+  }, []);
+
+  const dynamicRaces = useMemo(() => {
+      if (!availableRaces || availableRaces.length === 0) return [];
+      
+      const uniqueRacesMap = new Map();
+
+      availableRaces.forEach(r => {
+          if (!uniqueRacesMap.has(r.name)) {
+              uniqueRacesMap.set(r.name, r);
+          }
+      });
+
+      return Array.from(uniqueRacesMap.values()).map((r: any) => {
+          const nameLower = r.name.toLowerCase();
+          let bonus = { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 };
+          let desc = 'Sem bônus fixo';
+
+          if (r.ability && r.ability.length > 0) {
+              const ab = r.ability[0];
+              const parts = [];
+              if (ab.str) { bonus.str = ab.str; parts.push(`+${ab.str} For`); }
+              if (ab.dex) { bonus.dex = ab.dex; parts.push(`+${ab.dex} Des`); }
+              if (ab.con) { bonus.con = ab.con; parts.push(`+${ab.con} Con`); }
+              if (ab.int) { bonus.int = ab.int; parts.push(`+${ab.int} Int`); }
+              if (ab.wis) { bonus.wis = ab.wis; parts.push(`+${ab.wis} Sab`); }
+              if (ab.cha) { bonus.cha = ab.cha; parts.push(`+${ab.cha} Car`); }
+              if (parts.length > 0) desc = parts.join(', ');
+          } else {
+              const fallbackKey = Object.keys(RACE_BONUS_FALLBACK).find(k => nameLower.includes(k));
+              if (fallbackKey) {
+                  bonus = RACE_BONUS_FALLBACK[fallbackKey];
+                  desc = RACE_BONUS_FALLBACK[fallbackKey].desc;
+              }
+          }
+
+          return { name: r.name, bonus, desc, source: r.source || 'PHB' }; // 👉 MANTÉM O SOURCE
+      });
+  }, [availableRaces]);
+
+  const dynamicClasses = useMemo(() => {
+      if (!availableClasses || availableClasses.length === 0) return [];
+      
+      const uniqueClassesMap = new Map();
+
+      availableClasses.forEach(c => {
+          if (!uniqueClassesMap.has(c.name)) {
+              uniqueClassesMap.set(c.name, c);
+          }
+      });
+
+      return Array.from(uniqueClassesMap.values()).map(c => {
+          const nameLower = c.name.toLowerCase();
+          const metaKey = Object.keys(CLASS_METADATA).find(k => nameLower.includes(k)) || 'fighter';
+          const meta = CLASS_METADATA[metaKey];
+
+          return {
+              name: c.name,
+              hitDice: c.hitDice || 8,
+              ac: meta.ac,
+              icon: meta.icon,
+              fileKey: meta.fileKey
+          };
+      });
+  }, [availableClasses]);
+
+  useEffect(() => {
+      if (dynamicRaces.length > 0 && !selectedRaceName) setSelectedRaceName(dynamicRaces[0].name);
+  }, [dynamicRaces, selectedRaceName]);
+
+  useEffect(() => {
+      if (dynamicClasses.length > 0 && !selectedClassName) setSelectedClassName(dynamicClasses[0].name);
+  }, [dynamicClasses, selectedClassName]);
+
 
   useLayoutEffect(() => {
     if (raceScrollRef.current) raceScrollRef.current.scrollTop = prevRaceScrollTop.current;
@@ -158,16 +240,32 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
     if (statsScrollRef.current) statsScrollRef.current.scrollTop = prevStatsScrollTop.current;
   });
 
-  const handleSelectRace = (r: keyof typeof RACES) => {
+  const handleSelectRace = (rName: string) => {
       if (raceScrollRef.current) prevRaceScrollTop.current = raceScrollRef.current.scrollTop;
-      setSelectedRace(r);
+      setSelectedRaceName(rName);
       setTokenVariant(1);
+      setCustomImageURL(''); // Reseta a imagem customizada se trocar de raça
   };
 
-  const handleSelectClass = (c: keyof typeof CLASSES) => {
+  const handleSelectClass = (cName: string) => {
       if (classScrollRef.current) prevClassScrollTop.current = classScrollRef.current.scrollTop;
-      setSelectedClass(c);
+      setSelectedClassName(cName);
       setTokenVariant(1);
+      setCustomImageURL(''); // Reseta a imagem customizada se trocar de classe
+  };
+
+  // 👉 NOVO: FUNÇÃO PARA LIDAR COM O UPLOAD DA IMAGEM
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+              if (event.target?.result) {
+                  setCustomImageURL(event.target.result as string);
+              }
+          };
+          reader.readAsDataURL(file);
+      }
   };
 
   useEffect(() => {
@@ -252,91 +350,84 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
     setStats(prev => ({ ...prev, [attr]: nextVal }));
   };
 
-  // 👉 NOVA LÓGICA DE TRADUÇÃO EXATA (Baseado nas suas imagens!)
-  const getDynamicTokenImage = (raceStr: string, classStr: string, gender: 'male'|'female', variant: number) => {
-    // 1. Traduz a Raça para a PASTA (Ex: ANAO -> Dwarf)
-    const raceFolderMap: any = {
-        'HUMANO': 'Human', 'ANAO': 'Dwarf', 'ELFO': 'Elf', 'HALFLING': 'Smallfolk',
-        'DRACONATO': 'Dragonborn', 'GNOMO': 'Gnome', 'MEIO-ELFO': 'Halfelf',
-        'MEIO-ORC': 'Orc', 'TIEFLING': 'Tiefling'
-    };
-    
-    // 2. Traduz a Raça para o nome do ARQUIVO (Ex: ANAO -> dwarf)
-    const raceFileMap: any = {
-        'HUMANO': 'human', 'ANAO': 'dwarf', 'ELFO': 'elf', 'HALFLING': 'halfling',
-        'DRACONATO': 'dragonborn', 'GNOMO': 'gnome', 'MEIO-ELFO': 'halfelf',
-        'MEIO-ORC': 'orc', 'TIEFLING': 'tiefling'
-    };
+  // 👉 IMAGEM DINÂMICA ATUALIZADA (Lê das suas pastas e usa a arte do livro como Fallback)
+  const getDynamicTokenImage = (raceName: string, classKey: string, gender: 'male'|'female', variant: number) => {
+    if (!raceName) return '/tokens/aliado.png';
 
-    // 3. Traduz a Classe (Ex: GUERREIRO -> fighter)
-    const classFileMap: any = {
-        'BARBARO': 'barbarian', 'BARDO': 'bard', 'CLERIGO': 'cleric', 'DRUIDA': 'druid',
-        'GUERREIRO': 'fighter', 'MONGE': 'monk', 'PALADINO': 'paladin',
-        'PATRULHEIRO': 'ranger', 'ASSASSINO': 'assassin', 'LADINO': 'rogue',
-        'FEITICEIRO': 'sorcerer', 'BRUXO': 'warlock', 'MAGO': 'wizard', 'ARTIFICE': 'artificer'
-    };
-
-    const rFolder = raceFolderMap[raceStr] || 'Human';
-    const rFile = raceFileMap[raceStr] || 'human';
-    const cFile = classFileMap[classStr] || 'fighter';
+    const rLower = raceName.toLowerCase();
+    const cleanName = raceName.replace(/[^a-zA-Z]/g, ''); 
     
-    // 4. Define o tamanho (Gnomos e Halflings usam small, outros medium)
-    const sizeStr = (rFile === 'gnome' || rFile === 'halfling') ? 'small' : 'medium';
+    let folderName = raceName; 
+    let rFile = cleanName.toLowerCase(); 
 
-    const v = variant.toString().padStart(2, '0'); // Formata 1 para "01"
+    // Substituições para as pastas de TOKEN CLÁSSICAS
+    if (rLower.includes('dwarf')) { folderName = 'Dwarf'; rFile = 'dwarf'; }
+    else if (rLower.includes('elf') && !rLower.includes('half')) { folderName = 'Elf'; rFile = 'elf'; }
+    else if (rLower.includes('githzerai')) { folderName = 'Githzerai'; rFile = 'githzerai'; }
+    else if (rLower.includes('gnome')) { folderName = 'Gnome'; rFile = 'gnome'; }
+    else if (rLower.includes('goliath')) { folderName = 'Goliath'; rFile = 'goliath'; }
+    else if (rLower.includes('orc')) { folderName = 'Orc'; rFile = 'orc'; }
+    else if (rLower.includes('tiefling')) { folderName = 'Tiefling'; rFile = 'tiefling'; }
+    else if (rLower.includes('human')) { folderName = 'Human'; rFile = 'human'; }
+
+    const cFile = classKey || 'fighter';
+    const sizeStr = (folderName === 'Gnome' || rLower.includes('halfling')) ? 'small' : 'medium';
+    const v = variant.toString().padStart(2, '0');
     
-    // Exemplo Gerado: /tokens/Raças/Human/fighter/fighter_human_humanoid_male_medium_01.png
-    return `/tokens/Raças/${rFolder}/${cFile}/${cFile}_${rFile}_humanoid_${gender}_${sizeStr}_${v}.png`;
+    return `/tokens/Raças/${folderName}/${cFile}/${cFile}_${rFile}_humanoid_${gender}_${sizeStr}_${v}.png`;
   };
 
-  const nextVariant = () => setTokenVariant(v => v >= 5 ? 1 : v + 1);
-  const prevVariant = () => setTokenVariant(v => v <= 1 ? 5 : v - 1);
+  // 👉 NOVO: Imagem original do livro (Fallback oficial)
+  const handleTokenImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+      const target = e.currentTarget;
+      const raceObj = dynamicRaces.find(r => r.name === selectedRaceName);
+      
+      // Se já tentou o livro e não deu certo, usa o aliado padrão
+      if (target.src.includes('img/races/')) {
+          target.src = '/tokens/aliado.png';
+          return;
+      }
+      
+      if (raceObj && raceObj.source) {
+          // Tenta pegar a imagem original do livro do 5eTools (ex: public/img/races/PHB/Human.webp)
+          const cleanRaceName = selectedRaceName.replace(/\s+/g, '%20'); // Lida com espaços no nome
+          target.src = `/img/races/${raceObj.source}/${cleanRaceName}.webp`;
+      } else {
+          target.src = '/tokens/aliado.png';
+      }
+  };
+
+  const nextVariant = () => { setTokenVariant(v => v >= 5 ? 1 : v + 1); setCustomImageURL(''); };
+  const prevVariant = () => { setTokenVariant(v => v <= 1 ? 5 : v - 1); setCustomImageURL(''); };
 
   const calculateFinalData = () => {
-    const racial = (RACES as any)[selectedRace].bonus;
-    const finalStats = { str: stats.str + racial.str, dex: stats.dex + racial.dex, con: stats.con + racial.con, int: stats.int + racial.int, wis: stats.wis + racial.wis, cha: stats.cha + racial.cha };
+    const raceObj = dynamicRaces.find(r => r.name === selectedRaceName) || dynamicRaces[0];
+    const classObj = dynamicClasses.find(c => c.name === selectedClassName) || dynamicClasses[0];
+
+    const racial = raceObj?.bonus || { str:0, dex:0, con:0, int:0, wis:0, cha:0 };
+    
+    const finalStats = { 
+        str: stats.str + (racial.str || 0), 
+        dex: stats.dex + (racial.dex || 0), 
+        con: stats.con + (racial.con || 0), 
+        int: stats.int + (racial.int || 0), 
+        wis: stats.wis + (racial.wis || 0), 
+        cha: stats.cha + (racial.cha || 0) 
+    };
+
     const conMod = Math.floor((finalStats.con - 10) / 2);
-    const hpMax = Math.max(1, (CLASSES as any)[selectedClass].hpBase + conMod);
+    const hpMax = Math.max(1, (classObj?.hitDice || 8) + conMod);
     
-    let connectedClassType = selectedClass.toString();
-    
-    // Busca no banco se existe (mesma lógica do EditEntityModal)
-    let engClass = connectedClassType.toLowerCase();
-    if (engClass.includes('clérigo') || engClass.includes('clerigo')) engClass = 'cleric';
-    else if (engClass.includes('bardo')) engClass = 'bard';
-    else if (engClass.includes('mago')) engClass = 'wizard';
-    else if (engClass.includes('feiticeiro')) engClass = 'sorcerer';
-    else if (engClass.includes('bruxo')) engClass = 'warlock';
-    else if (engClass.includes('druida')) engClass = 'druid';
-    else if (engClass.includes('paladino')) engClass = 'paladin';
-    else if (engClass.includes('patrulheiro')) engClass = 'ranger';
-    else if (engClass.includes('artífice') || engClass.includes('artifice')) engClass = 'artificer';
-    else if (engClass.includes('guerreiro')) engClass = 'fighter';
-    else if (engClass.includes('barbaro') || engClass.includes('bárbaro')) engClass = 'barbarian';
-    else if (engClass.includes('monge')) engClass = 'monk';
-    else if (engClass.includes('assassino') || engClass.includes('ladino')) engClass = 'rogue';
-
-    // Procura no array availableClasses para ver se acha a oficial
-    const foundClass = availableClasses.find(c => c.name.toLowerCase() === engClass || c.name.toLowerCase() === connectedClassType.toLowerCase());
-    
-    if (foundClass) {
-        connectedClassType = `${selectedClass} (${foundClass.source?.toLowerCase() || engClass})`;
-    } else {
-        connectedClassType = `${selectedClass} (${engClass})`;
-    }
-
     return { 
         name, 
         stats: finalStats, 
         hp: hpMax, 
         maxHp: hpMax, 
-        // 👇 ATUALIZADO: Usando hpBase direto do CLASSES se não usar 5eTools
-        // hp: hpMax, 
-        // maxHp: hpMax, 
-        ac: (CLASSES as any)[selectedClass].ac, 
-        image: getDynamicTokenImage(selectedRace, selectedClass, tokenGender, tokenVariant), 
-        race: selectedRace, 
-        classType: connectedClassType, 
+        ac: classObj?.ac || 10, 
+        // 👉 ATUALIZADO: Se o cara upou uma imagem, usa ela. Senão, tenta gerar a nossa.
+        image: customImageURL || getDynamicTokenImage(selectedRaceName, classObj?.fileKey || 'fighter', tokenGender, tokenVariant), 
+        race: selectedRaceName, 
+        classType: selectedClassName, 
         xp: 0, 
         level: 1, 
         roomId: playerRoomId 
@@ -400,7 +491,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
         </div>
 
         <div className="flex flex-col md:flex-row gap-4 md:gap-8 w-full justify-center items-stretch px-4 md:px-8 max-w-3xl">
-          
           <button onClick={() => { setRole('PLAYER'); setStep(1.1); }} className="group relative w-full md:flex-1 h-[200px] md:h-[280px] overflow-hidden rounded-3xl transition-all duration-500 hover:scale-[1.03] active:scale-95">
              <ArcaneContainer width="w-full" className="h-full hover:shadow-[0_0_50px_rgba(37,99,235,0.3)] hover:border-blue-500/50 transition-all">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-900/40 via-transparent to-black opacity-60 z-0"></div>
@@ -567,7 +657,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
       {showFullImage && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/95 backdrop-blur-xl cursor-zoom-out animate-in fade-in duration-300 p-4" onClick={() => setShowFullImage(false)}>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(168,85,247,0.1)_0%,transparent_70%)]"></div>
-          <img src={getDynamicTokenImage(selectedRace, selectedClass, tokenGender, tokenVariant)} alt="Full Preview" className="max-w-full max-h-[85%] object-contain drop-shadow-[0_0_100px_rgba(168,85,247,0.6)] animate-in zoom-in-95 duration-500" onError={(e) => (e.currentTarget.src = '/tokens/aliado.png')} />
+          {/* Mostra a imagem customizada ou a gerada */}
+          <img src={customImageURL || getDynamicTokenImage(selectedRaceName, dynamicClasses.find(c => c.name === selectedClassName)?.fileKey || 'fighter', tokenGender, tokenVariant)} alt="Full Preview" className="max-w-full max-h-[85%] object-contain drop-shadow-[0_0_100px_rgba(168,85,247,0.6)] animate-in zoom-in-95 duration-500" onError={handleTokenImageError} />
         </div>
       )}
 
@@ -586,9 +677,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
         </div>
 
         <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-y-auto md:overflow-hidden">
-            <div className="w-full md:w-[350px] bg-black/20 md:border-r border-b md:border-b-0 border-white/5 flex flex-col items-center justify-start p-4 md:p-8 gap-4 md:gap-6 shrink-0">
+            <div className="w-full md:w-[350px] bg-black/20 md:border-r border-b md:border-b-0 border-white/5 flex flex-col items-center justify-start p-4 md:p-8 gap-4 md:gap-6 shrink-0 relative">
                 
-                <div className="flex flex-col items-center gap-4">
+                <div className="flex flex-col items-center gap-4 relative z-10 w-full">
                     <div className="relative group shrink-0 flex items-center justify-center gap-3 md:gap-4">
                         <div className="absolute inset-0 bg-amber-500/10 blur-[40px] rounded-full animate-pulse z-0"></div>
                         
@@ -597,11 +688,20 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                         </button>
 
                         <div className="w-24 h-24 sm:w-32 sm:h-32 md:w-48 md:h-48 rounded-full border-2 md:border-4 border-amber-600/60 overflow-hidden bg-black shadow-[0_0_40px_rgba(0,0,0,0.8)] relative z-10 hover:border-amber-400 transition-colors cursor-pointer" onClick={() => setShowFullImage(true)}>
-                            <img src={getDynamicTokenImage(selectedRace, selectedClass, tokenGender, tokenVariant)} alt="Token" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = '/tokens/aliado.png')} />
+                            {/* Usa a imagem de upload ou tenta a gerada */}
+                            <img src={customImageURL || getDynamicTokenImage(selectedRaceName, dynamicClasses.find(c => c.name === selectedClassName)?.fileKey || 'fighter', tokenGender, tokenVariant)} alt="Token" className="w-full h-full object-cover" onError={handleTokenImageError} />
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><Search className="text-white/80 w-6 h-6 md:w-8 md:h-8" /></div>
                         </div>
 
                         <button onClick={nextVariant} className="z-20 p-2 text-amber-600/50 hover:text-amber-400 transition-colors bg-black/40 rounded-full hover:bg-black/80"><ChevronRight size={24} /></button>
+                    </div>
+
+                    {/* 👉 BOTÃO DE UPLOAD PERSONALIZADO */}
+                    <div className="w-full flex justify-center">
+                        <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+                        <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-widest bg-black/40 border border-amber-900/50 hover:border-amber-500/50 hover:text-amber-300 text-amber-500/50 px-4 py-2 rounded-lg transition-colors">
+                            <Upload size={14} /> Foto Customizada
+                        </button>
                     </div>
                     
                     <div className="flex gap-2 w-full max-w-[200px]">
@@ -611,7 +711,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                     <span className="text-[9px] text-gray-500 italic font-mono uppercase tracking-widest">Variação {tokenVariant}/5</span>
                 </div>
 
-                <div className="w-full space-y-1 md:space-y-2 flex-1 mt-4">
+                <div className="w-full space-y-1 md:space-y-2 flex-1 mt-4 relative z-10">
                     <label className="text-[9px] md:text-[10px] text-amber-500/60 uppercase font-bold tracking-[0.1em] md:tracking-[0.2em] block text-left md:text-center">Nome da Lenda</label>
                     <input 
                         type="text" 
@@ -621,9 +721,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                         onChange={e => setName(e.target.value)} 
                     />
                     <div className="w-full bg-black/40 p-2 md:p-4 rounded-xl border border-white/5 space-y-1 md:space-y-2 text-center mt-4 hidden md:block">
-                        <div className="text-amber-200 font-bold uppercase tracking-wider text-xs md:text-sm">{selectedRace}</div>
+                        <div className="text-amber-200 font-bold uppercase tracking-wider text-xs md:text-sm">{selectedRaceName || 'Carregando...'}</div>
                         <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
-                        <div className="text-amber-500 font-black uppercase tracking-widest text-base md:text-lg">{selectedClass}</div>
+                        <div className="text-amber-500 font-black uppercase tracking-widest text-base md:text-lg">{selectedClassName || 'Carregando...'}</div>
                     </div>
                 </div>
             </div>
@@ -635,18 +735,19 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                     </h3>
                     <div ref={raceScrollRef} className="md:flex-1 md:overflow-y-auto custom-scrollbar md:pr-2 bg-black/20 rounded-xl border border-white/5 p-2">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
-                            {Object.keys(RACES).map(r => (
+                            {dynamicRaces.length === 0 && <p className="text-gray-500 text-xs col-span-2 text-center">Consultando compêndio...</p>}
+                            {dynamicRaces.map((r) => (
                                 <div 
-                                    key={r} 
+                                    key={r.name} 
                                     role="button" 
-                                    onClick={() => handleSelectRace(r as any)} 
-                                    className={`cursor-pointer p-2 md:p-3 rounded-lg border text-left transition-all duration-200 relative overflow-hidden group ${selectedRace === r ? 'border-amber-500/60 bg-amber-900/20' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+                                    onClick={() => handleSelectRace(r.name)} 
+                                    className={`cursor-pointer p-2 md:p-3 rounded-lg border text-left transition-all duration-200 relative overflow-hidden group ${selectedRaceName === r.name ? 'border-amber-500/60 bg-amber-900/20' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
                                 >
                                     <div className="relative z-10 flex flex-col justify-center h-full">
-                                        <div className={`font-bold text-xs md:text-sm tracking-wider ${selectedRace === r ? 'text-amber-100' : 'text-gray-400'}`}>{r}</div>
-                                        <div className="text-[9px] md:text-[10px] text-amber-500/60 font-bold uppercase mt-0.5 md:mt-1">{(RACES as any)[r].desc}</div>
+                                        <div className={`font-bold text-xs md:text-sm tracking-wider ${selectedRaceName === r.name ? 'text-amber-100' : 'text-gray-400'}`}>{r.name}</div>
+                                        <div className="text-[9px] md:text-[10px] text-amber-500/60 font-bold uppercase mt-0.5 md:mt-1">{r.desc}</div>
                                     </div>
-                                    {selectedRace === r && <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 to-transparent"></div>}
+                                    {selectedRaceName === r.name && <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 to-transparent"></div>}
                                 </div>
                             ))}
                         </div>
@@ -659,15 +760,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                     </h3>
                     <div ref={classScrollRef} className="md:flex-1 md:overflow-y-auto custom-scrollbar md:pr-2 bg-black/20 rounded-xl border border-white/5 p-2">
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
-                            {Object.keys(CLASSES).map(c => (
+                            {dynamicClasses.length === 0 && <p className="text-gray-500 text-xs col-span-3 text-center">Consultando compêndio...</p>}
+                            {dynamicClasses.map(c => (
                                 <div 
-                                    key={c} 
+                                    key={c.name} 
                                     role="button" 
-                                    onClick={() => handleSelectClass(c as any)} 
-                                    className={`cursor-pointer p-2 md:p-3 rounded-lg border flex flex-row md:flex-col items-center justify-start md:justify-center gap-2 md:gap-2 transition-all duration-200 group ${selectedClass === c ? 'border-amber-500/60 bg-amber-900/20' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+                                    onClick={() => handleSelectClass(c.name)} 
+                                    className={`cursor-pointer p-2 md:p-3 rounded-lg border flex flex-row md:flex-col items-center justify-start md:justify-center gap-2 md:gap-2 transition-all duration-200 group ${selectedClassName === c.name ? 'border-amber-500/60 bg-amber-900/20' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
                                 >
-                                    <div className="text-lg md:text-2xl filter drop-shadow-md">{(CLASSES as any)[c].icon}</div>
-                                    <div className={`font-bold text-[9px] md:text-[10px] uppercase tracking-widest text-center ${selectedClass === c ? 'text-amber-100' : 'text-gray-500 group-hover:text-gray-300'}`}>{c}</div>
+                                    <div className="text-lg md:text-2xl filter drop-shadow-md">{c.icon}</div>
+                                    <div className={`font-bold text-[9px] md:text-[10px] uppercase tracking-widest text-center ${selectedClassName === c.name ? 'text-amber-100' : 'text-gray-500 group-hover:text-gray-300'}`}>{c.name}</div>
                                 </div>
                             ))}
                         </div>
@@ -701,7 +803,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
           <div className="hidden sm:flex items-center gap-1 bg-black/60 p-2 rounded-full border border-amber-900/50 shadow-inner"><div className="w-3 h-3 rounded-full bg-amber-900/50"></div><div className="w-12 h-3 rounded-full bg-gradient-to-r from-amber-400 to-amber-600 shadow-[0_0_15px_#f59e0b]"></div></div>
         </div>
 
-        {/* Meio (Rolável no Mobile, sem empurrar o botão para fora!) */}
+        {/* Meio */}
         <div ref={statsScrollRef} className="p-4 md:p-8 flex flex-col flex-1 min-h-0 items-center justify-start overflow-y-auto custom-scrollbar bg-gradient-to-b from-transparent to-black/30 w-full">
             <div className="text-center mb-6 md:mb-8 shrink-0 relative">
               <div className="absolute inset-0 bg-amber-600/20 blur-[30px] md:blur-[50px] rounded-full -z-10"></div>
@@ -712,7 +814,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-5 w-full max-w-3xl mb-4 md:mb-6 content-center p-3 md:p-6 bg-black/40 rounded-2xl md:rounded-3xl border border-amber-900/30 shadow-inner shrink-0">
               {Object.keys(stats).map((key) => {
                 const attr = key as keyof typeof stats;
-                const racial = (RACES as any)[selectedRace].bonus[attr];
+                const raceObj = dynamicRaces.find(r => r.name === selectedRaceName) || dynamicRaces[0];
+                const racial = (raceObj?.bonus as any)?.[attr] || 0;
+                
                 const total = stats[attr] + racial;
                 const mod = Math.floor((total - 10) / 2);
                 const isMaxed = stats[attr] >= 15;

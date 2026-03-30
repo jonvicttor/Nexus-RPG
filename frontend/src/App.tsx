@@ -14,7 +14,6 @@ import { getLevelFromXP } from './utils/gameRules';
 import ContextMenu from './components/ContextMenu'; 
 import MobilePlayerSheet from './components/MobilePlayerSheet'; 
 import CharacterSheetFloating from './components/CharacterSheetFloating'; 
-// 👉 IMPORT DO MODAL DE TESOUROS AQUI
 import LootGeneratorModal from './components/LootGeneratorModal';
 
 const GRID_SIZE = 70; 
@@ -184,7 +183,7 @@ function App() {
   const [showAllyCreator, setShowAllyCreator] = useState(false);
   const [showEnemyCreator, setShowEnemyCreator] = useState(false);
   const [showBgDice, setShowBgDice] = useState(false);
-  const [showLootGenerator, setShowLootGenerator] = useState(false); // 👉 ESTADO DO LOOT GENERATOR
+  const [showLootGenerator, setShowLootGenerator] = useState(false); 
   
   const [privateChatTarget, setPrivateChatTarget] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -209,6 +208,28 @@ function App() {
   const [toastMsg, setToastMsg] = useState<{text: string, id: number, sender?: string} | null>(null);
 
   const ignoreNextDiceSound = useRef(false);
+
+  // 👉 LÓGICA BLINDADA DO COMPÊNDIO: Pede o compêndio ao carregar de qualquer forma!
+  useEffect(() => {
+    const handleCompendiumSync = (data: any) => {
+        if (data.availableClasses) setAvailableClasses(data.availableClasses);
+        if (data.availableRaces) setAvailableRaces(data.availableRaces);
+    };
+
+    socket.on('compendiumSync', handleCompendiumSync);
+
+    // Força o pedido assim que a tela abre
+    socket.emit('requestCompendium');
+    
+    // E se reconectar por causa de instabilidade de rede, pede de novo
+    const handleConnect = () => socket.emit('requestCompendium');
+    socket.on('connect', handleConnect);
+
+    return () => { 
+        socket.off('compendiumSync', handleCompendiumSync); 
+        socket.off('connect', handleConnect);
+    };
+  }, []);
 
   const getCenterGridPosition = useCallback(() => {
     const centerPixelX = (CANVAS_WIDTH / 2) - mapOffset.x;
@@ -324,9 +345,7 @@ function App() {
   useEffect(() => {
     if (!isLoggedIn || !roomId) return;
     socket.emit('joinRoom', roomId);
-    const handleConnect = () => { socket.emit('joinRoom', roomId); };
-    socket.on('connect', handleConnect);
-    return () => { socket.off('connect', handleConnect); };
+    // Nota: O connect handler foi movido para cima para não duplicar chamadas
   }, [isLoggedIn, roomId]);
 
   useEffect(() => {
@@ -343,6 +362,7 @@ function App() {
       if (gameState.globalBrightness !== undefined) setGlobalBrightness(gameState.globalBrightness);
       if (gameState.currentTrack) handlePlayMusic(gameState.currentTrack, false);
       
+      // Estes também continuam aqui por segurança caso o DM atualize algo
       if (gameState.availableClasses) setAvailableClasses(gameState.availableClasses);
       if (gameState.availableSpells) setAvailableSpells(gameState.availableSpells);
       if (gameState.availableItems) setAvailableItems(gameState.availableItems);
@@ -429,7 +449,6 @@ function App() {
     };
   }, [isLoggedIn, addLog, role, playerName, handlePlayMusic, handleStopMusic, handlePlaySFX, playSound]); 
 
-  // 👉 OUVINTE DO EVENTO DO GERADOR DE SAQUE (LOOT)
   useEffect(() => {
       const handleLootGenerated = (data: any) => {
           const pos = getCenterGridPosition();
@@ -1169,7 +1188,6 @@ function App() {
                     
                     availableItems={availableItems} 
                     availableConditions={availableConditions}
-                    // @ts-ignore 👉 Adicionando suporte para o modal de Loot aqui
                     onOpenLootGenerator={() => setShowLootGenerator(true)}
                     /> 
                 : <SidebarPlayer entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name === playerName)?.id || 0} initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} onSelectEntity={(entity) => { setFocusEntity(entity); setTimeout(() => setFocusEntity(null), 100); }} onApplyDamageFromChat={handleApplyDamageFromChat} />

@@ -81,25 +81,26 @@ const CharacterSheetFloating: React.FC<CharacterSheetFloatingProps> = ({
         return isFinesseOrRanged ? Math.max(strMod, dexMod) : strMod;
     };
 
-    // 👉 FILTRO ONISCIENTE ATUALIZADO (Ignora lixo visual da string de classe)
+    // 👉 FILTRO DE MAGIAS BLINDADO
     const allowedSpells = useMemo(() => {
         if (!availableSpells || availableSpells.length === 0) return [];
 
-        // Limpa a string: "ELFO • MAGO (WIZARD) NV. 3" vira "wizard"
         const rawClass = (character.classType || '').toLowerCase();
-        let targetClass = '';
+        
+        // Define as chaves que vamos procurar dentro do array 'classes' da magia
+        const targetClasses: string[] = [];
 
-        if (rawClass.includes('wizard') || rawClass.includes('mago')) targetClass = 'wizard';
-        else if (rawClass.includes('cleric') || rawClass.includes('clérigo') || rawClass.includes('clerigo')) targetClass = 'cleric';
-        else if (rawClass.includes('bard') || rawClass.includes('bardo')) targetClass = 'bard';
-        else if (rawClass.includes('sorcerer') || rawClass.includes('feiticeiro')) targetClass = 'sorcerer';
-        else if (rawClass.includes('warlock') || rawClass.includes('bruxo')) targetClass = 'warlock';
-        else if (rawClass.includes('druid') || rawClass.includes('druida')) targetClass = 'druid';
-        else if (rawClass.includes('paladin') || rawClass.includes('paladino')) targetClass = 'paladin';
-        else if (rawClass.includes('ranger') || rawClass.includes('patrulheiro') || rawClass.includes('arqueiro')) targetClass = 'ranger';
-        else if (rawClass.includes('artificer') || rawClass.includes('artífice') || rawClass.includes('artifice')) targetClass = 'artificer';
+        if (rawClass.includes('wizard') || rawClass.includes('mago')) targetClasses.push('wizard', 'mago');
+        if (rawClass.includes('cleric') || rawClass.includes('clérigo') || rawClass.includes('clerigo')) targetClasses.push('cleric', 'clérigo', 'clerigo');
+        if (rawClass.includes('bard') || rawClass.includes('bardo')) targetClasses.push('bard', 'bardo');
+        if (rawClass.includes('sorcerer') || rawClass.includes('feiticeiro')) targetClasses.push('sorcerer', 'feiticeiro');
+        if (rawClass.includes('warlock') || rawClass.includes('bruxo')) targetClasses.push('warlock', 'bruxo');
+        if (rawClass.includes('druid') || rawClass.includes('druida')) targetClasses.push('druid', 'druida');
+        if (rawClass.includes('paladin') || rawClass.includes('paladino')) targetClasses.push('paladin', 'paladino');
+        if (rawClass.includes('ranger') || rawClass.includes('patrulheiro') || rawClass.includes('arqueiro')) targetClasses.push('ranger', 'patrulheiro');
+        if (rawClass.includes('artificer') || rawClass.includes('artífice') || rawClass.includes('artifice')) targetClasses.push('artificer', 'artífice', 'artifice');
 
-        if (!targetClass) return [];
+        if (targetClasses.length === 0) return [];
 
         const charLevel = character.level || 1;
         const maxSpellLevel = Math.min(9, Math.ceil(charLevel / 2));
@@ -108,12 +109,12 @@ const CharacterSheetFloating: React.FC<CharacterSheetFloatingProps> = ({
             const spellLvl = parseInt(spell.level?.toString()) || 0;
             if (spellLvl > maxSpellLevel) return false;
 
-            // Transforma o campo de classes do JSON em texto e busca a classe alvo
-            const spellClassesStr = JSON.stringify(spell.classes || {}).toLowerCase();
+            // Se a magia não tem a propriedade 'classes', ignora
+            if (!spell.classes || !Array.isArray(spell.classes)) return false;
+
+            // Verifica se a magia permite alguma das classes do nosso targetClasses
+            return spell.classes.some((c: string) => targetClasses.includes(c.toLowerCase()));
             
-            // Busca permissiva: se o nome da classe aparece como valor de "name" ou como string no array
-            return spellClassesStr.includes(`"${targetClass}"`) || 
-                   spellClassesStr.includes(`"name":"${targetClass}"`);
         }).sort((a, b) => a.name.localeCompare(b.name));
         
     }, [availableSpells, character.classType, character.level]);
@@ -248,7 +249,6 @@ const CharacterSheetFloating: React.FC<CharacterSheetFloatingProps> = ({
                     </div>
                 )}
 
-                {/* 👉 ABA DE MAGIAS (Versão Blindada) */}
                 {activeTab === 'spells' && (
                     <div className="animate-in fade-in duration-300">
                          <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-2">
