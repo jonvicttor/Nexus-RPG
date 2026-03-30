@@ -9,17 +9,17 @@ import SkillList from './SkillList';
 import ItemCreator from './ItemCreator';
 import Scratchpad from './Scratchpad'; 
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
-import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent } from 'lucide-react'; 
+import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent, Gem } from 'lucide-react'; 
 
 export interface InitiativeItem { id: number; name: string; value: number; }
 
 const MONSTER_LIST: MonsterPreset[] = [
-  { name: 'Lobo', hp: 11, ac: 13, image: '/tokens/lobo.png' },
-  { name: 'Goblin', hp: 7, ac: 15, image: '/tokens/goblin.png' },
-  { name: 'Esqueleto', hp: 13, ac: 13, image: '/tokens/skeleton.png' },
-  { name: 'Orc', hp: 15, ac: 13, image: '/tokens/orc.png' },
-  { name: 'Bandido', hp: 11, ac: 12, image: '/tokens/bandido.png' },
-  { name: 'Zumbi', hp: 22, ac: 8, image: '/tokens/zumbi.png' }
+  { name: 'Lobo', hp: 11, ac: 13, image: '/tokens/Raças/Orc/druid/druid_orc_humanoid_male_medium_01.png' }, 
+  { name: 'Goblin', hp: 7, ac: 15, image: '/tokens/Raças/Gnome/rogue/rogue_gnome_humanoid_male_small_01.png' }, 
+  { name: 'Esqueleto', hp: 13, ac: 13, image: '/tokens/Raças/Dwarf/fighter/fighter_dwarf_humanoid_male_medium_01.png' }, 
+  { name: 'Orc', hp: 15, ac: 13, image: '/tokens/Raças/Orc/fighter/fighter_orc_humanoid_male_medium_01.png' },
+  { name: 'Bandido', hp: 11, ac: 12, image: '/tokens/Raças/Human/rogue/rogue_human_humanoid_male_medium_01.png' },
+  { name: 'Zumbi', hp: 22, ac: 8, image: '/tokens/Raças/Human/commoner/commoner_human_humanoid_male_medium_01.png' } 
 ];
 
 const INITIAL_MAPS = [
@@ -91,6 +91,7 @@ interface SidebarDMProps {
   onLongRest: () => void; 
   availableItems?: any[]; 
   availableConditions?: any[]; 
+  onOpenLootGenerator?: () => void; 
 }
 
 const AoEColorPicker = ({ selected, onSelect }: { selected: string, onSelect: (c: string) => void }) => {
@@ -133,7 +134,6 @@ const EntityControlRow = ({ entity, onUpdateHP, onDeleteEntity, onClickEdit, onA
       <div className="flex items-center justify-between pr-2 z-10 relative">
         <div className="flex items-center gap-3">
           <div className="relative w-10 h-10 flex-shrink-0">
-            {/* 👉 AQUI: Sidebar usa tokenImage se houver */}
             {(entity.tokenImage || entity.image) ? (<img src={entity.tokenImage || entity.image} alt={entity.name} className={`w-full h-full rounded-full object-cover border border-white/20 shadow-sm ${entity.visible === false ? 'opacity-50 grayscale' : ''}`}/>) : (<div className="w-full h-full rounded-full" style={{ backgroundColor: entity.color }}></div>)}
             {entity.type === 'player' && (<div className="absolute -bottom-1 -right-1 bg-purple-900 border border-purple-500 text-white text-[9px] font-bold px-1 rounded-full shadow-md">Nv.{getLevelFromXP(entity.xp || 0)}</div>)}
           </div>
@@ -212,7 +212,6 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
                     {attacker ? (
                         <>
                             <div className="w-14 h-14 rounded-full border-2 border-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.4)] overflow-hidden bg-black relative group">
-                                {/* 👉 AQUI: Painel VS Atacante */}
                                 <img src={attacker.tokenImage || attacker.image || ''} className="w-full h-full object-cover group-hover:scale-110 transition-transform" alt="" />
                             </div>
                             <span className="text-[11px] text-blue-300 font-black mt-2 truncate max-w-full text-center leading-tight drop-shadow-md">{attacker.name}</span>
@@ -237,7 +236,6 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
                             <div className="flex -space-x-3 overflow-hidden justify-center w-full">
                                 {targets.slice(0, 3).map((t: Entity) => (
                                     <div key={t.id} className="w-12 h-12 rounded-full border-2 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)] overflow-hidden bg-black flex-shrink-0 relative z-10">
-                                        {/* 👉 AQUI: Painel VS Alvo */}
                                         <img src={t.tokenImage || t.image || ''} className="w-full h-full object-cover" alt="" />
                                     </div>
                                 ))}
@@ -295,7 +293,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   onOpenCreator, onAddXP, customMonsters, globalBrightness = 1, onSetGlobalBrightness, onRequestRoll, onToggleVisibility,
   currentTrack, onPlayMusic, onStopMusic, onPlaySFX, audioVolume, onSetAudioVolume,
   onResetView, onGiveItem, onApplyDamageFromChat,
-  onDMRoll, onLongRest, availableItems, availableConditions 
+  onDMRoll, onLongRest, availableItems, availableConditions, onOpenLootGenerator 
 }) => {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>('combat');
@@ -673,6 +671,16 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                 </button>
                             </div>
 
+                            {/* 👉 BOTÃO DE GERAR SAQUE NO TOPO DO BESTIÁRIO */}
+                            <div className="mb-6">
+                                <button 
+                                    onClick={onOpenLootGenerator} 
+                                    className="w-full bg-gradient-to-r from-amber-700 to-yellow-600 hover:from-amber-600 hover:to-yellow-500 border border-yellow-400 text-white text-xs font-black py-3 rounded-lg uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(217,119,6,0.3)] active:scale-95 flex items-center justify-center gap-2"
+                                >
+                                    <Gem size={18} /> Gerar Saque (Loot)
+                                </button>
+                            </div>
+
                             <div className="bg-black/40 border border-red-900/30 rounded-xl p-3 shadow-inner">
                                 <h3 className="text-red-500 font-bold text-[10px] uppercase tracking-widest mb-3 flex items-center justify-between border-b border-red-900/30 pb-2">
                                     <span>🐉 Bestiário Negro</span>
@@ -689,7 +697,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                             className="flex flex-col items-center bg-black/60 hover:bg-red-900/40 border border-white/5 hover:border-red-500/50 p-2 rounded-lg transition-all group cursor-grab active:cursor-grabbing"
                                         >
                                             <div className="w-10 h-10 rounded-full overflow-hidden mb-1.5 border border-white/20 group-hover:border-red-500 shadow-lg">
-                                                {/* 👉 Usando o tokenImage no Bestiário */}
                                                 <img src={monster.tokenImage || monster.image} alt={monster.name} className="w-full h-full object-cover" />
                                             </div>
                                             <span className="text-[10px] font-bold text-gray-300 group-hover:text-white truncate w-full text-center leading-tight">

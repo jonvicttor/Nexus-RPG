@@ -13,7 +13,9 @@ import BaldursDiceRoller, { RollBonus } from './components/BaldursDiceRoller';
 import { getLevelFromXP } from './utils/gameRules';
 import ContextMenu from './components/ContextMenu'; 
 import MobilePlayerSheet from './components/MobilePlayerSheet'; 
-import CharacterSheetFloating from './components/CharacterSheetFloating'; // 👉 IMPORT NOVO AQUI!
+import CharacterSheetFloating from './components/CharacterSheetFloating'; 
+// 👉 IMPORT DO MODAL DE TESOUROS AQUI
+import LootGeneratorModal from './components/LootGeneratorModal';
 
 const GRID_SIZE = 70; 
 const CANVAS_WIDTH = 1920; 
@@ -25,11 +27,11 @@ export interface Item {
   name: string;
   description: string;
   image: string;
-  type: 'weapon' | 'armor' | 'potion' | 'misc';
+  type: 'weapon' | 'armor' | 'potion' | 'misc' | 'magic';
   quantity: number;
   weight?: number;
   value?: string;
-  rarity?: 'common' | 'rare' | 'epic' | 'legendary';
+  rarity?: string;
   isEquipped?: boolean;
   stats?: {
     damage?: string;
@@ -182,6 +184,7 @@ function App() {
   const [showAllyCreator, setShowAllyCreator] = useState(false);
   const [showEnemyCreator, setShowEnemyCreator] = useState(false);
   const [showBgDice, setShowBgDice] = useState(false);
+  const [showLootGenerator, setShowLootGenerator] = useState(false); // 👉 ESTADO DO LOOT GENERATOR
   
   const [privateChatTarget, setPrivateChatTarget] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -207,14 +210,14 @@ function App() {
 
   const ignoreNextDiceSound = useRef(false);
 
-  const getCenterGridPosition = () => {
+  const getCenterGridPosition = useCallback(() => {
     const centerPixelX = (CANVAS_WIDTH / 2) - mapOffset.x;
     const centerPixelY = (CANVAS_HEIGHT / 2) - mapOffset.y;
     return { 
         x: Math.max(0, Math.floor(centerPixelX / (GRID_SIZE * mapScale))), 
         y: Math.max(0, Math.floor(centerPixelY / (GRID_SIZE * mapScale))) 
     };
-  };
+  }, [mapOffset, mapScale]);
 
   useEffect(() => {
     if (toastMsg && !toastMsg.sender) {
@@ -275,15 +278,47 @@ function App() {
     handlePlaySFX(type, false); 
   }, [handlePlaySFX]);
 
-  useEffect(() => {
-      if (activeMusicRef.current) activeMusicRef.current.volume(audioVolume);
-      Howler.volume(audioVolume);
-  }, [audioVolume]);
-
   const addLog = useCallback((messageData: Omit<ChatMessage, 'id' | 'timestamp'>, shouldEmit: boolean = true) => {
     const newMessage: ChatMessage = { id: Date.now().toString() + Math.random(), timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), ...messageData };
     setChatMessages(prev => [...prev, newMessage]);
     if (shouldEmit) socket.emit('sendMessage', { roomId, message: newMessage });
+  }, [roomId]);
+
+  const createEntity = useCallback((type: 'enemy' | 'player' | 'loot', name: string, x: number, y: number, customStats?: Partial<Entity> & { tokenImage?: string }) => { 
+      const newId = Date.now() + Math.floor(Math.random() * 1000); 
+      const newEntity: Entity = { 
+          id: newId, 
+          name, 
+          hp: customStats?.hp || 10, 
+          maxHp: customStats?.maxHp || customStats?.hp || 10, 
+          ac: customStats?.ac || 10, 
+          x, 
+          y, 
+          rotation: 0, 
+          mirrored: false, 
+          conditions: [], 
+          color: type === 'enemy' ? '#ef4444' : '#3b82f6', 
+          type, 
+          image: customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), 
+          tokenImage: customStats?.tokenImage || customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"),
+          visionRadius: 9, 
+          stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, 
+          classType: customStats?.classType || "NPC", 
+          size: customStats?.size || 2, 
+          xp: customStats?.xp || 0, 
+          level: customStats?.level || 1, 
+          inventory: customStats?.inventory || [], 
+          race: customStats?.race || 'Humano', 
+          visible: true, 
+          proficiencies: customStats?.proficiencies || {}, 
+          deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, 
+          inspiration: customStats?.inspiration || false, 
+          spellSlots: customStats?.spellSlots || {}, 
+          spells: customStats?.spells || [], 
+          coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } 
+      }; 
+      setEntities(prev => [...prev, newEntity]); 
+      socket.emit('createEntity', { entity: newEntity, roomId }); 
   }, [roomId]);
 
   useEffect(() => {
@@ -393,6 +428,27 @@ function App() {
       socket.off('gameStarted');
     };
   }, [isLoggedIn, addLog, role, playerName, handlePlayMusic, handleStopMusic, handlePlaySFX, playSound]); 
+
+  // 👉 OUVINTE DO EVENTO DO GERADOR DE SAQUE (LOOT)
+  useEffect(() => {
+      const handleLootGenerated = (data: any) => {
+          const pos = getCenterGridPosition();
+          data.loot.forEach((item: any, index: number) => {
+              createEntity('loot', `Saque: ${item.name}`, pos.x + (index % 3), pos.y + Math.floor(index / 3), {
+                  inventory: [{ ...item, id: Date.now().toString() + index, quantity: 1, isEquipped: false }],
+                  image: item.image || '/tokens/loot.png', 
+                  classType: 'Item',
+                  size: 0.8
+              });
+          });
+          addLog({ text: `💰 O Mestre materializou ${data.loot.length} tesouro(s) no mapa!`, type: 'info', sender: 'Sistema' });
+          setShowLootGenerator(false);
+          handlePlaySFX('dado', true);
+      };
+
+      socket.on('randomLootGenerated', handleLootGenerated);
+      return () => { socket.off('randomLootGenerated', handleLootGenerated); };
+  }, [getCenterGridPosition, createEntity, addLog, handlePlaySFX]);
 
   const handleResetView = () => {
       setMapOffset({ x: 0, y: 0 }); setMapScale(1);
@@ -719,51 +775,6 @@ function App() {
   const handleEditEntity = (id: number, updates: Partial<Entity>) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, ...updates } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates, roomId }); };
   const handleDeleteEntity = (id: number) => { setEntities(prev => prev.filter(ent => ent.id !== id)); socket.emit('deleteEntity', { entityId: id, roomId }); if (attackerId === id) setAttackerId(null); };
   
-  const createEntity = (type: 'enemy' | 'player' | 'loot', name: string, x: number, y: number, customStats?: Partial<Entity> & { tokenImage?: string }) => { 
-      const newId = Date.now(); 
-      const newEntity: Entity = { 
-          id: newId, 
-          name, 
-          hp: customStats?.hp || 10, 
-          maxHp: customStats?.maxHp || customStats?.hp || 10, 
-          ac: customStats?.ac || 10, 
-          x, 
-          y, 
-          rotation: 0, 
-          mirrored: false, 
-          conditions: [], 
-          color: type === 'enemy' ? '#ef4444' : '#3b82f6', 
-          type, 
-          image: customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), 
-          tokenImage: customStats?.tokenImage || customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"),
-          visionRadius: 9, 
-          stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, 
-          classType: customStats?.classType || "NPC", 
-          size: customStats?.size || 2, 
-          xp: customStats?.xp || 0, 
-          level: customStats?.level || 1, 
-          inventory: customStats?.inventory || [], 
-          race: customStats?.race || 'Humano', 
-          visible: true, 
-          proficiencies: customStats?.proficiencies || {}, 
-          deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, 
-          inspiration: customStats?.inspiration || false, 
-          spellSlots: customStats?.spellSlots || {}, 
-          spells: customStats?.spells || [], 
-          coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } 
-      }; 
-      setEntities(prev => [...prev, newEntity]); 
-      socket.emit('createEntity', { entity: newEntity, roomId }); 
-      addLog({ text: `${name} entrou na mesa.`, type: 'info', sender: 'Sistema' }); 
-      
-      if (role === 'DM') setStatusSelectionId(newId);
-  };
-
-  const handleAddEntity = (type: 'enemy' | 'player', name: string, customStats?: MonsterPreset) => { 
-      const pos = getCenterGridPosition();
-      createEntity(type, name, pos.x, pos.y, customStats as Partial<Entity>); 
-  };
-  
   const handleMapDrop = (type: string, x: number, y: number) => { 
       const entityType = type as 'enemy' | 'player'; 
       const nextNum = entities.filter(e => e.type === entityType).length + 1; 
@@ -915,6 +926,11 @@ function App() {
       handleDropLootOnMap(itemToDrop, myEntity.id, myEntity.x, myEntity.y);
   };
 
+  const handleAddEntity = (type: 'enemy' | 'player', name: string, customStats?: MonsterPreset) => { 
+      const pos = getCenterGridPosition();
+      createEntity(type, name, pos.x, pos.y, customStats as Partial<Entity>); 
+  };
+
   if (!isLoggedIn) return <LoginScreen onLogin={handleLogin} availableClasses={availableClasses} availableRaces={availableRaces} />;
   
   if (gamePhase === 'LOBBY') return <Lobby availableCharacters={entities.filter(e => e.type === 'player')} onStartGame={handleStartGame} myPlayerName={playerName} roomCode={roomId} />;
@@ -992,7 +1008,7 @@ function App() {
               onRollAttribute={handleAttributeRoll}
               onUpdateHP={handleUpdateHP}
               onUpdateCharacter={handleEditEntity}
-              availableSpells={availableSpells}  // 👈 ADICIONE ESTA LINHA AQUI!
+              availableSpells={availableSpells}
               onDropItem={(itemId) => {
                   const char = entities.find(e => e.id === activeCharacterSheetId);
                   if (char) {
@@ -1153,11 +1169,21 @@ function App() {
                     
                     availableItems={availableItems} 
                     availableConditions={availableConditions}
+                    // @ts-ignore 👉 Adicionando suporte para o modal de Loot aqui
+                    onOpenLootGenerator={() => setShowLootGenerator(true)}
                     /> 
                 : <SidebarPlayer entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name === playerName)?.id || 0} initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} onSelectEntity={(entity) => { setFocusEntity(entity); setTimeout(() => setFocusEntity(null), 100); }} onApplyDamageFromChat={handleApplyDamageFromChat} />
                 }
             </aside>
           </>
+      )}
+
+      {/* 👉 O MODAL DE TESOURO FICA AQUI */}
+      {showLootGenerator && (
+          <LootGeneratorModal 
+              onClose={() => setShowLootGenerator(false)}
+              onGenerate={(options: any) => socket.emit('requestRandomLoot', { ...options, roomId })}
+          />
       )}
     </div>
   );

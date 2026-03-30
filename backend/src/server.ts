@@ -6,7 +6,9 @@ import { MonsterImporter, NexusMonster } from './utils/MonsterImporter';
 import { ClassImporter } from './utils/ClassImporter'; 
 import { SpellImporter } from './utils/SpellImporter'; 
 import { ItemImporter } from './utils/ItemImporter'; 
-import { RaceImporter } from './utils/RaceImporter'; // 👉 IMPORTADO O MESTRE DAS RAÇAS
+import { RaceImporter } from './utils/RaceImporter';
+// 👉 IMPORTAÇÃO DO GERADOR DE LOOT
+import { LootGenerator } from './utils/LootGenerator'; 
 
 const fastify = Fastify();
 
@@ -34,7 +36,7 @@ const FULL_CLASSES = ClassImporter.loadClasses();
 const FULL_BESTIARY = MonsterImporter.loadBestiary();
 const FULL_SPELLS = SpellImporter.loadSpells();
 const FULL_ITEMS = ItemImporter.loadItems(); 
-const FULL_RACES = RaceImporter.loadRaces(); // 👉 CARREGA AS RAÇAS
+const FULL_RACES = RaceImporter.loadRaces(); 
 
 // --- 2. ESTADO INICIAL ---
 interface GameState {
@@ -48,7 +50,7 @@ interface GameState {
   availableClasses: any[]; 
   availableSpells: any[]; 
   availableItems: any[]; 
-  availableRaces: any[]; // 👉 NOVO: O frontend precisa saber quais raças existem!
+  availableRaces: any[]; 
   globalBrightness: number; 
   weather: 'none' | 'rain' | 'snow';
   currentTrack: string | null; 
@@ -63,7 +65,6 @@ let roomsState: Record<string, GameState> = {};
 
 const getRoomState = (roomId: string): GameState => {
     if (!roomsState[roomId]) {
-        // 👉 A SALA NASCE AGORA COM AS RAÇAS EMBUTIDAS!
         roomsState[roomId] = {
             entities: [], 
             fogGrid: createInitialFog(), 
@@ -75,7 +76,7 @@ const getRoomState = (roomId: string): GameState => {
             availableClasses: FULL_CLASSES, 
             availableSpells: FULL_SPELLS, 
             availableItems: FULL_ITEMS, 
-            availableRaces: FULL_RACES, // 👉 INJEÇÃO DAS RAÇAS AQUI
+            availableRaces: FULL_RACES, 
             globalBrightness: 1,
             weather: 'none',
             currentTrack: null
@@ -97,7 +98,7 @@ const getRoomState = (roomId: string): GameState => {
                     availableClasses: FULL_CLASSES, 
                     availableSpells: FULL_SPELLS, 
                     availableItems: FULL_ITEMS, 
-                    availableRaces: FULL_RACES, // 👉 FORÇA AS RAÇAS ATUALIZADAS MESMO EM SAVES ANTIGOS
+                    availableRaces: FULL_RACES, 
                     weather: loadedData.weather || 'none',
                     currentTrack: loadedData.currentTrack || null
                 };
@@ -293,6 +294,21 @@ io.on('connection', (socket) => {
   socket.on('dmRequestRoll', (data: any) => {
     io.in(data.roomId).emit('dmRequestRoll', data);
   });
+
+  // 👉 NOVO EVENTO: SOLICITAÇÃO DE LOOT ALEATÓRIO
+  socket.on('requestRandomLoot', (data: { rarity: string, type: string, count: number, roomId: string }) => {
+      const roomState = getRoomState(data.roomId);
+      
+      const loot = LootGenerator.generate(roomState.availableItems, {
+          rarity: data.rarity,
+          type: data.type,
+          count: data.count
+      });
+      
+      // Emite de volta para a sala (ou poderia ser só para o Mestre)
+      io.in(data.roomId).emit('randomLootGenerated', { loot });
+  });
+
 });
 
 fastify.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
