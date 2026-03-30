@@ -15,7 +15,7 @@ export class MonsterImporter {
     try {
       // 👉 MUDANÇA: Você pode adicionar outros arquivos aqui se baixar mais bestiários
       const fileName = 'bestiary-mm.json';
-      const filePath = path.join(__dirname, `../data/${fileName}`);
+      const filePath = path.join(process.cwd(), 'src', 'data', fileName);
       
       if (!fs.existsSync(filePath)) {
           console.warn(`⚠️ ${fileName} não encontrado na pasta src/data. O Bestiário oficial não será carregado.`);
@@ -40,7 +40,7 @@ export class MonsterImporter {
           
           // Geração das URLs de imagem baseadas na estrutura do 5eTools
           const tokenImagePath = `/img/bestiary/tokens/${m.source}/${safeName}.webp`; 
-          const fullImagePath = `/img/bestiary/${m.source}/${safeName}.webp`;         
+          const fullImagePath = `/img/bestiary/${m.source}/${safeName}.webp`;        
 
           let hp = 10;
           if (m.hp) {

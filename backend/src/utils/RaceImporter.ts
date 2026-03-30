@@ -6,7 +6,7 @@ export interface NexusRace {
   size: number;
   visionRadius: number;
   speed: number;
-  source: string; // 👉 NOVO: Adicionado a propriedade source
+  source: string;
 }
 
 export class RaceImporter {
@@ -14,7 +14,8 @@ export class RaceImporter {
     const nexusRaces: NexusRace[] = [];
     
     try {
-      const filePath = path.join(__dirname, '../data/races.json');
+      // 👉 CAMINHO BLINDADO PARA A NUVEM (RENDER)
+      const filePath = path.join(process.cwd(), 'src', 'data', 'races.json');
       
       if (!fs.existsSync(filePath)) {
         console.warn('⚠️ Arquivo races.json não encontrado.');
@@ -53,7 +54,7 @@ export class RaceImporter {
           size: sizeValue,
           visionRadius,
           speed,
-          source: r.source || 'PHB' // 👉 NOVO: Pega o source ou usa PHB de padrão
+          source: r.source || 'PHB'
         });
       }
       

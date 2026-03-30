@@ -7,8 +7,9 @@ const SOCKET_URL = window.location.hostname === 'localhost'
     : 'https://nexus-rpg-dl3i.onrender.com';
 
 const socket = io(SOCKET_URL, {
-  transports: ['websocket'],
-  reconnection: true
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 1000,
 });
 
 export default socket;

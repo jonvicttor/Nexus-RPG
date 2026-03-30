@@ -22,7 +22,8 @@ export class ClassImporter {
 
     for (const fileName of classFiles) {
       try {
-        const filePath = path.join(__dirname, `../data/${fileName}`);
+        // 👉 CAMINHO BLINDADO PARA A NUVEM
+        const filePath = path.join(process.cwd(), 'src', 'data', fileName);
         
         if (!fs.existsSync(filePath)) {
             continue;

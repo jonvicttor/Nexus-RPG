@@ -25,7 +25,8 @@ export class SpellImporter {
 
     spellFiles.forEach(fileName => {
         try {
-            const filePath = path.join(__dirname, '../data/', fileName);
+            // 👉 CAMINHO BLINDADO PARA A NUVEM (RENDER)
+            const filePath = path.join(process.cwd(), 'src', 'data', fileName);
             
             if (!fs.existsSync(filePath)) {
                 console.warn(`⚠️ ${fileName} não encontrado. Ignorando.`);
@@ -37,7 +38,6 @@ export class SpellImporter {
 
             if (spellData && spellData.spell) {
                 for (const s of spellData.spell) {
-                    
                     let rawDesc = "";
                     if (Array.isArray(s.entries)) {
                         rawDesc = s.entries.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join('\n\n');
@@ -48,14 +48,11 @@ export class SpellImporter {
                         'I': 'Ilusão', 'N': 'Necromancia', 'P': 'Transmutação', 'V': 'Evocação'
                     };
 
-                    // 👉 A MÁGICA ESTÁ AQUI: PADRONIZAÇÃO ABSOLUTA DAS CLASSES
                     const classList: string[] = [];
                     if (s.classes && s.classes.fromClassList) {
                         s.classes.fromClassList.forEach((c: any) => {
                             const cName = c.name.toLowerCase();
                             classList.push(cName);
-                            
-                            // Cria sinônimos para garantir o match no frontend (PT-BR e Siglas)
                             if (cName === 'wizard') classList.push('mago');
                             if (cName === 'sorcerer') classList.push('feiticeiro');
                             if (cName === 'warlock') classList.push('bruxo');
@@ -84,7 +81,7 @@ export class SpellImporter {
                         components: Object.keys(s.components || {}).join(', ').toUpperCase(),
                         duration: spellDuration,
                         description: FiveEToolsParser.cleanTags(rawDesc),
-                        classes: classList, // Array turbinado com PT e EN
+                        classes: classList,
                         source: s.source
                     });
                 }

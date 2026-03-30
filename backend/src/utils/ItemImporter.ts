@@ -20,7 +20,8 @@ export class ItemImporter {
 
     for (const fileName of filesToLoad) {
       try {
-        const filePath = path.join(__dirname, `../data/${fileName}`);
+        // 👉 CORRIGIDO: Agora ele usa a variável 'fileName' em vez de travar no 'items.json'
+        const filePath = path.join(process.cwd(), 'src', 'data', fileName); 
         
         if (!fs.existsSync(filePath)) {
           console.warn(`⚠️ Arquivo ${fileName} não encontrado na forja. Pulando...`);

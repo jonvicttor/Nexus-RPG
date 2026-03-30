@@ -11,7 +11,8 @@ export class ConditionImporter {
     const nexusConditions: NexusCondition[] = [];
     
     try {
-      const filePath = path.join(__dirname, '../data/conditionsdiseases.json');
+      // 👉 CAMINHO BLINDADO PARA A NUVEM
+      const filePath = path.join(process.cwd(), 'src', 'data', 'conditionsdiseases.json');
       
       if (!fs.existsSync(filePath)) {
         console.warn('⚠️ Arquivo conditionsdiseases.json não encontrado na forja. Pulando...');
