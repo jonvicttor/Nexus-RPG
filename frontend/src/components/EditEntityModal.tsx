@@ -8,7 +8,7 @@ interface EditEntityModalProps {
   availableClasses?: any[]; 
   availableSpells?: any[]; 
   availableItems?: any[]; 
-  availableRaces?: any[]; // 👉 RECEBENDO AS RAÇAS
+  availableRaces?: any[];
 }
 
 const EditEntityModal: React.FC<EditEntityModalProps> = ({ entity, onSave, onClose, availableClasses = [], availableSpells = [], availableItems = [], availableRaces = [] }) => {
@@ -20,7 +20,7 @@ const EditEntityModal: React.FC<EditEntityModalProps> = ({ entity, onSave, onClo
     maxHp: entity.maxHp,
     ac: entity.ac,
     classType: entity.classType || '', 
-    race: entity.race || '', // 👉 Guardando a raça
+    race: entity.race || '',
     size: entity.size || 1,
     image: entity.image || '',
     visionRadius: entity.visionRadius || 9,
@@ -47,19 +47,21 @@ const EditEntityModal: React.FC<EditEntityModalProps> = ({ entity, onSave, onClo
     }
   };
 
+  // 👉 CORREÇÃO: Agora a classe salva o ID em inglês do 5eTools de forma oculta para não quebrar a UI
   const handleClassChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const className = e.target.value;
     const selectedClass = availableClasses.find(c => c.name === className);
     if (selectedClass) {
         const newProfs = { ...formData.proficiencies };
         selectedClass.saves.forEach((save: string) => { newProfs[`save-${save.toLowerCase()}`] = 1; });
-        setFormData(prev => ({ ...prev, classType: className, proficiencies: newProfs }));
+        // Embutindo o source/id original para usarmos no Grimório Flutuante
+        const classString = `${className} (${selectedClass.source?.toLowerCase() || className.toLowerCase()})`;
+        setFormData(prev => ({ ...prev, classType: classString, proficiencies: newProfs }));
     } else {
         setFormData(prev => ({ ...prev, classType: className }));
     }
   };
 
-  // 👉 Função para aplicar os bônus raciais ao escolher a raça
   const handleRaceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
       const raceName = e.target.value;
       const selectedRace = availableRaces.find(r => r.name === raceName);
@@ -68,8 +70,8 @@ const EditEntityModal: React.FC<EditEntityModalProps> = ({ entity, onSave, onClo
           setFormData(prev => ({
               ...prev,
               race: raceName,
-              size: selectedRace.size || 1, // Aplica o tamanho (Pequeno/Médio)
-              visionRadius: selectedRace.visionRadius || 9 // Aplica a Visão no Escuro
+              size: selectedRace.size || 1, 
+              visionRadius: selectedRace.visionRadius || 9 
           }));
       } else {
           setFormData(prev => ({ ...prev, race: raceName }));
@@ -171,11 +173,10 @@ const EditEntityModal: React.FC<EditEntityModalProps> = ({ entity, onSave, onClo
                       <input name="name" value={formData.name} onChange={handleChange} className="w-full bg-black/40 border border-white/10 rounded px-2 py-1 text-sm text-white outline-none focus:border-blue-500" />
                   </div>
 
-                  {/* 👉 CLASSE E RAÇA LADO A LADO PARA ECONOMIZAR ESPAÇO */}
                   <div className="col-span-2 flex gap-4">
                       <div className="flex-1">
                           <label className="block text-[10px] text-purple-400 uppercase mb-1 font-bold">Classe</label>
-                          <select name="classType" value={formData.classType} onChange={handleClassChange} className="w-full bg-black/40 border border-purple-500/30 rounded px-2 py-1.5 text-sm text-white outline-none focus:border-purple-500 cursor-pointer">
+                          <select name="classType" value={formData.classType.split(' (')[0]} onChange={handleClassChange} className="w-full bg-black/40 border border-purple-500/30 rounded px-2 py-1.5 text-sm text-white outline-none focus:border-purple-500 cursor-pointer">
                               <option value="">Nenhuma</option>
                               {availableClasses.map((cls: any) => (<option key={cls.name} value={cls.name}>{cls.name}</option>))}
                           </select>

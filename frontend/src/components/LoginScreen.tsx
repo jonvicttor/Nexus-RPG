@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import socket from '../services/socket';
 import { Howl } from 'howler';
-import { Trash2, Plus, Play, Sword, Crown, ChevronRight, Search, UserPlus, Sparkles, XCircle, Scroll, Map as MapIcon, Key } from 'lucide-react';
+import { Trash2, Plus, Play, Sword, Crown, ChevronRight, Search, UserPlus, Sparkles, XCircle, Scroll, Map as MapIcon, Key, ChevronLeft } from 'lucide-react';
 
 // --- DADOS E REGRAS ---
 const RACES = {
@@ -16,28 +16,33 @@ const RACES = {
   'TIEFLING':  { bonus: { str: 0, dex: 0, con: 0, int: 1, wis: 0, cha: 2 }, desc: '+2 Car., +1 Int.' },
 };
 
+// 👉 CLASSES ATUALIZADAS (Batendo com as pastas das imagens)
 const CLASSES = {
-  'BARBARO':    { hpBase: 12, image: '/tokens/barbaro.png', ac: 14, icon: '🪓' },
-  'BARDO':       { hpBase: 8,  image: '/tokens/bardo.png',   ac: 13, icon: '🎵' },
-  'CLERIGO':     { hpBase: 8,  image: '/tokens/clerigo.png', ac: 18, icon: '✨' },
-  'DRUIDA':      { hpBase: 8,  image: '/tokens/druida.png',  ac: 14, icon: '🌿' },
-  'GUERREIRO':   { hpBase: 10, image: '/tokens/guerreiro.png', ac: 16, icon: '⚔️' },
-  'MONGE':       { hpBase: 8,  image: '/tokens/monge.png',   ac: 15, icon: '👊' },
-  'PALADINO':    { hpBase: 10, image: '/tokens/paladino.png', ac: 18, icon: '🛡️' },
-  'ARQUEIRO':    { hpBase: 10, image: '/tokens/arqueiro.png', ac: 15, icon: '🏹' },
-  'ASSASSINO':   { hpBase: 8,  image: '/tokens/assassino.png',  ac: 14, icon: '🗡️' },
-  'FEITICEIRO':  { hpBase: 6,  image: '/tokens/feiticeiro.png', ac: 12, icon: '🔥' },
-  'BRUXO':       { hpBase: 8,  image: '/tokens/bruxo.png',   ac: 13, icon: '👁️' },
-  'MAGO':        { hpBase: 6,  image: '/tokens/mago.png',    ac: 12, icon: '🔮' },
+  'BARBARO':    { hpBase: 12, ac: 14, icon: '🪓' },
+  'BARDO':       { hpBase: 8,  ac: 13, icon: '🎵' },
+  'CLERIGO':     { hpBase: 8,  ac: 18, icon: '✨' },
+  'DRUIDA':      { hpBase: 8,  ac: 14, icon: '🌿' },
+  'GUERREIRO':   { hpBase: 10, ac: 16, icon: '⚔️' },
+  'MONGE':       { hpBase: 8,  ac: 15, icon: '👊' },
+  'PALADINO':    { hpBase: 10, ac: 18, icon: '🛡️' },
+  'PATRULHEIRO': { hpBase: 10, ac: 15, icon: '🏹' }, // Ranger
+  'LADINO':      { hpBase: 8,  ac: 14, icon: '👥' }, // Rogue
+  'ASSASSINO':   { hpBase: 8,  ac: 14, icon: '🗡️' },
+  'FEITICEIRO':  { hpBase: 6,  ac: 12, icon: '🔥' }, // Sorcerer
+  'BRUXO':       { hpBase: 8,  ac: 13, icon: '👁️' }, // Warlock
+  'MAGO':        { hpBase: 6,  ac: 12, icon: '🔮' }, // Wizard
+  'ARTIFICE':    { hpBase: 8,  ac: 14, icon: '🔧' },
 };
 
 const POINT_COST: Record<number, number> = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 };
 
 interface LoginScreenProps {
   onLogin: (role: 'DM' | 'PLAYER', name: string, charData?: any) => void;
+  availableClasses?: any[]; 
+  availableRaces?: any[];
 }
 
-// --- COMPONENTES DE UI ---
+// --- COMPONENTES DE UI (Sem alterações) ---
 const ArcaneContainer = ({ children, className = '', width = 'w-full md:w-[500px]' }: { children: React.ReactNode, className?: string, width?: string }) => (
   <div className={`relative ${width} p-1 rounded-3xl overflow-hidden group/container ${className} transition-all duration-500`}>
       <div className="absolute inset-0 bg-gradient-to-br from-amber-600/30 via-transparent to-blue-900/30 opacity-50 group-hover/container:opacity-100 transition-opacity duration-700"></div>
@@ -110,13 +115,12 @@ const BackgroundWrapper = ({ children, isMuted, toggleMute }: { children: React.
   </div>
 );
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
+const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [], availableRaces = [] }) => {
   const [step, setStep] = useState(1);
   const [role, setRole] = useState<'DM' | 'PLAYER'>('PLAYER');
   const [loginIntent, setLoginIntent] = useState<'LOGIN' | 'CREATE'>('CREATE'); 
   const [name, setName] = useState('');
   
-  // Código da Sala
   const [playerRoomId, setPlayerRoomId] = useState('');
 
   const [dmPass, setDmPass] = useState('');
@@ -126,17 +130,17 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const musicRef = useRef<Howl | null>(null);
   const [savedChar, setSavedChar] = useState<any>(null);
 
-  // 👉 NOVO: Salão das Crônicas do Mestre
   const [savedCampaigns, setSavedCampaigns] = useState<{name: string, roomId: string}[]>([]);
 
-  // Estados do Jogador
   const [selectedRace, setSelectedRace] = useState<keyof typeof RACES>('HUMANO');
   const [selectedClass, setSelectedClass] = useState<keyof typeof CLASSES>('GUERREIRO');
   const [stats, setStats] = useState({ str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 });
   const [pointsLeft, setPointsLeft] = useState(27);
   const [showFullImage, setShowFullImage] = useState(false);
 
-  // Estados da Campanha do Mestre
+  const [tokenGender, setTokenGender] = useState<'male' | 'female'>('male');
+  const [tokenVariant, setTokenVariant] = useState<number>(1);
+
   const [campaignName, setCampaignName] = useState('A Mina Perdida de Phandelver');
   const [roomPassword, setRoomPassword] = useState('mesa-do-victor');
 
@@ -149,35 +153,29 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const prevStatsScrollTop = useRef(0); 
 
   useLayoutEffect(() => {
-    if (raceScrollRef.current) {
-        raceScrollRef.current.scrollTop = prevRaceScrollTop.current;
-    }
-    if (classScrollRef.current) {
-        classScrollRef.current.scrollTop = prevClassScrollTop.current;
-    }
-    if (statsScrollRef.current) {
-        statsScrollRef.current.scrollTop = prevStatsScrollTop.current;
-    }
+    if (raceScrollRef.current) raceScrollRef.current.scrollTop = prevRaceScrollTop.current;
+    if (classScrollRef.current) classScrollRef.current.scrollTop = prevClassScrollTop.current;
+    if (statsScrollRef.current) statsScrollRef.current.scrollTop = prevStatsScrollTop.current;
   });
 
   const handleSelectRace = (r: keyof typeof RACES) => {
       if (raceScrollRef.current) prevRaceScrollTop.current = raceScrollRef.current.scrollTop;
       setSelectedRace(r);
+      setTokenVariant(1);
   };
 
   const handleSelectClass = (c: keyof typeof CLASSES) => {
       if (classScrollRef.current) prevClassScrollTop.current = classScrollRef.current.scrollTop;
       setSelectedClass(c);
+      setTokenVariant(1);
   };
 
   useEffect(() => {
-    // Carrega o Herói Salvo
     const saved = localStorage.getItem('nexus_last_char');
     if (saved) {
       try { setSavedChar(JSON.parse(saved)); } catch(e) { console.error(e); }
     }
 
-    // 👉 NOVO: Carrega as Campanhas Salvas do Mestre
     const savedCamps = localStorage.getItem('nexus_saved_campaigns');
     if (savedCamps) {
         try { setSavedCampaigns(JSON.parse(savedCamps)); } catch(e) { console.error(e); }
@@ -245,9 +243,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   }, [stats]);
 
   const handleStatChange = (attr: keyof typeof stats, increment: boolean) => {
-    if (statsScrollRef.current) {
-        prevStatsScrollTop.current = statsScrollRef.current.scrollTop;
-    }
+    if (statsScrollRef.current) prevStatsScrollTop.current = statsScrollRef.current.scrollTop;
 
     const nextVal = increment ? stats[attr] + 1 : stats[attr] - 1;
     if (nextVal < 8 || nextVal > 15) return;
@@ -256,17 +252,95 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     setStats(prev => ({ ...prev, [attr]: nextVal }));
   };
 
-  const getDynamicTokenImage = (raceStr: string, classStr: string) => {
-    const clean = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[-\s]/g, "");
-    return `/tokens/${clean(raceStr)}_${clean(classStr)}.png`;
+  // 👉 NOVA LÓGICA DE TRADUÇÃO EXATA (Baseado nas suas imagens!)
+  const getDynamicTokenImage = (raceStr: string, classStr: string, gender: 'male'|'female', variant: number) => {
+    // 1. Traduz a Raça para a PASTA (Ex: ANAO -> Dwarf)
+    const raceFolderMap: any = {
+        'HUMANO': 'Human', 'ANAO': 'Dwarf', 'ELFO': 'Elf', 'HALFLING': 'Smallfolk',
+        'DRACONATO': 'Dragonborn', 'GNOMO': 'Gnome', 'MEIO-ELFO': 'Halfelf',
+        'MEIO-ORC': 'Orc', 'TIEFLING': 'Tiefling'
+    };
+    
+    // 2. Traduz a Raça para o nome do ARQUIVO (Ex: ANAO -> dwarf)
+    const raceFileMap: any = {
+        'HUMANO': 'human', 'ANAO': 'dwarf', 'ELFO': 'elf', 'HALFLING': 'halfling',
+        'DRACONATO': 'dragonborn', 'GNOMO': 'gnome', 'MEIO-ELFO': 'halfelf',
+        'MEIO-ORC': 'orc', 'TIEFLING': 'tiefling'
+    };
+
+    // 3. Traduz a Classe (Ex: GUERREIRO -> fighter)
+    const classFileMap: any = {
+        'BARBARO': 'barbarian', 'BARDO': 'bard', 'CLERIGO': 'cleric', 'DRUIDA': 'druid',
+        'GUERREIRO': 'fighter', 'MONGE': 'monk', 'PALADINO': 'paladin',
+        'PATRULHEIRO': 'ranger', 'ASSASSINO': 'assassin', 'LADINO': 'rogue',
+        'FEITICEIRO': 'sorcerer', 'BRUXO': 'warlock', 'MAGO': 'wizard', 'ARTIFICE': 'artificer'
+    };
+
+    const rFolder = raceFolderMap[raceStr] || 'Human';
+    const rFile = raceFileMap[raceStr] || 'human';
+    const cFile = classFileMap[classStr] || 'fighter';
+    
+    // 4. Define o tamanho (Gnomos e Halflings usam small, outros medium)
+    const sizeStr = (rFile === 'gnome' || rFile === 'halfling') ? 'small' : 'medium';
+
+    const v = variant.toString().padStart(2, '0'); // Formata 1 para "01"
+    
+    // Exemplo Gerado: /tokens/Raças/Human/fighter/fighter_human_humanoid_male_medium_01.png
+    return `/tokens/Raças/${rFolder}/${cFile}/${cFile}_${rFile}_humanoid_${gender}_${sizeStr}_${v}.png`;
   };
+
+  const nextVariant = () => setTokenVariant(v => v >= 5 ? 1 : v + 1);
+  const prevVariant = () => setTokenVariant(v => v <= 1 ? 5 : v - 1);
 
   const calculateFinalData = () => {
     const racial = (RACES as any)[selectedRace].bonus;
     const finalStats = { str: stats.str + racial.str, dex: stats.dex + racial.dex, con: stats.con + racial.con, int: stats.int + racial.int, wis: stats.wis + racial.wis, cha: stats.cha + racial.cha };
     const conMod = Math.floor((finalStats.con - 10) / 2);
     const hpMax = Math.max(1, (CLASSES as any)[selectedClass].hpBase + conMod);
-    return { name, stats: finalStats, hp: hpMax, maxHp: hpMax, ac: (CLASSES as any)[selectedClass].ac, image: getDynamicTokenImage(selectedRace, selectedClass), race: selectedRace, classType: selectedClass, xp: 0, level: 1, roomId: playerRoomId };
+    
+    let connectedClassType = selectedClass.toString();
+    
+    // Busca no banco se existe (mesma lógica do EditEntityModal)
+    let engClass = connectedClassType.toLowerCase();
+    if (engClass.includes('clérigo') || engClass.includes('clerigo')) engClass = 'cleric';
+    else if (engClass.includes('bardo')) engClass = 'bard';
+    else if (engClass.includes('mago')) engClass = 'wizard';
+    else if (engClass.includes('feiticeiro')) engClass = 'sorcerer';
+    else if (engClass.includes('bruxo')) engClass = 'warlock';
+    else if (engClass.includes('druida')) engClass = 'druid';
+    else if (engClass.includes('paladino')) engClass = 'paladin';
+    else if (engClass.includes('patrulheiro')) engClass = 'ranger';
+    else if (engClass.includes('artífice') || engClass.includes('artifice')) engClass = 'artificer';
+    else if (engClass.includes('guerreiro')) engClass = 'fighter';
+    else if (engClass.includes('barbaro') || engClass.includes('bárbaro')) engClass = 'barbarian';
+    else if (engClass.includes('monge')) engClass = 'monk';
+    else if (engClass.includes('assassino') || engClass.includes('ladino')) engClass = 'rogue';
+
+    // Procura no array availableClasses para ver se acha a oficial
+    const foundClass = availableClasses.find(c => c.name.toLowerCase() === engClass || c.name.toLowerCase() === connectedClassType.toLowerCase());
+    
+    if (foundClass) {
+        connectedClassType = `${selectedClass} (${foundClass.source?.toLowerCase() || engClass})`;
+    } else {
+        connectedClassType = `${selectedClass} (${engClass})`;
+    }
+
+    return { 
+        name, 
+        stats: finalStats, 
+        hp: hpMax, 
+        maxHp: hpMax, 
+        // 👇 ATUALIZADO: Usando hpBase direto do CLASSES se não usar 5eTools
+        // hp: hpMax, 
+        // maxHp: hpMax, 
+        ac: (CLASSES as any)[selectedClass].ac, 
+        image: getDynamicTokenImage(selectedRace, selectedClass, tokenGender, tokenVariant), 
+        race: selectedRace, 
+        classType: connectedClassType, 
+        xp: 0, 
+        level: 1, 
+        roomId: playerRoomId 
+    };
   };
 
   const handleFinalSubmit = () => {
@@ -284,7 +358,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     }
   };
 
-  // 👉 NOVO: Função Global de Submissão de Campanha (Forjada ou Salva)
   const submitCampaign = (cName: string, cRoom: string) => {
       if (!cName.trim() || !cRoom.trim()) {
           setError('Preencha o nome da campanha e a chave da sala.');
@@ -294,7 +367,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       
       const newCampaign = { name: cName, roomId: cRoom };
       const existing = savedCampaigns.filter(c => c.roomId !== cRoom);
-      const updatedCampaigns = [newCampaign, ...existing].slice(0, 5); // Guarda as últimas 5 crônicas
+      const updatedCampaigns = [newCampaign, ...existing].slice(0, 5); 
       
       localStorage.setItem('nexus_saved_campaigns', JSON.stringify(updatedCampaigns));
       onLogin('DM', 'Mestre Supremo', { campaignName: cName, roomId: cRoom });
@@ -353,7 +426,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                     </div>
                     <div>
                         <h3 className="text-2xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-200 to-red-500 group-hover:from-white group-hover:to-red-300 transition-all drop-shadow-lg leading-tight" style={{ fontFamily: 'Cinzel Decorative' }}>SOU O MESTRE</h3>
-                        <p className="text-red-200/60 text-xs md:text-sm mt-1 md:mt-2 font-serif tracking-wider group-hover:text-red-100 hidden sm:block">Gerenciar o mundo e a história.</p>
+                        <p className="text-red-200/60 text-xs md:text-sm mt-1 md:mt-2 font-serif tracking-wider group-hover:text-blue-100 hidden sm:block">Gerenciar o mundo e a história.</p>
                     </div>
                     <ChevronRight className="absolute bottom-4 right-4 md:bottom-8 md:right-8 text-red-500/30 w-6 h-6 md:w-8 md:h-8 group-hover:text-red-400 group-hover:translate-x-2 transition-all" />
                 </div>
@@ -409,7 +482,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   if (step === 1.5 && savedChar) return (
     <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
         <ArcaneContainer width="w-full max-w-[450px]" className="!p-6 md:!p-10 gap-6 md:gap-8 flex flex-col items-center">
-            <h2 className="text-xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-100 to-amber-400 uppercase tracking-widest border-b-2 border-amber-900/50 pb-2 md:pb-4 w-full text-center drop-shadow-md" style={{ fontFamily: 'Cinzel' }}>Retornar à Aventura</h2>
+            <h2 className="text-xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-100 to-amber-400 uppercase trackingest border-b-2 border-amber-900/50 pb-2 md:pb-4 w-full text-center drop-shadow-md" style={{ fontFamily: 'Cinzel' }}>Retornar à Aventura</h2>
             
             <div className="relative group cursor-pointer mt-2 md:mt-4" onClick={handleQuickLogin}>
                 <div className="absolute inset-0 bg-amber-600/30 blur-3xl rounded-full -z-10 group-hover:bg-amber-500/50 transition-all opacity-50"></div>
@@ -424,7 +497,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
             <div className="text-center mt-2 md:mt-4 space-y-1 md:space-y-2">
                 <h3 className="text-3xl md:text-5xl font-black text-white drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)]" style={{ fontFamily: 'Cinzel Decorative' }}>{savedChar.name}</h3>
                 <div className="inline-block bg-black/50 px-3 md:px-4 py-1 rounded-lg border border-amber-900/50">
-                    <p className="text-amber-300 text-xs md:text-sm font-bold uppercase tracking-[0.1em] md:tracking-[0.2em]">{savedChar.race} | {savedChar.classType}</p>
+                    <p className="text-amber-300 text-xs md:text-sm font-bold uppercase tracking-[0.1em] md:tracking-[0.2em]">{savedChar.race} | {savedChar.classType.split(' (')[0]}</p>
                 </div>
                 <p className="text-blue-400 text-[10px] uppercase tracking-widest font-bold mt-2">Sala: {playerRoomId}</p>
             </div>
@@ -494,7 +567,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       {showFullImage && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/95 backdrop-blur-xl cursor-zoom-out animate-in fade-in duration-300 p-4" onClick={() => setShowFullImage(false)}>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(168,85,247,0.1)_0%,transparent_70%)]"></div>
-          <img src={getDynamicTokenImage(selectedRace, selectedClass)} alt="Full Preview" className="max-w-full max-h-[85%] object-contain drop-shadow-[0_0_100px_rgba(168,85,247,0.6)] animate-in zoom-in-95 duration-500" onError={(e) => (e.currentTarget.src = '/tokens/aliado.png')} />
+          <img src={getDynamicTokenImage(selectedRace, selectedClass, tokenGender, tokenVariant)} alt="Full Preview" className="max-w-full max-h-[85%] object-contain drop-shadow-[0_0_100px_rgba(168,85,247,0.6)] animate-in zoom-in-95 duration-500" onError={(e) => (e.currentTarget.src = '/tokens/aliado.png')} />
         </div>
       )}
 
@@ -513,18 +586,32 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         </div>
 
         <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-y-auto md:overflow-hidden">
-            <div className="w-full md:w-[350px] bg-black/20 md:border-r border-b md:border-b-0 border-white/5 flex flex-row md:flex-col items-center justify-center md:justify-start p-4 md:p-8 gap-4 md:gap-6 shrink-0">
-                <div className="relative group cursor-pointer shrink-0" onClick={() => setShowFullImage(true)}>
-                    <div className="absolute inset-0 bg-amber-500/10 blur-[40px] rounded-full animate-pulse"></div>
-                    <div className="w-24 h-24 sm:w-32 sm:h-32 md:w-48 md:h-48 rounded-full border-2 md:border-4 border-amber-600/60 overflow-hidden bg-black shadow-[0_0_40px_rgba(0,0,0,0.8)] relative z-10 hover:border-amber-400 transition-colors">
-                        <img src={getDynamicTokenImage(selectedRace, selectedClass)} alt="Token" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = '/tokens/aliado.png')} />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <Search className="text-white/80 w-6 h-6 md:w-8 md:h-8" />
+            <div className="w-full md:w-[350px] bg-black/20 md:border-r border-b md:border-b-0 border-white/5 flex flex-col items-center justify-start p-4 md:p-8 gap-4 md:gap-6 shrink-0">
+                
+                <div className="flex flex-col items-center gap-4">
+                    <div className="relative group shrink-0 flex items-center justify-center gap-3 md:gap-4">
+                        <div className="absolute inset-0 bg-amber-500/10 blur-[40px] rounded-full animate-pulse z-0"></div>
+                        
+                        <button onClick={prevVariant} className="z-20 p-2 text-amber-600/50 hover:text-amber-400 transition-colors bg-black/40 rounded-full hover:bg-black/80">
+                            <ChevronLeft size={24} />
+                        </button>
+
+                        <div className="w-24 h-24 sm:w-32 sm:h-32 md:w-48 md:h-48 rounded-full border-2 md:border-4 border-amber-600/60 overflow-hidden bg-black shadow-[0_0_40px_rgba(0,0,0,0.8)] relative z-10 hover:border-amber-400 transition-colors cursor-pointer" onClick={() => setShowFullImage(true)}>
+                            <img src={getDynamicTokenImage(selectedRace, selectedClass, tokenGender, tokenVariant)} alt="Token" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = '/tokens/aliado.png')} />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><Search className="text-white/80 w-6 h-6 md:w-8 md:h-8" /></div>
                         </div>
+
+                        <button onClick={nextVariant} className="z-20 p-2 text-amber-600/50 hover:text-amber-400 transition-colors bg-black/40 rounded-full hover:bg-black/80"><ChevronRight size={24} /></button>
                     </div>
+                    
+                    <div className="flex gap-2 w-full max-w-[200px]">
+                        <button onClick={() => setTokenGender('male')} className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors border ${tokenGender === 'male' ? 'bg-amber-600/20 text-amber-400 border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 'bg-black/40 text-gray-500 border-white/5 hover:text-gray-300 hover:border-white/20'}`}>Masc.</button>
+                        <button onClick={() => setTokenGender('female')} className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors border ${tokenGender === 'female' ? 'bg-amber-600/20 text-amber-400 border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 'bg-black/40 text-gray-500 border-white/5 hover:text-gray-300 hover:border-white/20'}`}>Fem.</button>
+                    </div>
+                    <span className="text-[9px] text-gray-500 italic font-mono uppercase tracking-widest">Variação {tokenVariant}/5</span>
                 </div>
 
-                <div className="w-full space-y-1 md:space-y-2 flex-1">
+                <div className="w-full space-y-1 md:space-y-2 flex-1 mt-4">
                     <label className="text-[9px] md:text-[10px] text-amber-500/60 uppercase font-bold tracking-[0.1em] md:tracking-[0.2em] block text-left md:text-center">Nome da Lenda</label>
                     <input 
                         type="text" 
@@ -611,10 +698,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
               <div className="p-1.5 md:p-2 bg-amber-900/30 rounded-lg border border-amber-500/30 shadow-inner"><Crown className="text-amber-500 w-5 h-5 md:w-6 md:h-6" /></div>
               <h2 className="text-xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-100 to-amber-500 tracking-[0.1em] md:tracking-[0.2em] drop-shadow-md" style={{ fontFamily: 'Cinzel Decorative' }}>DISTRIBUIR PODER</h2>
           </div>
-          <div className="hidden sm:flex items-center gap-1 bg-black/60 p-2 rounded-full border border-amber-900/50 shadow-inner">
-            <div className="w-3 h-3 rounded-full bg-amber-900/50"></div>
-            <div className="w-12 h-3 rounded-full bg-gradient-to-r from-amber-400 to-amber-600 shadow-[0_0_15px_#f59e0b]"></div>
-          </div>
+          <div className="hidden sm:flex items-center gap-1 bg-black/60 p-2 rounded-full border border-amber-900/50 shadow-inner"><div className="w-3 h-3 rounded-full bg-amber-900/50"></div><div className="w-12 h-3 rounded-full bg-gradient-to-r from-amber-400 to-amber-600 shadow-[0_0_15px_#f59e0b]"></div></div>
         </div>
 
         {/* Meio (Rolável no Mobile, sem empurrar o botão para fora!) */}
@@ -643,16 +727,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                       <div role="button" onMouseDown={(e) => e.preventDefault()} onClick={() => handleStatChange(attr, true)} className={`w-8 h-8 flex items-center justify-center bg-black/60 border border-white/5 rounded text-white transition-all select-none ${(isMaxed || pointsLeft <= 0) ? 'opacity-20 cursor-not-allowed' : 'hover:bg-green-900/50 cursor-pointer'}`}>+</div>
                     </div>
                     <div className="mt-2 md:mt-3 text-[9px] md:text-[10px] text-amber-200/40 font-bold uppercase flex flex-col sm:flex-row items-center justify-center sm:justify-between w-full px-1 md:px-2 gap-1 sm:gap-0">
-                        <div className="flex gap-1 md:gap-2">
-                             <span>Base {stats[attr]}</span>
-                             {racial > 0 && <span className="text-green-400">+{racial}</span>}
-                        </div>
-                        <div className="flex items-center gap-1 md:gap-2">
-                             <span className="hidden sm:inline text-white/30">|</span>
-                             <span className="text-blue-300">Mod {mod >= 0 ? `+${mod}` : mod}</span>
-                             <span className="text-white/30">|</span>
-                             <span className="text-amber-400 font-black text-sm md:text-lg">{total}</span>
-                        </div>
+                        <div className="flex gap-1 md:gap-2"><span>Base {stats[attr]}</span>{racial > 0 && <span className="text-green-400">+{racial}</span>}</div>
+                        <div className="flex items-center gap-1 md:gap-2"><span className="hidden sm:inline text-white/30">|</span><span className="text-blue-300">Mod {mod >= 0 ? `+${mod}` : mod}</span><span className="text-white/30">|</span><span className="text-amber-400 font-black text-sm md:text-lg">{total}</span></div>
                     </div>
                   </div>
                 );
@@ -688,93 +764,45 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                     <StoneInput type="password" placeholder="••••••••••••" value={dmPass} onChange={(e: any) => setDmPass(e.target.value)} onKeyDown={(e: any) => e.key === 'Enter' && handleFinalSubmit()} className="!text-xl md:!text-3xl !p-3 md:!p-4 !border-red-900/50 focus:!border-red-400/80 !text-red-400 rounded-xl text-center tracking-[0.3em] md:tracking-[0.5em]"/>
                     {error && <p className="text-red-300 text-xs md:text-sm animate-in fade-in slide-in-from-top-2 text-center bg-red-950/50 p-2 md:p-3 rounded-lg border border-red-500/30 shadow-md font-bold flex items-center justify-center gap-2"><XCircle size={16}/> {error}</p>}
                 </div>
-                <MetalButton onClick={handleFinalSubmit} fullWidth variant="red" className="py-4 md:py-6 text-xs md:text-sm bg-gradient-to-r from-red-900 via-red-800 to-red-950 border-red-500/40 shadow-red-900/30 text-red-50">
-                    <Crown size={20} className="mr-2" /> Desbloquear
-                </MetalButton>
+                <MetalButton onClick={handleFinalSubmit} fullWidth variant="red" className="py-4 md:py-6 text-xs md:text-sm bg-gradient-to-r from-red-900 via-red-800 to-red-950 border-red-500/40 shadow-red-900/30 text-red-50"><Crown size={20} className="mr-2" /> Desbloquear</MetalButton>
                 <button onClick={() => { setStep(1); setDmPass(''); setError(''); }} className="text-red-500/40 hover:text-red-200 text-[10px] uppercase tracking-[0.2em] md:tracking-[0.3em] font-bold transition-colors pb-1 md:pb-2 mt-2 md:mt-4">❮ Voltar aos Reinos Mortais</button>
             </ArcaneContainer>
         </BackgroundWrapper>
     );
 
-    // 👉 NOVO PASSO 4: O SALÃO DOS MUNDOS (CRÔNICAS)
     if (step === 4) return (
         <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
             <ArcaneContainer width="w-full max-w-[600px]" className="!p-6 md:!p-10 gap-4 flex flex-col items-center border-red-900/30 w-full animate-in fade-in zoom-in-95 duration-500">
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(220,38,38,0.15),transparent_70%)] pointer-events-none"></div>
-                
-                <div className="text-center space-y-2 mb-2 w-full">
-                    <h2 className="text-2xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-200 via-red-500 to-red-800 uppercase tracking-[0.1em] md:tracking-[0.2em] drop-shadow-md border-b-2 border-red-900/50 pb-4 w-full" style={{ fontFamily: 'Cinzel Decorative' }}>Crônicas</h2>
-                </div>
+                <div className="text-center space-y-2 mb-2 w-full"><h2 className="text-2xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-200 via-red-500 to-red-800 uppercase tracking-[0.1em] md:tracking-[0.2em] drop-shadow-md border-b-2 border-red-900/50 pb-4 w-full" style={{ fontFamily: 'Cinzel Decorative' }}>Crônicas</h2></div>
 
                 <div className="w-full flex-col flex gap-2">
-                    
-                    {/* CRÔNICAS SALVAS */}
                     {savedCampaigns.length > 0 && (
                         <div className="w-full mb-2">
-                            <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-3 flex items-center gap-2">
-                                <Scroll size={14} className="text-red-500" /> Salão dos Mundos (Salvas)
-                            </label>
+                            <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-3 flex items-center gap-2"><Scroll size={14} className="text-red-500" /> Salão dos Mundos (Salvas)</label>
                             <div className="flex flex-col gap-3 max-h-[180px] overflow-y-auto custom-scrollbar pr-2">
                                 {savedCampaigns.map((camp, idx) => (
                                     <div key={idx} className="flex items-center gap-2">
-                                        <button 
-                                            onClick={() => submitCampaign(camp.name, camp.roomId)}
-                                            className="flex-1 bg-black/60 hover:bg-red-900/40 border border-red-900/30 hover:border-red-500/50 rounded-2xl p-3 md:p-4 transition-all text-left group shadow-inner"
-                                        >
+                                        <button onClick={() => submitCampaign(camp.name, camp.roomId)} className="flex-1 bg-black/60 hover:bg-red-900/40 border border-red-900/30 hover:border-red-500/50 rounded-2xl p-3 md:p-4 transition-all text-left group shadow-inner">
                                             <div className="text-red-100 font-bold text-sm md:text-base font-serif group-hover:text-white transition-colors truncate">{camp.name}</div>
                                             <div className="text-[9px] md:text-[10px] text-red-500/60 uppercase tracking-widest font-mono mt-1">Sala ID: <span className="text-red-300">{camp.roomId}</span></div>
                                         </button>
-                                        <button 
-                                            onClick={() => {
-                                                if(window.confirm(`Destruir os registros da crônica "${camp.name}"?`)) {
-                                                    const updated = savedCampaigns.filter(c => c.roomId !== camp.roomId);
-                                                    setSavedCampaigns(updated);
-                                                    localStorage.setItem('nexus_saved_campaigns', JSON.stringify(updated));
-                                                }
-                                            }}
-                                            className="p-3 md:p-4 bg-black/60 hover:bg-red-950 border border-red-900/30 hover:border-red-500/50 rounded-2xl text-red-500/40 hover:text-red-400 transition-all shadow-inner"
-                                            title="Esquecer Crônica"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
+                                        <button onClick={() => { if(window.confirm(`Destruir os registros da crônica "${camp.name}"?`)) { const updated = savedCampaigns.filter(c => c.roomId !== camp.roomId); setSavedCampaigns(updated); localStorage.setItem('nexus_saved_campaigns', JSON.stringify(updated)); } }} className="p-3 md:p-4 bg-black/60 hover:bg-red-950 border border-red-900/30 hover:border-red-500/50 rounded-2xl text-red-500/40 hover:text-red-400 transition-all shadow-inner" title="Esquecer Crônica"><Trash2 size={16} /></button>
                                     </div>
                                 ))}
                             </div>
-                            <div className="flex items-center w-full gap-4 opacity-50 mt-6 mb-4">
-                                <div className="h-px bg-gradient-to-r from-transparent to-red-500/50 flex-grow"></div>
-                                <span className="text-red-200/50 text-[10px] uppercase font-black tracking-widest">Ou Forjar Nova</span>
-                                <div className="h-px bg-gradient-to-l from-transparent to-red-500/50 flex-grow"></div>
-                            </div>
+                            <div className="flex items-center w-full gap-4 opacity-50 mt-6 mb-4"><div className="h-px bg-gradient-to-r from-transparent to-red-500/50 flex-grow"></div><span className="text-red-200/50 text-[10px] uppercase font-black tracking-widest">Ou Forjar Nova</span><div className="h-px bg-gradient-to-l from-transparent to-red-500/50 flex-grow"></div></div>
                         </div>
                     )}
 
-                    {/* FORJAR NOVA */}
                     <div className="bg-black/40 border border-red-900/30 rounded-2xl p-4 shadow-inner hover:border-red-500/50 transition-colors space-y-4">
                         <div>
-                            <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-2 flex items-center gap-2">
-                                <MapIcon size={14} className="text-red-500" /> Nome da Nova Crônica
-                            </label>
-                            <StoneInput 
-                                type="text" 
-                                placeholder="Ex: A Mina Perdida de Phandelver" 
-                                value={campaignName} 
-                                onChange={(e: any) => setCampaignName(e.target.value)} 
-                                className="!text-lg md:!text-xl !p-3 !border-red-900/50 focus:!border-red-400/80 !text-red-50 rounded-xl"
-                            />
+                            <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-2 flex items-center gap-2"><MapIcon size={14} className="text-red-500" /> Nome da Nova Crônica</label>
+                            <StoneInput type="text" placeholder="Ex: A Mina Perdida de Phandelver" value={campaignName} onChange={(e: any) => setCampaignName(e.target.value)} className="!text-lg md:!text-xl !p-3 !border-red-900/50 focus:!border-red-400/80 !text-red-50 rounded-xl" />
                         </div>
-
                         <div>
-                            <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-2 flex items-center gap-2">
-                                <Key size={14} className="text-red-500" /> Chave da Sala (ID Secreto)
-                            </label>
-                            <StoneInput 
-                                type="text" 
-                                placeholder="ex: sala-do-dragao" 
-                                value={roomPassword} 
-                                onChange={(e: any) => setRoomPassword(e.target.value.toLowerCase().replace(/\s+/g, '-'))} 
-                                onKeyDown={(e: any) => e.key === 'Enter' && submitCampaign(campaignName, roomPassword)}
-                                className="!text-lg md:!text-xl !p-3 !border-red-900/50 focus:!border-red-400/80 !text-red-400 rounded-xl font-mono text-center tracking-widest"
-                            />
+                            <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-2 flex items-center gap-2"><Key size={14} className="text-red-500" /> Chave da Sala (ID Secreto)</label>
+                            <StoneInput type="text" placeholder="ex: sala-do-dragao" value={roomPassword} onChange={(e: any) => setRoomPassword(e.target.value.toLowerCase().replace(/\s+/g, '-'))} onKeyDown={(e: any) => e.key === 'Enter' && submitCampaign(campaignName, roomPassword)} className="!text-lg md:!text-xl !p-3 !border-red-900/50 focus:!border-red-400/80 !text-red-400 rounded-xl font-mono text-center tracking-widest" />
                             <p className="text-[9px] text-red-500/50 mt-2 text-center uppercase tracking-widest">Passe esta chave aos jogadores para entrarem na sua mesa.</p>
                         </div>
                     </div>
@@ -784,9 +812,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
                 <div className="flex gap-3 md:gap-4 w-full mt-2 pt-4 border-t-2 border-red-900/30">
                     <button onClick={() => { setStep(2); setDmPass(''); }} className="px-4 py-3 text-red-500/50 hover:text-red-200 font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors rounded-xl hover:bg-white/5 border border-transparent hover:border-white/10">❮ Cancelar</button>
-                    <MetalButton onClick={() => submitCampaign(campaignName, roomPassword)} fullWidth variant="red" className="py-4 text-xs md:text-sm">
-                        Abrir os Portões ❯
-                    </MetalButton>
+                    <MetalButton onClick={() => submitCampaign(campaignName, roomPassword)} fullWidth variant="red" className="py-4 text-xs md:text-sm">Abrir os Portões ❯</MetalButton>
                 </div>
             </ArcaneContainer>
         </BackgroundWrapper>

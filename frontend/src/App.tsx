@@ -13,6 +13,7 @@ import BaldursDiceRoller, { RollBonus } from './components/BaldursDiceRoller';
 import { getLevelFromXP } from './utils/gameRules';
 import ContextMenu from './components/ContextMenu'; 
 import MobilePlayerSheet from './components/MobilePlayerSheet'; 
+import CharacterSheetFloating from './components/CharacterSheetFloating'; // 👉 IMPORT NOVO AQUI!
 
 const GRID_SIZE = 70; 
 const CANVAS_WIDTH = 1920; 
@@ -54,7 +55,7 @@ export interface Entity {
   color: string;
   type: 'player' | 'enemy' | 'loot'; 
   image?: string;
-  tokenImage?: string; // 👉 ADICIONADO: Para mostrar o token redondo na sidebar
+  tokenImage?: string; 
   visionRadius?: number; 
   stats?: {
     str: number; dex: number; con: number; int: number; wis: number; cha: number;
@@ -79,7 +80,7 @@ export interface MonsterPreset {
   hp: number;
   ac: number;
   image: string;
-  tokenImage?: string; // 👉 ADICIONADO: Imagem do token redondo
+  tokenImage?: string; 
   size?: number;
 }
 
@@ -161,6 +162,8 @@ function App() {
   const [statusSelectionId, setStatusSelectionId] = useState<number | null>(null);
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
 
+  const [activeCharacterSheetId, setActiveCharacterSheetId] = useState<number | null>(null);
+
   const [customMonsters, setCustomMonsters] = useState<MonsterPreset[]>([]); 
   
   const [availableClasses, setAvailableClasses] = useState<any[]>([]); 
@@ -170,7 +173,7 @@ function App() {
   const [availableConditions, setAvailableConditions] = useState<any[]>([]); 
 
   const [focusEntity, setFocusEntity] = useState<Entity | null>(null);       
-  const [globalBrightness, setGlobalBrightness] = useState(1);              
+  const [globalBrightness, setGlobalBrightness] = useState(1);             
 
   const [mapOffset, setMapOffset] = useState({ x: 0, y: 0 });
   const [mapScale, setMapScale] = useState(1);
@@ -669,7 +672,9 @@ function App() {
               setStatusSelectionId(entity.id); 
               break;
           case 'VIEW_SHEET': 
-              if (role === 'DM') setEditingEntity(entity); 
+              if (role === 'DM') {
+                  setActiveCharacterSheetId(entity.id);
+              }
               else setStatusSelectionId(entity.id); 
               break;
           case 'WHISPER': setPrivateChatTarget(entity.name); break;
@@ -714,7 +719,6 @@ function App() {
   const handleEditEntity = (id: number, updates: Partial<Entity>) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, ...updates } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates, roomId }); };
   const handleDeleteEntity = (id: number) => { setEntities(prev => prev.filter(ent => ent.id !== id)); socket.emit('deleteEntity', { entityId: id, roomId }); if (attackerId === id) setAttackerId(null); };
   
-  // 👉 REPASSANDO O TOKENIMAGE NA CRIAÇÃO DA ENTIDADE
   const createEntity = (type: 'enemy' | 'player' | 'loot', name: string, x: number, y: number, customStats?: Partial<Entity> & { tokenImage?: string }) => { 
       const newId = Date.now(); 
       const newEntity: Entity = { 
@@ -731,7 +735,7 @@ function App() {
           color: type === 'enemy' ? '#ef4444' : '#3b82f6', 
           type, 
           image: customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), 
-          tokenImage: customStats?.tokenImage || customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), // 👉 AQUI
+          tokenImage: customStats?.tokenImage || customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"),
           visionRadius: 9, 
           stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, 
           classType: customStats?.classType || "NPC", 
@@ -911,7 +915,7 @@ function App() {
       handleDropLootOnMap(itemToDrop, myEntity.id, myEntity.x, myEntity.y);
   };
 
-  if (!isLoggedIn) return <LoginScreen onLogin={handleLogin} />;
+  if (!isLoggedIn) return <LoginScreen onLogin={handleLogin} availableClasses={availableClasses} availableRaces={availableRaces} />;
   
   if (gamePhase === 'LOBBY') return <Lobby availableCharacters={entities.filter(e => e.type === 'player')} onStartGame={handleStartGame} myPlayerName={playerName} roomCode={roomId} />;
 
@@ -980,6 +984,29 @@ function App() {
       
       {editingEntity && (<EditEntityModal entity={editingEntity} onSave={(id, updates) => { handleEditEntity(id, updates); setEditingEntity(null); }} onClose={() => setEditingEntity(null)} availableClasses={availableClasses} availableRaces={availableRaces} />)}
       
+      {/* 👉 A FICHA DE PERSONAGEM FLUTUANTE */}
+      {activeCharacterSheetId && entities.find(e => e.id === activeCharacterSheetId) && (
+          <CharacterSheetFloating 
+              character={entities.find(e => e.id === activeCharacterSheetId)!} 
+              onClose={() => setActiveCharacterSheetId(null)} 
+              onRollAttribute={handleAttributeRoll}
+              onUpdateHP={handleUpdateHP}
+              onUpdateCharacter={handleEditEntity}
+              availableSpells={availableSpells}  // 👈 ADICIONE ESTA LINHA AQUI!
+              onDropItem={(itemId) => {
+                  const char = entities.find(e => e.id === activeCharacterSheetId);
+                  if (char) {
+                      const item = char.inventory?.find(i => i.id === itemId);
+                      if (item) handleDropLootOnMap(item, char.id, char.x, char.y);
+                  }
+              }}
+              onCastSpell={(spell) => {
+                  const prefix = spell.level === 0 ? "o truque " : `a magia de nível ${spell.level} `;
+                  handleSendMessage(`conjurou **${prefix}** **${spell.name}**`);
+              }}
+          />
+      )}
+      
       <BaldursDiceRoller isOpen={showBgDice} onClose={() => setShowBgDice(false)} title={diceContext.title} subtitle={diceContext.subtitle} difficultyClass={diceContext.dc} baseModifier={diceContext.mod || 0} proficiency={diceContext.prof || 0} rollType={diceContext.rollType || 'normal'} extraBonuses={diceContext.bonuses} onComplete={handleDiceComplete} />
 
       {isMobilePlayer && myCharacter ? (
@@ -1037,8 +1064,11 @@ function App() {
                     ) : (
                         <>
                             <div className="flex gap-3 mb-4 items-center">
-                                <div onClick={() => role === 'DM' && setEditingEntity(selectedStatusEntity)} className={`w-14 h-14 rounded-lg border-2 border-cyan-400/50 overflow-hidden shrink-0 relative ${role === 'DM' ? 'cursor-pointer hover:border-cyan-400' : ''}`}>
-                                    {/* 👉 Exibindo o Token Redondo no Modal de Status */}
+                                <div onClick={() => {
+                                    if (role === 'DM' || (role === 'PLAYER' && selectedStatusEntity.name === playerName)) {
+                                        setActiveCharacterSheetId(selectedStatusEntity.id);
+                                    }
+                                }} className={`w-14 h-14 rounded-lg border-2 border-cyan-400/50 overflow-hidden shrink-0 relative ${(role === 'DM' || (role === 'PLAYER' && selectedStatusEntity.name === playerName)) ? 'cursor-pointer hover:border-cyan-400' : ''}`}>
                                     {selectedStatusEntity.image ? <img src={selectedStatusEntity.tokenImage || selectedStatusEntity.image} alt={selectedStatusEntity.name} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-cyan-900" />}
                                 </div>
                                 <div className="overflow-hidden">
@@ -1092,7 +1122,15 @@ function App() {
                     onDropItem={handleDropLootOnMap} onGiveItemToToken={handleGiveItemToToken} 
                     pings={pings} onPing={handlePingMap}
                     onSelectEntity={(entity) => { if (entity.classType === 'Item' || entity.type === 'loot') setStatusSelectionId(entity.id); }} 
-                    onTokenDoubleClick={(entity) => { if (entity.classType === 'Item' || entity.type === 'loot') setStatusSelectionId(entity.id); else handleAddToInitiative(entity); }} 
+                    onTokenDoubleClick={(entity) => { 
+                        if (entity.classType === 'Item' || entity.type === 'loot') {
+                            setStatusSelectionId(entity.id); 
+                        } else {
+                            if (role === 'DM' || (role === 'PLAYER' && entity.name === playerName)) {
+                                setActiveCharacterSheetId(entity.id);
+                            }
+                        }
+                    }} 
                     onContextMenu={(e, entity) => { 
                         e.preventDefault();
                         if (entity.classType === 'Item' || entity.type === 'loot') setStatusSelectionId(entity.id); 
