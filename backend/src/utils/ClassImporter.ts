@@ -5,18 +5,19 @@ export interface NexusClass {
   name: string;
   hitDice: number;
   saves: string[];
+  source?: string; // 👉 Guardamos a fonte para facilitar buscas
 }
 
 export class ClassImporter {
   static loadClasses(): NexusClass[] {
     const nexusClasses: NexusClass[] = [];
     
-    // Lista dos arquivos que você copiou para a pasta data
     const classFiles = [
       'class-barbarian.json', 'class-bard.json', 'class-cleric.json', 
       'class-druid.json', 'class-fighter.json', 'class-monk.json', 
       'class-paladin.json', 'class-ranger.json', 'class-rogue.json', 
-      'class-sorcerer.json', 'class-warlock.json', 'class-wizard.json'
+      'class-sorcerer.json', 'class-warlock.json', 'class-wizard.json',
+      'class-artificer.json' // 👉 Adicionei o Artífice na lista
     ];
 
     for (const fileName of classFiles) {
@@ -24,7 +25,6 @@ export class ClassImporter {
         const filePath = path.join(__dirname, `../data/${fileName}`);
         
         if (!fs.existsSync(filePath)) {
-            console.warn(`⚠️ Arquivo ${fileName} não encontrado. Pulando...`);
             continue;
         }
 
@@ -33,8 +33,8 @@ export class ClassImporter {
 
         if (classData && classData.class) {
           for (const c of classData.class) {
-            // Ignora subclasses ou variantes de outros livros se quiser focar no básico
-            if (c.source !== 'PHB') continue;
+            // 👉 REMOVIDO: Agora aceita qualquer source (PHB, XPHB, Tasha, etc)
+            if (!c.name) continue;
 
             const name = c.name;
             let hitDice = 8; 
@@ -50,16 +50,20 @@ export class ClassImporter {
             nexusClasses.push({
               name,
               hitDice,
-              saves
+              saves,
+              source: c.source
             });
           }
         }
       } catch (error) {
-        console.error(`❌ Erro ao ler o arquivo ${fileName}:`, error);
+        console.error(`❌ Erro ao ler classe ${fileName}:`, error);
       }
     }
 
-    console.log(`🧙‍♂️ Compêndio de Classes importado! ${nexusClasses.length} classes prontas para uso.`);
-    return nexusClasses;
+    // Remove duplicatas (caso a mesma classe apareça em dois arquivos)
+    const uniqueClasses = Array.from(new Map(nexusClasses.map(c => [c.name, c])).values());
+
+    console.log(`🧙‍♂️ Classes Restauradas! ${uniqueClasses.length} caminhos de poder carregados.`);
+    return uniqueClasses;
   }
 }

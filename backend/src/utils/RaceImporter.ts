@@ -16,7 +16,7 @@ export class RaceImporter {
       const filePath = path.join(__dirname, '../data/races.json');
       
       if (!fs.existsSync(filePath)) {
-        console.warn('⚠️ Arquivo races.json não encontrado na forja. Pulando...');
+        console.warn('⚠️ Arquivo races.json não encontrado.');
         return [];
       }
 
@@ -26,23 +26,24 @@ export class RaceImporter {
       const racesArray = data.race || [];
 
       for (const r of racesArray) {
-        // Focando no Livro do Jogador (PHB) para manter a lista limpa e organizada
-        if (r.source !== 'PHB') continue;
+        // 👉 REMOVIDO: Agora aceita todas as raças do arquivo, não apenas PHB
+        if (!r.name) continue;
 
-        // Tratamento de Tamanho (S = Small/Pequeno -> 0.8, M = Medium/Médio -> 1)
+        // Tratamento de Tamanho
         let sizeValue = 1; 
-        if (r.size && r.size.includes('S')) sizeValue = 0.8; 
+        if (r.size) {
+            const sz = Array.isArray(r.size) ? r.size[0] : r.size;
+            if (sz === 'S') sizeValue = 0.8;
+            if (sz === 'L') sizeValue = 2.0;
+        }
 
-        // Tratamento de Visão no Escuro (Darkvision)
-        // No 5etools vem em pés (ex: 60 pés). 60 pés = 12 quadrados no grid.
-        // O padrão de visão normal no nosso VTT é 9.
+        // Tratamento de Visão (converte pés para quadrados de 1.5m)
         let visionRadius = 9; 
         if (r.darkvision) {
             visionRadius = Math.floor(r.darkvision / 5);
         }
 
-        // Tratamento de Deslocamento (Speed)
-        let speed = 30; // Padrão
+        let speed = 30;
         if (typeof r.speed === 'number') {
             speed = r.speed;
         } else if (r.speed && r.speed.walk) {
@@ -57,9 +58,9 @@ export class RaceImporter {
         });
       }
       
-      console.log(`🧝‍♂️ Raças Carregadas! ${nexusRaces.length} linhagens prontas para aventura.`);
+      console.log(`🧝‍♂️ Raças Restauradas! ${nexusRaces.length} linhagens disponíveis.`);
     } catch (error) {
-      console.error(`❌ Erro ao ler races.json:`, error);
+      console.error(`❌ Erro ao ler raças:`, error);
     }
 
     return nexusRaces;
