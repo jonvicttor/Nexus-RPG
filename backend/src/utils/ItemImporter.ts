@@ -10,7 +10,7 @@ export interface NexusItemDef {
   damage?: string;
   ac?: number;
   properties?: string[];
-  image?: string; // 👉 NOVA PROPRIEDADE PARA A IMAGEM
+  image?: string; 
 }
 
 export class ItemImporter {
@@ -30,19 +30,34 @@ export class ItemImporter {
         const rawData = fs.readFileSync(filePath, 'utf-8');
         const data = JSON.parse(rawData);
         
-        const itemsArray = data.item || data.baseitem || [];
+        // 👉 BUSCA AGRESSIVA: Pega itens básicos, itens mágicos e variantes mágicas
+        const itemsArray = [
+            ...(data.item || []), 
+            ...(data.baseitem || []),
+            ...(data.magicvariant || [])
+        ];
 
         for (const it of itemsArray) {
-          if (it.source !== 'PHB' && it.source !== 'DMG') continue;
+          // Ignora se não tiver nome
+          if (!it.name) continue;
+
+          // 👉 O FILTRO RESTRITO FOI REMOVIDO! 
+          // Agora ele aceita itens de TODOS os livros (PHB, XGE, TCE, XPHB, etc.)
 
           let type = 'misc';
-          if (['M', 'R', 'A'].includes(it.type) || it.weaponCategory) type = 'weapon';
-          else if (['HA', 'LA', 'MA', 'S'].includes(it.type) || it.armor) type = 'armor';
-          else if (it.type === 'P') type = 'potion';
+          const rawType = (it.type || '').toUpperCase();
+          
+          if (['M', 'R', 'A'].includes(rawType) || it.weaponCategory) type = 'weapon';
+          else if (['HA', 'LA', 'MA', 'S'].includes(rawType) || it.armor) type = 'armor';
+          else if (rawType === 'P' || rawType === 'POTION' || it.potion) type = 'potion';
+          else if (it.wondrous) type = 'magic';
 
-          // 👉 LÓGICA DE IMAGEM DO ITEM (O 5eTools guarda as imagens de itens na raiz /img/items/)
-          const safeItemName = it.name.replace(/</g, '').replace(/>/g, '').replace(/"/g, '').replace(/\//g, '');
-          const itemImagePath = `/img/items/${it.source}/${safeItemName}.webp`;
+          // 👉 LÓGICA DE IMAGEM DO ITEM
+          let itemImagePath = undefined;
+          if (it.source) {
+              const safeItemName = it.name.replace(/</g, '').replace(/>/g, '').replace(/"/g, '').replace(/\//g, '');
+              itemImagePath = `/img/items/${it.source}/${safeItemName}.webp`;
+          }
 
           let damage = undefined;
           if (it.dmg1) damage = it.dmg1;
@@ -63,7 +78,7 @@ export class ItemImporter {
             damage,
             ac,
             properties: it.property || [],
-            image: itemImagePath // 👉 Anexando a imagem do item!
+            image: itemImagePath 
           });
         }
       } catch (error) {
@@ -71,7 +86,10 @@ export class ItemImporter {
       }
     }
 
-    console.log(`🎒 Arsenal Carregado! ${nexusItems.length} itens afiados e polidos (com imagens).`);
-    return nexusItems;
+    // 👉 REMOÇÃO DE DUPLICATAS (Garante que a lista fique limpa)
+    const uniqueItems = Array.from(new Map(nexusItems.map(item => [item.name, item])).values());
+
+    console.log(`🎒 Arsenal Carregado! ${uniqueItems.length} itens afiados e polidos.`);
+    return uniqueItems;
   }
 }
