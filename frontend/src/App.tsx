@@ -414,7 +414,29 @@ function App() {
     socket.on('entityPositionUpdated', (data: any) => setEntities(prev => prev.map(ent => ent.id === data.entityId ? { ...ent, x: data.x, y: data.y } : ent)));
     socket.on('entityStatusUpdated', (data: any) => setEntities(prev => prev.map(ent => ent.id === data.entityId ? { ...ent, ...data.updates } : ent)));
     socket.on('entityCreated', (data: any) => setEntities(prev => { if (prev.find(e => e.id === data.entity.id)) return prev; return [...prev, data.entity]; }));
-    socket.on('entityDeleted', (data: any) => { setEntities(prev => prev.filter(ent => ent.id !== data.entityId)); setStatusSelectionId(prev => prev === data.entityId ? null : prev); });
+    
+    // 👉 ATUALIZADO: Lógica de deleção com limpeza de save e redirecionamento
+    socket.on('entityDeleted', (data: any) => { 
+        setEntities(prev => {
+            const deletedEnt = prev.find(e => e.id === data.entityId);
+            
+            // Se eu sou o jogador e deletaram MEU personagem
+            if (role === 'PLAYER' && deletedEnt && deletedEnt.name.toLowerCase() === playerName.toLowerCase() && deletedEnt.type === 'player') {
+                localStorage.removeItem('nexus_last_char'); // Limpa o "Fantasma"
+                setToastMsg({ text: "Sua ficha foi removida da mesa pelo Mestre.", id: Date.now() });
+                
+                // Manda de volta pra tela inicial após 3s para limpeza total
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+            }
+            return prev.filter(ent => ent.id !== data.entityId);
+        }); 
+        
+        setStatusSelectionId(prev => prev === data.entityId ? null : prev); 
+        if (attackerId === data.entityId) setAttackerId(null);
+    });
+
     socket.on('mapChanged', (data: any) => { setCurrentMap(data.mapUrl); setFogGrid(data.fogGrid); });
     socket.on('fogUpdated', (data: any) => { setFogGrid(prev => { if (!prev || !prev[data.y]) return prev; const newGrid = prev.map(row => [...row]); newGrid[data.y][data.x] = data.shouldReveal; return newGrid; }); });
     socket.on('fogGridSynced', (data: any) => setFogGrid(data.grid));
@@ -787,7 +809,7 @@ function App() {
   };
 
   const handleRotateToken = (id: number, angle: number) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, rotation: angle } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { rotation: angle }, roomId }); };
-  const handleResizeToken = (id: number, size: number) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, size } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { size }, roomId }); };
+  const handleResizeToken = (id: number, size: number) => { setEntities(prev => prev.map(ent => { if (ent.id !== id) return ent; const newVisible = ent.visible === undefined ? false : !ent.visible; if (role === 'DM') addLog({ text: newVisible ? `👁️ ${ent.name} revelou-se!` : `👻 ${ent.name} desapareceu nas sombras.`, type: 'info', sender: 'Sistema' }, false); socket.emit('updateEntityStatus', { entityId: id, updates: { visible: newVisible }, roomId }); return { ...ent, visible: newVisible }; })); };
   const handleFlipToken = (id: number) => { const ent = entities.find(e => e.id === id); if (!ent) return; const newMirrored = !ent.mirrored; setEntities(prev => prev.map(e => e.id === id ? { ...e, mirrored: newMirrored } : e)); socket.emit('updateEntityStatus', { entityId: id, updates: { mirrored: newMirrored }, roomId }); };
   const handleToggleCondition = (id: number, condition: string) => { setEntities(prev => prev.map(ent => { if (ent.id !== id) return ent; const hasCondition = ent.conditions.includes(condition); const newConditions = hasCondition ? ent.conditions.filter(c => c !== condition) : [...ent.conditions, condition]; if (!hasCondition) addLog({ text: `${ent.name} recebeu condição: ${condition}`, type: 'info', sender: 'Sistema' }); socket.emit('updateEntityStatus', { entityId: id, updates: { conditions: newConditions }, roomId }); return { ...ent, conditions: newConditions }; })); };
   const handleToggleVisibility = (id: number) => { setEntities(prev => prev.map(ent => { if (ent.id !== id) return ent; const newVisible = ent.visible === undefined ? false : !ent.visible; if (role === 'DM') addLog({ text: newVisible ? `👁️ ${ent.name} revelou-se!` : `👻 ${ent.name} desapareceu nas sombras.`, type: 'info', sender: 'Sistema' }, false); socket.emit('updateEntityStatus', { entityId: id, updates: { visible: newVisible }, roomId }); return { ...ent, visible: newVisible }; })); };

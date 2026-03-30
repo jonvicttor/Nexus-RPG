@@ -350,31 +350,32 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
     setStats(prev => ({ ...prev, [attr]: nextVal }));
   };
 
-  // 👉 IMAGEM DINÂMICA ATUALIZADA (Lê das suas pastas e usa a arte do livro como Fallback)
+  // 👉 IMAGEM DINÂMICA (Sem cedilha e com caminhos blindados para Linux/Vercel)
   const getDynamicTokenImage = (raceName: string, classKey: string, gender: 'male'|'female', variant: number) => {
     if (!raceName) return '/tokens/aliado.png';
 
     const rLower = raceName.toLowerCase();
-    const cleanName = raceName.replace(/[^a-zA-Z]/g, ''); 
     
-    let folderName = raceName; 
-    let rFile = cleanName.toLowerCase(); 
+    // Nomenclatura das Pastas
+    let folderName = raceName.replace(/[^a-zA-Z]/g, ''); 
+    let racePrefix = folderName;
 
-    // Substituições para as pastas de TOKEN CLÁSSICAS
-    if (rLower.includes('dwarf')) { folderName = 'Dwarf'; rFile = 'dwarf'; }
-    else if (rLower.includes('elf') && !rLower.includes('half')) { folderName = 'Elf'; rFile = 'elf'; }
-    else if (rLower.includes('githzerai')) { folderName = 'Githzerai'; rFile = 'githzerai'; }
-    else if (rLower.includes('gnome')) { folderName = 'Gnome'; rFile = 'gnome'; }
-    else if (rLower.includes('goliath')) { folderName = 'Goliath'; rFile = 'goliath'; }
-    else if (rLower.includes('orc')) { folderName = 'Orc'; rFile = 'orc'; }
-    else if (rLower.includes('tiefling')) { folderName = 'Tiefling'; rFile = 'tiefling'; }
-    else if (rLower.includes('human')) { folderName = 'Human'; rFile = 'human'; }
+    if (rLower.includes('dwarf')) { folderName = 'Dwarf'; racePrefix = 'Dwarf'; }
+    else if (rLower.includes('elf') && !rLower.includes('half')) { folderName = 'Elf'; racePrefix = 'Elf'; }
+    else if (rLower.includes('githzerai')) { folderName = 'Githzerai'; racePrefix = 'Githzerai'; }
+    else if (rLower.includes('gnome')) { folderName = 'Gnome'; racePrefix = 'Gnome_Halfling'; } 
+    else if (rLower.includes('halfling')) { folderName = 'Gnome'; racePrefix = 'Gnome_Halfling'; }
+    else if (rLower.includes('goliath')) { folderName = 'Goliath'; racePrefix = 'Goliath'; }
+    else if (rLower.includes('orc')) { folderName = 'Orc'; racePrefix = 'Orc'; }
+    else if (rLower.includes('tiefling')) { folderName = 'Tiefling'; racePrefix = 'Tiefling'; }
+    else if (rLower.includes('human')) { folderName = 'Human'; racePrefix = 'Human'; }
 
-    const cFile = classKey || 'fighter';
-    const sizeStr = (folderName === 'Gnome' || rLower.includes('halfling')) ? 'small' : 'medium';
+    const cFile = classKey || 'Fighter';
+    const sizeStr = 'medium'; 
     const v = variant.toString().padStart(2, '0');
     
-    return `/tokens/Raças/${folderName}/${cFile}/${cFile}_${rFile}_humanoid_${gender}_${sizeStr}_${v}.png`;
+    // 👉 CORRIGIDO: Usando 'Racas' sem cedilha para não quebrar na Vercel!
+    return `/tokens/Racas/${folderName}/${cFile.toLowerCase()}/${racePrefix}_${cFile}_${gender}_${sizeStr}_${v}.png`;
   };
 
   // 👉 NOVO: Imagem original do livro (Fallback oficial)

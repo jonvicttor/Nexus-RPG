@@ -112,6 +112,16 @@ const getRoomState = (roomId: string): GameState => {
     return roomsState[roomId];
 };
 
+// 👉 FUNÇÃO DE AUTO-SAVE PARA MANTER A MESA LIMPA
+const autoSaveRoom = (roomId: string) => {
+    const roomState = getRoomState(roomId);
+    const saveFile = getSaveFilePath(roomId);
+    try {
+        fs.writeFileSync(saveFile, JSON.stringify(roomState, null, 2));
+    } catch (err) {
+        console.error(`❌ ERRO AO AUTO-SALVAR A SALA ${roomId}:`, err);
+    }
+};
 
 // --- 4. EVENTOS DO SOCKET ---
 io.on('connection', (socket) => {
@@ -219,19 +229,23 @@ io.on('connection', (socket) => {
     socket.to(data.roomId).emit('entityStatusUpdated', data);
   });
 
+  // 👉 ATUALIZADO: Auto-Save ao criar entidade
   socket.on('createEntity', (data: any) => {
     const roomState = getRoomState(data.roomId);
     const exists = roomState.entities.find((e: any) => e.id === data.entity.id);
     if (!exists) {
         roomState.entities.push(data.entity);
         socket.to(data.roomId).emit('entityCreated', data);
+        autoSaveRoom(data.roomId); 
     }
   });
 
+  // 👉 ATUALIZADO: Auto-Save ao deletar entidade
   socket.on('deleteEntity', (data: any) => {
     const roomState = getRoomState(data.roomId);
     roomState.entities = roomState.entities.filter((e: any) => e.id !== data.entityId);
     socket.to(data.roomId).emit('entityDeleted', data);
+    autoSaveRoom(data.roomId); 
   });
 
   socket.on('updateGlobalBrightness', (data: any) => {
