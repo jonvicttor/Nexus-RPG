@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import socket from '../services/socket';
 import { Howl } from 'howler';
 import { Trash2, Plus, Play, Sword, Crown, ChevronRight, Search, UserPlus, Sparkles, XCircle, Scroll, Map as MapIcon, Key, ChevronLeft, Upload } from 'lucide-react';
@@ -126,7 +126,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
 
   const [savedCampaigns, setSavedCampaigns] = useState<{name: string, roomId: string}[]>([]);
 
-  // Estados Dinâmicos baseados no JSON
   const [selectedRaceName, setSelectedRaceName] = useState<string>(''); 
   const [selectedClassName, setSelectedClassName] = useState<string>(''); 
 
@@ -136,30 +135,36 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
 
   const [tokenGender, setTokenGender] = useState<'male' | 'female'>('male');
   const [tokenVariant, setTokenVariant] = useState<number>(1);
-  const [customImageURL, setCustomImageURL] = useState<string>(''); // 👉 NOVO ESTADO: Guarda a imagem que o player enviou
+  const [customImageURL, setCustomImageURL] = useState<string>(''); 
 
   const [campaignName, setCampaignName] = useState('A Mina Perdida de Phandelver');
   const [roomPassword, setRoomPassword] = useState('mesa-do-victor');
 
-  const raceScrollRef = useRef<HTMLDivElement>(null);
-  const classScrollRef = useRef<HTMLDivElement>(null);
-  const statsScrollRef = useRef<HTMLDivElement>(null); 
-  const fileInputRef = useRef<HTMLInputElement>(null); // 👉 NOVO: Referência pro input de arquivo
-
-  const prevRaceScrollTop = useRef(0);
-  const prevClassScrollTop = useRef(0);
-  const prevStatsScrollTop = useRef(0); 
+  const fileInputRef = useRef<HTMLInputElement>(null); 
 
   useEffect(() => {
       socket.emit('requestCompendium');
       
+      const intervalId = setInterval(() => {
+          if (!availableRaces || availableRaces.length === 0) {
+              console.log("⏳ Servidor pode estar dormindo... Solicitando dados novamente...");
+              socket.emit('requestCompendium');
+          } else {
+              clearInterval(intervalId);
+          }
+      }, 3000);
+
       const handleCompendium = (data: any) => {
           console.log("📜 O Servidor enviou o compêndio para a Forja!");
       };
 
       socket.on('compendiumSync', handleCompendium);
-      return () => { socket.off('compendiumSync', handleCompendium); };
-  }, []);
+      
+      return () => { 
+          socket.off('compendiumSync', handleCompendium); 
+          clearInterval(intervalId);
+      };
+  }, [availableRaces]);
 
   const dynamicRaces = useMemo(() => {
       if (!availableRaces || availableRaces.length === 0) return [];
@@ -195,7 +200,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
               }
           }
 
-          return { name: r.name, bonus, desc, source: r.source || 'PHB' }; // 👉 MANTÉM O SOURCE
+          return { name: r.name, bonus, desc, source: r.source || 'PHB' };
       });
   }, [availableRaces]);
 
@@ -233,28 +238,18 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
       if (dynamicClasses.length > 0 && !selectedClassName) setSelectedClassName(dynamicClasses[0].name);
   }, [dynamicClasses, selectedClassName]);
 
-
-  useLayoutEffect(() => {
-    if (raceScrollRef.current) raceScrollRef.current.scrollTop = prevRaceScrollTop.current;
-    if (classScrollRef.current) classScrollRef.current.scrollTop = prevClassScrollTop.current;
-    if (statsScrollRef.current) statsScrollRef.current.scrollTop = prevStatsScrollTop.current;
-  });
-
   const handleSelectRace = (rName: string) => {
-      if (raceScrollRef.current) prevRaceScrollTop.current = raceScrollRef.current.scrollTop;
       setSelectedRaceName(rName);
       setTokenVariant(1);
-      setCustomImageURL(''); // Reseta a imagem customizada se trocar de raça
+      setCustomImageURL('');
   };
 
   const handleSelectClass = (cName: string) => {
-      if (classScrollRef.current) prevClassScrollTop.current = classScrollRef.current.scrollTop;
       setSelectedClassName(cName);
       setTokenVariant(1);
-      setCustomImageURL(''); // Reseta a imagem customizada se trocar de classe
+      setCustomImageURL('');
   };
 
-  // 👉 NOVO: FUNÇÃO PARA LIDAR COM O UPLOAD DA IMAGEM
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
@@ -341,8 +336,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
   }, [stats]);
 
   const handleStatChange = (attr: keyof typeof stats, increment: boolean) => {
-    if (statsScrollRef.current) prevStatsScrollTop.current = statsScrollRef.current.scrollTop;
-
     const nextVal = increment ? stats[attr] + 1 : stats[attr] - 1;
     if (nextVal < 8 || nextVal > 15) return;
     const diff = POINT_COST[nextVal] - POINT_COST[stats[attr]];
@@ -350,52 +343,68 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
     setStats(prev => ({ ...prev, [attr]: nextVal }));
   };
 
-  // 👉 IMAGEM DINÂMICA (Sem cedilha e com caminhos blindados para Linux/Vercel)
+  // 👉 AGORA SIM: LÊ EXATAMENTE O PADRÃO NOVO QUE VOCÊ FEZ!
   const getDynamicTokenImage = (raceName: string, classKey: string, gender: 'male'|'female', variant: number) => {
-    if (!raceName) return '/tokens/aliado.png';
+      if (!raceName) return '/tokens/aliado.png';
 
-    const rLower = raceName.toLowerCase();
-    
-    // Nomenclatura das Pastas
-    let folderName = raceName.replace(/[^a-zA-Z]/g, ''); 
-    let racePrefix = folderName;
+      const rLower = raceName.toLowerCase();
+      let folder = '';
+      let prefix = '';
+      
+      // Identifica a pasta e o prefixo
+      if (rLower === 'dwarf' || rLower.startsWith('dwarf ')) { folder = 'Dwarf'; prefix = 'dwarf'; }
+      else if (rLower === 'elf' || rLower.startsWith('elf ')) { folder = 'Elf'; prefix = 'elf'; }
+      else if (rLower === 'gnome' || rLower.startsWith('gnome ') || rLower === 'halfling' || rLower.startsWith('halfling ')) { folder = 'Gnome'; prefix = 'gnome'; }
+      else if (rLower === 'goliath' || rLower.startsWith('goliath ')) { folder = 'Goliath'; prefix = 'goliath'; }
+      else if (rLower === 'orc' || rLower.startsWith('orc ')) { folder = 'Orc'; prefix = 'orc'; }
+      else if (rLower === 'tiefling' || rLower.startsWith('tiefling ')) { folder = 'Tiefling'; prefix = 'tiefling'; }
+      else if (rLower === 'human' || rLower.startsWith('human ')) { folder = 'Human'; prefix = 'human'; }
 
-    if (rLower.includes('dwarf')) { folderName = 'Dwarf'; racePrefix = 'Dwarf'; }
-    else if (rLower.includes('elf') && !rLower.includes('half')) { folderName = 'Elf'; racePrefix = 'Elf'; }
-    else if (rLower.includes('githzerai')) { folderName = 'Githzerai'; racePrefix = 'Githzerai'; }
-    else if (rLower.includes('gnome')) { folderName = 'Gnome'; racePrefix = 'Gnome_Halfling'; } 
-    else if (rLower.includes('halfling')) { folderName = 'Gnome'; racePrefix = 'Gnome_Halfling'; }
-    else if (rLower.includes('goliath')) { folderName = 'Goliath'; racePrefix = 'Goliath'; }
-    else if (rLower.includes('orc')) { folderName = 'Orc'; racePrefix = 'Orc'; }
-    else if (rLower.includes('tiefling')) { folderName = 'Tiefling'; racePrefix = 'Tiefling'; }
-    else if (rLower.includes('human')) { folderName = 'Human'; racePrefix = 'Human'; }
-
-    const cFile = classKey || 'Fighter';
-    const sizeStr = 'medium'; 
-    const v = variant.toString().padStart(2, '0');
-    
-    // 👉 CORRIGIDO: Usando 'Racas' sem cedilha para não quebrar na Vercel!
-    return `/tokens/Racas/${folderName}/${cFile.toLowerCase()}/${racePrefix}_${cFile}_${gender}_${sizeStr}_${v}.png`;
+      if (folder) {
+          // Padrão limpo: /tokens/Racas/Pasta/classe/raca_classe_genero_01.png
+          const cFile = (classKey || 'fighter').toLowerCase();
+          const v = variant.toString().padStart(2, '0');
+          return `/tokens/Racas/${folder}/${cFile}/${prefix}_${cFile}_${gender}_${v}.png`;
+      } else {
+          // Não é raça clássica -> Puxa direto do Livro!
+          const raceObj = dynamicRaces.find(r => r.name === raceName);
+          if (raceObj && raceObj.source) {
+              const cleanRaceName = raceName.replace(/[^a-zA-Z0-9 -()]/g, ''); 
+              return `/img/races/${raceObj.source}/${cleanRaceName}.webp`;
+          }
+          return '/tokens/aliado.png';
+      }
   };
 
-  // 👉 NOVO: Imagem original do livro (Fallback oficial)
+  // 👉 TRATAMENTO DE ERROS BLINDADO
   const handleTokenImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
       const target = e.currentTarget;
-      const raceObj = dynamicRaces.find(r => r.name === selectedRaceName);
       
-      // Se já tentou o livro e não deu certo, usa o aliado padrão
-      if (target.src.includes('img/races/')) {
-          target.src = '/tokens/aliado.png';
-          return;
+      if (target.src.includes('aliado.png')) return;
+
+      if (target.src.includes('/tokens/Racas/')) {
+          if (!target.src.includes('_01.png')) {
+               target.src = target.src.replace(/_\d{2}\.png$/, '_01.png');
+               return;
+          }
+          const raceObj = dynamicRaces.find(r => r.name === selectedRaceName);
+          if (raceObj && raceObj.source) {
+              const cleanRaceName = selectedRaceName.replace(/[^a-zA-Z0-9 -()]/g, ''); 
+              target.src = `/img/races/${raceObj.source}/${cleanRaceName}.webp`;
+              return;
+          }
       }
-      
-      if (raceObj && raceObj.source) {
-          // Tenta pegar a imagem original do livro do 5eTools (ex: public/img/races/PHB/Human.webp)
-          const cleanRaceName = selectedRaceName.replace(/\s+/g, '%20'); // Lida com espaços no nome
-          target.src = `/img/races/${raceObj.source}/${cleanRaceName}.webp`;
-      } else {
-          target.src = '/tokens/aliado.png';
+
+      if (target.src.includes('/img/races/')) {
+          const baseRaceName = selectedRaceName.split('(')[0].trim();
+          if (baseRaceName !== selectedRaceName && !target.src.includes(`/${baseRaceName.replace(/\s+/g, '%20')}.webp`)) {
+              const raceObj = dynamicRaces.find(r => r.name === selectedRaceName);
+              target.src = `/img/races/${raceObj?.source || 'PHB'}/${baseRaceName.replace(/\s+/g, '%20')}.webp`;
+              return;
+          }
       }
+
+      target.src = '/tokens/aliado.png';
   };
 
   const nextVariant = () => { setTokenVariant(v => v >= 5 ? 1 : v + 1); setCustomImageURL(''); };
@@ -425,7 +434,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
         hp: hpMax, 
         maxHp: hpMax, 
         ac: classObj?.ac || 10, 
-        // 👉 ATUALIZADO: Se o cara upou uma imagem, usa ela. Senão, tenta gerar a nossa.
         image: customImageURL || getDynamicTokenImage(selectedRaceName, classObj?.fileKey || 'fighter', tokenGender, tokenVariant), 
         race: selectedRaceName, 
         classType: selectedClassName, 
@@ -658,7 +666,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
       {showFullImage && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/95 backdrop-blur-xl cursor-zoom-out animate-in fade-in duration-300 p-4" onClick={() => setShowFullImage(false)}>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(168,85,247,0.1)_0%,transparent_70%)]"></div>
-          {/* Mostra a imagem customizada ou a gerada */}
           <img src={customImageURL || getDynamicTokenImage(selectedRaceName, dynamicClasses.find(c => c.name === selectedClassName)?.fileKey || 'fighter', tokenGender, tokenVariant)} alt="Full Preview" className="max-w-full max-h-[85%] object-contain drop-shadow-[0_0_100px_rgba(168,85,247,0.6)] animate-in zoom-in-95 duration-500" onError={handleTokenImageError} />
         </div>
       )}
@@ -689,7 +696,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                         </button>
 
                         <div className="w-24 h-24 sm:w-32 sm:h-32 md:w-48 md:h-48 rounded-full border-2 md:border-4 border-amber-600/60 overflow-hidden bg-black shadow-[0_0_40px_rgba(0,0,0,0.8)] relative z-10 hover:border-amber-400 transition-colors cursor-pointer" onClick={() => setShowFullImage(true)}>
-                            {/* Usa a imagem de upload ou tenta a gerada */}
                             <img src={customImageURL || getDynamicTokenImage(selectedRaceName, dynamicClasses.find(c => c.name === selectedClassName)?.fileKey || 'fighter', tokenGender, tokenVariant)} alt="Token" className="w-full h-full object-cover" onError={handleTokenImageError} />
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><Search className="text-white/80 w-6 h-6 md:w-8 md:h-8" /></div>
                         </div>
@@ -697,7 +703,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                         <button onClick={nextVariant} className="z-20 p-2 text-amber-600/50 hover:text-amber-400 transition-colors bg-black/40 rounded-full hover:bg-black/80"><ChevronRight size={24} /></button>
                     </div>
 
-                    {/* 👉 BOTÃO DE UPLOAD PERSONALIZADO */}
                     <div className="w-full flex justify-center">
                         <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
                         <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-widest bg-black/40 border border-amber-900/50 hover:border-amber-500/50 hover:text-amber-300 text-amber-500/50 px-4 py-2 rounded-lg transition-colors">
@@ -734,7 +739,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                     <h3 className="text-amber-500/80 font-bold uppercase tracking-[0.15em] md:tracking-[0.2em] text-[10px] md:text-xs mb-2 md:mb-3 flex items-center gap-2">
                         <Crown size={14} /> Selecione a Linhagem
                     </h3>
-                    <div ref={raceScrollRef} className="md:flex-1 md:overflow-y-auto custom-scrollbar md:pr-2 bg-black/20 rounded-xl border border-white/5 p-2">
+                    <div className="md:flex-1 md:overflow-y-auto custom-scrollbar md:pr-2 bg-black/20 rounded-xl border border-white/5 p-2">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
                             {dynamicRaces.length === 0 && <p className="text-gray-500 text-xs col-span-2 text-center">Consultando compêndio...</p>}
                             {dynamicRaces.map((r) => (
@@ -759,7 +764,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                     <h3 className="text-amber-500/80 font-bold uppercase tracking-[0.15em] md:tracking-[0.2em] text-[10px] md:text-xs mb-2 md:mb-3 flex items-center gap-2">
                         <Sword size={14} /> Selecione o Ofício
                     </h3>
-                    <div ref={classScrollRef} className="md:flex-1 md:overflow-y-auto custom-scrollbar md:pr-2 bg-black/20 rounded-xl border border-white/5 p-2">
+                    <div className="md:flex-1 md:overflow-y-auto custom-scrollbar md:pr-2 bg-black/20 rounded-xl border border-white/5 p-2">
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
                             {dynamicClasses.length === 0 && <p className="text-gray-500 text-xs col-span-3 text-center">Consultando compêndio...</p>}
                             {dynamicClasses.map(c => (
@@ -805,7 +810,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
         </div>
 
         {/* Meio */}
-        <div ref={statsScrollRef} className="p-4 md:p-8 flex flex-col flex-1 min-h-0 items-center justify-start overflow-y-auto custom-scrollbar bg-gradient-to-b from-transparent to-black/30 w-full">
+        <div className="p-4 md:p-8 flex flex-col flex-1 min-h-0 items-center justify-start overflow-y-auto custom-scrollbar bg-gradient-to-b from-transparent to-black/30 w-full">
             <div className="text-center mb-6 md:mb-8 shrink-0 relative">
               <div className="absolute inset-0 bg-amber-600/20 blur-[30px] md:blur-[50px] rounded-full -z-10"></div>
               <span className="text-[10px] md:text-sm text-amber-300/70 uppercase font-black tracking-[0.2em] md:tracking-[0.4em] drop-shadow-sm border-b border-amber-900/50 pb-1 md:pb-2 px-4 md:px-8">Pontos Restantes</span>

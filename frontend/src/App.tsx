@@ -415,7 +415,7 @@ function App() {
     socket.on('entityStatusUpdated', (data: any) => setEntities(prev => prev.map(ent => ent.id === data.entityId ? { ...ent, ...data.updates } : ent)));
     socket.on('entityCreated', (data: any) => setEntities(prev => { if (prev.find(e => e.id === data.entity.id)) return prev; return [...prev, data.entity]; }));
     
-    // 👉 ATUALIZADO: Lógica de deleção com limpeza de save e redirecionamento
+    // 👉 ATUALIZADO: Lógica de deleção com limpeza de save e redirecionamento livre de avisos do Linter
     socket.on('entityDeleted', (data: any) => { 
         setEntities(prev => {
             const deletedEnt = prev.find(e => e.id === data.entityId);
@@ -434,7 +434,7 @@ function App() {
         }); 
         
         setStatusSelectionId(prev => prev === data.entityId ? null : prev); 
-        if (attackerId === data.entityId) setAttackerId(null);
+        setAttackerId(prev => prev === data.entityId ? null : prev); // <-- Correção funcional do React
     });
 
     socket.on('mapChanged', (data: any) => { setCurrentMap(data.mapUrl); setFogGrid(data.fogGrid); });
