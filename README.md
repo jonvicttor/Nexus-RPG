@@ -1,12 +1,21 @@
 # ⚔️ Nexus RPG - Virtual Tabletop
 
-[![Deploy no Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://nexusrpg.vercel.app/)
-[![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Socket.io](https://img.shields.io/badge/Socket.io-010101?style=for-the-badge&logo=socket.io&logoColor=white)](https://socket.io/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+<div align="center">
+  <a href="https://nexusrpg.vercel.app/"><img src="https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Deploy no Vercel"/></a>
+  <a href="https://reactjs.org/"><img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React"/></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"/></a>
+  <a href="https://socket.io/"><img src="https://img.shields.io/badge/Socket.io-010101?style=for-the-badge&logo=socket.io&logoColor=white" alt="Socket.io"/></a>
+  <a href="https://tailwindcss.com/"><img src="https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind CSS"/></a>
 
-### 🎲 JOGUE AGORA: [nexusrpg.vercel.app](https://nexusrpg.vercel.app/)
+  <h3><b><a href="https://nexusrpg.vercel.app/">🎲 JOGUE AGORA: nexusrpg.vercel.app</a></b></h3>
+</div>
+
+<br/>
+
+<div align="center">
+  <img src="frontend/src/screenshots/banner.png" width="100%" alt="Nexus RPG Interface Principal">
+  <p><i>O portal de entrada: escolha forjar o mundo como Mestre ou desbravar a história como Herói..</i></p>
+</div>
 
 <br/>
 
@@ -21,6 +30,15 @@ O **Nexus RPG** é uma plataforma VTT (*Virtual Tabletop*) moderna e imersiva, f
 * **Fila de Iniciativa Inteligente:** Solicite rolagens de múltiplos alvos simultaneamente. Os jogadores rolam em suas telas e o mestre processa a fila de NPCs de forma fluida.
 * **Sistema de Dano Visceral:** Overlay de impacto 2D com animações de sangue e cura, calculando automaticamente a vida dos tokens.
 * **Grid de 1,5m (5ft):** Mapa esquadrinhado e sincronizado para medições táticas precisas.
+
+<br/>
+
+<div align="center">
+  <img src="frontend/src/screenshots/combat.png" width="90%" alt="Demonstração de Combate e Tokens">
+  <p><i>Exemplo de combate tático com tokens, mira central e menu radial.</i></p>
+</div>
+
+<br/>
 
 ### 🗺️ Gestão de Mapa (DM Tools)
 * **Fog of War Dinâmico:** Revele salas ou esconda perigos usando pincéis, retângulos ou calculando linhas de visão.
