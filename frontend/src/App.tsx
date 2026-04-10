@@ -22,74 +22,38 @@ const CANVAS_HEIGHT = 1080;
 
 // --- INTERFACES ---
 export interface Item {
-  id: string;
-  name: string;
-  description: string;
-  image: string;
-  type: 'weapon' | 'armor' | 'potion' | 'misc' | 'magic';
-  quantity: number;
-  weight?: number;
-  value?: string;
-  rarity?: string;
-  isEquipped?: boolean;
-  stats?: {
-    damage?: string;
-    armorClass?: number;
-    ac?: number; 
-    properties?: string[];
-    isTreasure?: boolean;
-    coins?: { gp: number, sp: number, cp: number };
-  };
+  id: string; name: string; description: string; image: string; type: 'weapon' | 'armor' | 'potion' | 'misc' | 'magic';
+  quantity: number; weight?: number; value?: string; rarity?: string; isEquipped?: boolean;
+  stats?: { damage?: string; armorClass?: number; ac?: number; properties?: string[]; isTreasure?: boolean; coins?: { gp: number, sp: number, cp: number }; };
 }
 
 export interface Entity {
-  id: number;
-  name: string;
-  hp: number;
-  maxHp: number;
-  ac: number;
-  x: number;
-  y: number;
-  rotation?: number; 
-  mirrored?: boolean;
-  conditions: string[]; 
-  color: string;
-  type: 'player' | 'enemy' | 'loot'; 
-  image?: string;
-  tokenImage?: string; 
-  visionRadius?: number; 
-  stats?: {
-    str: number; dex: number; con: number; int: number; wis: number; cha: number;
-  };
-  classType?: string;
-  size?: number; 
-  xp?: number;
-  level?: number;
-  inventory?: Item[]; 
-  race?: string; 
-  visible?: boolean; 
-  proficiencies?: Record<string, number>; 
-  deathSaves?: { successes: number, failures: number }; 
-  inspiration?: boolean; 
-  spellSlots?: Record<number, { max: number, used: number }>;
-  spells?: { id: string, name: string, level: number }[];
+  id: number; name: string; hp: number; maxHp: number; ac: number; x: number; y: number;
+  rotation?: number; mirrored?: boolean; conditions: string[]; color: string; type: 'player' | 'enemy' | 'loot'; 
+  image?: string; tokenImage?: string; visionRadius?: number; 
+  stats?: { str: number; dex: number; con: number; int: number; wis: number; cha: number; };
+  classType?: string; size?: number; xp?: number; level?: number; inventory?: Item[]; race?: string; visible?: boolean; 
+  proficiencies?: Record<string, number>; deathSaves?: { successes: number, failures: number }; inspiration?: boolean; 
+  spellSlots?: Record<number, { max: number, used: number }>; spells?: { id: string, name: string, level: number }[];
   coins?: { cp: number, sp: number, ep: number, gp: number, pp: number };
 }
 
 export interface MonsterPreset {
-  name: string;
-  hp: number;
-  ac: number;
-  image: string;
-  tokenImage?: string; 
-  size?: number;
+  name: string; hp: number; ac: number; image: string; tokenImage?: string; size?: number;
 }
 
 export interface MapPing {
-  id: string;
-  x: number;
-  y: number;
-  color: string;
+  id: string; x: number; y: number; color: string;
+}
+
+// 👉 NOVA INTERFACE DA FILA DE DADOS
+export interface QueuedRoll {
+  title: string;
+  subtitle: string;
+  mod: number;
+  dc: number;
+  entityId: number | null;
+  targetName: string;
 }
 
 const InitiativeModal = ({ entity, onClose, onConfirm }: { entity: Entity, onClose: () => void, onConfirm: (val: number) => void }) => {
@@ -117,6 +81,78 @@ const InitiativeModal = ({ entity, onClose, onConfirm }: { entity: Entity, onClo
       </div>
     </div>
   );
+};
+
+const DamageOverlay = ({ data, onComplete }: { data: any, onComplete: () => void }) => {
+    const [currentRolls, setCurrentRolls] = useState<number[]>(data.rolls?.map(() => 1) || []);
+    const [locked, setLocked] = useState(!data.rolls); 
+
+    useEffect(() => {
+        if (!data.rolls) {
+            const impact = new Howl({ src: ['/sfx/sword.mp3'], volume: 0.6 });
+            impact.play();
+            setTimeout(onComplete, 2000);
+            return;
+        }
+        
+        let ticks = 0;
+        const audio = new Howl({ src: ['/sfx/dado.mp3'], volume: 0.5, rate: 1.5 });
+        audio.play();
+
+        const interval = setInterval(() => {
+            ticks++;
+            setCurrentRolls(data.rolls.map(() => Math.floor(Math.random() * data.sides) + 1));
+            
+            if (ticks > 15) {
+                clearInterval(interval);
+                setCurrentRolls(data.rolls);
+                setLocked(true);
+                const impact = new Howl({ src: ['/sfx/sword.mp3'], volume: 0.6 });
+                impact.play();
+                setTimeout(onComplete, 2500);
+            }
+        }, 60);
+
+        return () => { clearInterval(interval); audio.unload(); };
+    }, [data, onComplete]);
+
+    return (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(220,38,38,0.2)_0%,transparent_70%)] pointer-events-none"></div>
+            
+            <div className="flex flex-col items-center gap-6 relative z-10">
+                <h2 className="text-red-500 font-black tracking-[0.3em] uppercase text-xl drop-shadow-[0_0_10px_rgba(220,38,38,0.8)]">
+                    {locked ? 'Impacto!' : 'Calculando Dano...'}
+                </h2>
+                
+                <div className="text-white text-lg bg-black/60 px-6 py-2 rounded-full border border-red-500/30 flex items-center gap-2 shadow-lg">
+                    🎯 Alvo: <span className="font-bold text-red-400">{data.targetName}</span>
+                </div>
+
+                {data.rolls && (
+                    <div className="flex gap-4 items-center">
+                        {currentRolls.map((val, idx) => (
+                            <div key={idx} className={`w-16 h-16 flex items-center justify-center text-3xl font-black rounded-xl border-2 transition-all ${locked ? 'bg-red-900 border-red-500 text-white shadow-[0_0_30px_rgba(220,38,38,0.8)] scale-110' : 'bg-gray-900 border-gray-600 text-gray-400'}`}>
+                                {val}
+                            </div>
+                        ))}
+                        {data.mod !== 0 && (
+                            <div className="text-4xl text-gray-500 font-thin mx-2">{data.mod > 0 ? '+' : ''}{data.mod}</div>
+                        )}
+                    </div>
+                )}
+
+                {locked && (
+                    <div className="animate-in zoom-in spin-in-12 duration-300 flex flex-col items-center mt-6">
+                        <span className="text-[10rem] leading-none font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-red-500 to-red-950 drop-shadow-[0_10px_20px_rgba(220,38,38,0.8)]" style={{ fontFamily: '"Cinzel Decorative", serif' }}>
+                            {data.total}
+                        </span>
+                        <span className="text-red-500/50 font-bold tracking-widest mt-4 uppercase">Pontos de Vida Perdidos</span>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
 };
 
 const createInitialFog = () => {
@@ -188,6 +224,11 @@ function App() {
   const [privateChatTarget, setPrivateChatTarget] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  const [damageOverlayData, setDamageOverlayData] = useState<any>(null);
+
+  // 👉 ESTADOS DA FILA DE ROLAGEM
+  const [rollQueue, setRollQueue] = useState<QueuedRoll[]>([]);
+
   const [diceContext, setDiceContext] = useState({
       title: 'Teste Geral',
       subtitle: 'Sorte',
@@ -195,7 +236,9 @@ function App() {
       mod: 0,   
       prof: 0,  
       bonuses: [] as RollBonus[], 
-      rollType: 'normal' as 'normal' | 'advantage' | 'disadvantage'
+      rollType: 'normal' as 'normal' | 'advantage' | 'disadvantage',
+      entityId: null as number | null,
+      targetName: ''
   });
 
   const [currentTrack, setCurrentTrack] = useState<string | null>(null);
@@ -204,12 +247,29 @@ function App() {
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entity: Entity } | null>(null);
   const [pings, setPings] = useState<MapPing[]>([]);
-  
   const [toastMsg, setToastMsg] = useState<{text: string, id: number, sender?: string} | null>(null);
 
   const ignoreNextDiceSound = useRef(false);
 
-  // 👉 LÓGICA BLINDADA DO COMPÊNDIO: Pede o compêndio ao carregar de qualquer forma!
+  // 👉 PROCESSADOR DA FILA (Abre a tela de dado se houver alguém na fila)
+  useEffect(() => {
+      if (rollQueue.length > 0 && !showBgDice) {
+          const nextRoll = rollQueue[0];
+          setDiceContext({
+              title: nextRoll.title,
+              subtitle: nextRoll.subtitle,
+              dc: nextRoll.dc,
+              mod: nextRoll.mod,
+              prof: 0,
+              bonuses: [],
+              rollType: 'normal',
+              entityId: nextRoll.entityId,
+              targetName: nextRoll.targetName
+          });
+          setShowBgDice(true);
+      }
+  }, [rollQueue, showBgDice]);
+
   useEffect(() => {
     const handleCompendiumSync = (data: any) => {
         if (data.availableClasses) setAvailableClasses(data.availableClasses);
@@ -217,11 +277,8 @@ function App() {
     };
 
     socket.on('compendiumSync', handleCompendiumSync);
-
-    // Força o pedido assim que a tela abre
     socket.emit('requestCompendium');
     
-    // E se reconectar por causa de instabilidade de rede, pede de novo
     const handleConnect = () => socket.emit('requestCompendium');
     socket.on('connect', handleConnect);
 
@@ -308,35 +365,15 @@ function App() {
   const createEntity = useCallback((type: 'enemy' | 'player' | 'loot', name: string, x: number, y: number, customStats?: Partial<Entity> & { tokenImage?: string }) => { 
       const newId = Date.now() + Math.floor(Math.random() * 1000); 
       const newEntity: Entity = { 
-          id: newId, 
-          name, 
-          hp: customStats?.hp || 10, 
-          maxHp: customStats?.maxHp || customStats?.hp || 10, 
-          ac: customStats?.ac || 10, 
-          x, 
-          y, 
-          rotation: 0, 
-          mirrored: false, 
-          conditions: [], 
-          color: type === 'enemy' ? '#ef4444' : '#3b82f6', 
-          type, 
+          id: newId, name, hp: customStats?.hp || 10, maxHp: customStats?.maxHp || customStats?.hp || 10, ac: customStats?.ac || 10, 
+          x, y, rotation: 0, mirrored: false, conditions: [], color: type === 'enemy' ? '#ef4444' : '#3b82f6', type, 
           image: customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"), 
           tokenImage: customStats?.tokenImage || customStats?.image || (type === 'enemy' ? "/tokens/lobo.png" : "/tokens/aliado.png"),
-          visionRadius: 9, 
-          stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, 
-          classType: customStats?.classType || "NPC", 
-          size: customStats?.size || 2, 
-          xp: customStats?.xp || 0, 
-          level: customStats?.level || 1, 
-          inventory: customStats?.inventory || [], 
-          race: customStats?.race || 'Humano', 
-          visible: true, 
-          proficiencies: customStats?.proficiencies || {}, 
-          deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, 
-          inspiration: customStats?.inspiration || false, 
-          spellSlots: customStats?.spellSlots || {}, 
-          spells: customStats?.spells || [], 
-          coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } 
+          visionRadius: 9, stats: customStats?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, classType: customStats?.classType || "NPC", 
+          size: customStats?.size || 2, xp: customStats?.xp || 0, level: customStats?.level || 1, inventory: customStats?.inventory || [], 
+          race: customStats?.race || 'Humano', visible: true, proficiencies: customStats?.proficiencies || {}, 
+          deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, inspiration: customStats?.inspiration || false, 
+          spellSlots: customStats?.spellSlots || {}, spells: customStats?.spells || [], coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } 
       }; 
       setEntities(prev => [...prev, newEntity]); 
       socket.emit('createEntity', { entity: newEntity, roomId }); 
@@ -345,7 +382,6 @@ function App() {
   useEffect(() => {
     if (!isLoggedIn || !roomId) return;
     socket.emit('joinRoom', roomId);
-    // Nota: O connect handler foi movido para cima para não duplicar chamadas
   }, [isLoggedIn, roomId]);
 
   useEffect(() => {
@@ -362,7 +398,6 @@ function App() {
       if (gameState.globalBrightness !== undefined) setGlobalBrightness(gameState.globalBrightness);
       if (gameState.currentTrack) handlePlayMusic(gameState.currentTrack, false);
       
-      // Estes também continuam aqui por segurança caso o DM atualize algo
       if (gameState.availableClasses) setAvailableClasses(gameState.availableClasses);
       if (gameState.availableSpells) setAvailableSpells(gameState.availableSpells);
       if (gameState.availableItems) setAvailableItems(gameState.availableItems);
@@ -415,17 +450,14 @@ function App() {
     socket.on('entityStatusUpdated', (data: any) => setEntities(prev => prev.map(ent => ent.id === data.entityId ? { ...ent, ...data.updates } : ent)));
     socket.on('entityCreated', (data: any) => setEntities(prev => { if (prev.find(e => e.id === data.entity.id)) return prev; return [...prev, data.entity]; }));
     
-    // 👉 ATUALIZADO: Lógica de deleção com limpeza de save e redirecionamento livre de avisos do Linter
     socket.on('entityDeleted', (data: any) => { 
         setEntities(prev => {
             const deletedEnt = prev.find(e => e.id === data.entityId);
             
-            // Se eu sou o jogador e deletaram MEU personagem
             if (role === 'PLAYER' && deletedEnt && deletedEnt.name.toLowerCase() === playerName.toLowerCase() && deletedEnt.type === 'player') {
-                localStorage.removeItem('nexus_last_char'); // Limpa o "Fantasma"
+                localStorage.removeItem('nexus_last_char'); 
                 setToastMsg({ text: "Sua ficha foi removida da mesa pelo Mestre.", id: Date.now() });
                 
-                // Manda de volta pra tela inicial após 3s para limpeza total
                 setTimeout(() => {
                     window.location.reload();
                 }, 3000);
@@ -434,7 +466,7 @@ function App() {
         }); 
         
         setStatusSelectionId(prev => prev === data.entityId ? null : prev); 
-        setAttackerId(prev => prev === data.entityId ? null : prev); // <-- Correção funcional do React
+        setAttackerId(prev => prev === data.entityId ? null : prev); 
     });
 
     socket.on('mapChanged', (data: any) => { setCurrentMap(data.mapUrl); setFogGrid(data.fogGrid); });
@@ -445,14 +477,27 @@ function App() {
     socket.on('mapStateUpdated', (data: any) => { if (role === 'PLAYER') { setMapOffset(data.offset); setMapScale(data.scale); } });
     socket.on('globalBrightnessUpdated', (data: any) => { setGlobalBrightness(data.brightness); });
 
+    // 👉 AVISO DE ROLAGEM EXIGIDA CAI NA FILA
     socket.on('dmRequestRoll', (data: any) => {
         if (role === 'PLAYER') {
             setEntities(currentEntities => {
                 const myChar = currentEntities.find(e => e.name === playerName && e.id === data.targetId);
                 const isMyChar = myChar || currentEntities.some(e => e.id === data.targetId && e.type === 'player' && e.name === playerName);
+                
                 if (isMyChar) {
-                     setDiceContext({ title: data.skillName, subtitle: `Exigido pelo Mestre`, dc: data.dc, mod: data.mod, prof: 0, bonuses: [], rollType: 'normal' });
-                    setShowBgDice(true); handlePlayMusic('suspense', false); addLog({ text: `⚠️ O Mestre exigiu um teste de **${data.skillName}**!`, type: 'info', sender: 'Sistema' });
+                    const charName = myChar ? myChar.name : playerName;
+                    const charId = myChar ? myChar.id : data.targetId;
+                    
+                    setRollQueue(prev => [...prev, {
+                        title: data.skillName,
+                        subtitle: `Exigido pelo Mestre`,
+                        mod: data.mod,
+                        dc: data.dc,
+                        entityId: charId,
+                        targetName: charName
+                    }]);
+                    playSound('notificacao');
+                    addLog({ text: `⚠️ O Mestre exigiu um teste de **${data.skillName}** de você!`, type: 'info', sender: 'Sistema' }, false);
                 }
                 return currentEntities;
             });
@@ -503,26 +548,83 @@ function App() {
       addLog({ text: `Mestre solicitou um teste de **${skillName}** para **${target ? target.name : 'Alvo'}**.`, type: 'info', sender: 'Sistema' }); 
       socket.emit('dmRequestRoll', { roomId, targetId, skillName, mod, dc }); 
   };
+
+  // 👉 SOLICITADOR GERAL DE INICIATIVA (MESTRE USA ISSO)
+  const handleRequestInitiative = (targetIds: number[]) => {
+      const dmQueue: QueuedRoll[] = [];
+      let playerPushed = false;
+
+      targetIds.forEach(id => {
+          const ent = entities.find(e => e.id === id);
+          if (!ent) return;
+          const dexMod = ent.stats ? Math.floor((ent.stats.dex - 10) / 2) : 0;
+          
+          if (ent.type === 'player') {
+              // Exige que o jogador role a iniciativa na própria tela
+              socket.emit('dmRequestRoll', { roomId, targetId: id, skillName: 'Iniciativa', mod: dexMod, dc: 0 });
+              playerPushed = true;
+          } else {
+              // Adiciona os monstros na fila de rolagem do próprio Mestre
+              dmQueue.push({
+                  title: 'Iniciativa',
+                  subtitle: `Teste para ${ent.name}`,
+                  mod: dexMod,
+                  dc: 0,
+                  entityId: id,
+                  targetName: ent.name
+              });
+          }
+      });
+
+      if (playerPushed) {
+          addLog({ text: `⚔️ O Mestre exigiu que os aventureiros selecionados rolem suas Iniciativas!`, type: 'info', sender: 'Sistema' });
+      }
+
+      if (dmQueue.length > 0) {
+          setRollQueue(prev => [...prev, ...dmQueue]);
+      }
+      setTargetEntityIds([]); // Limpa a seleção para facilitar a vida do mestre
+  };
   
   const handleAttributeRoll = (charName: string, attrName: string, mod: number) => { 
-      setDiceContext({ title: attrName, subtitle: `Teste de Perícia (${charName})`, dc: 15, mod, prof: 0, bonuses: [], rollType: 'normal' }); 
-      setShowBgDice(true); 
+      setRollQueue(prev => [...prev, { title: attrName, subtitle: `Teste de Perícia (${charName})`, dc: 15, mod, entityId: null, targetName: charName }]);
   };
 
   const handleApplyDamageFromChat = (targetId: number, damageExpression: string) => {
-        const rollMatch = damageExpression.match(/^(\d+)d(\d+)(\+(\d+))?$/i);
-        let totalDano = 0; let rollString = "";
-        if (rollMatch) {
-            const count = parseInt(rollMatch[1]); const sides = parseInt(rollMatch[2]); const mod = rollMatch[4] ? parseInt(rollMatch[4]) : 0;
-            let sum = 0; let rolls = [];
-            for(let i=0; i<count; i++) { const val = Math.floor(Math.random() * sides) + 1; rolls.push(val); sum += val; }
-            totalDano = sum + mod; rollString = `[${rolls.join(', ')}]${mod > 0 ? `+${mod}` : ''}`;
-        } else { totalDano = parseInt(damageExpression) || 0; rollString = "Dano Fixo"; }
-
         const target = entities.find(e => e.id === targetId);
-        if (target && totalDano > 0) {
-            handleUpdateHP(targetId, -totalDano); handlePlaySFX('sword', true);
+        if (!target) return;
+
+        const rollMatch = damageExpression.match(/^(\d+)d(\d+)(\+(\d+))?$/i);
+
+        if (rollMatch) {
+            const count = parseInt(rollMatch[1]); 
+            const sides = parseInt(rollMatch[2]); 
+            const mod = rollMatch[4] ? parseInt(rollMatch[4]) : 0;
+            let sum = 0; 
+            let rolls = [];
+            
+            for(let i=0; i<count; i++) { 
+                const val = Math.floor(Math.random() * sides) + 1; 
+                rolls.push(val); 
+                sum += val; 
+            }
+            
+            const totalDano = sum + mod; 
+            const rollString = `[${rolls.join(', ')}]${mod > 0 ? `+${mod}` : (mod < 0 ? mod : '')}`;
+
+            handleUpdateHP(targetId, -totalDano); 
             addLog({ text: `⚔️ **DANO APLICADO:** Rolou ${damageExpression} ${rollString} = **${totalDano} de Dano** no ${target.name}!`, type: 'damage', sender: 'Sistema' });
+            
+            setDamageOverlayData({ rolls, sides, mod, total: totalDano, targetName: target.name });
+
+        } else { 
+            const totalDano = parseInt(damageExpression) || 0; 
+            if (totalDano > 0) {
+                handleUpdateHP(targetId, -totalDano); 
+                addLog({ text: `⚔️ **DANO APLICADO:** ${totalDano} de Dano Fixo no ${target.name}!`, type: 'damage', sender: 'Sistema' });
+                
+                setDamageOverlayData({ rolls: null, mod: 0, total: totalDano, targetName: target.name });
+            }
         }
   };
 
@@ -591,6 +693,19 @@ function App() {
           }
       }
 
+      // 👉 SE FOR INICIATIVA, ADICIONA NA LISTA OFICIAL DE TURNOS AUTOMATICAMENTE
+      if (diceContext.title === 'Iniciativa' && diceContext.entityId) {
+          const entName = diceContext.targetName || senderName;
+          const newItem = { id: diceContext.entityId, name: entName, value: total };
+          
+          setInitiativeList(prev => {
+               const filtered = prev.filter(i => i.id !== newItem.id);
+               const newList = [...filtered, newItem].sort((a,b) => b.value - a.value);
+               socket.emit('updateInitiative', { list: newList, activeTurnId, roomId });
+               return newList;
+          });
+      }
+
       const publicText = `🎲 **${senderName}** rolou ${diceContext.title}:\n🎯 Resultado: **${total}** - ${resultMsg}${targetInfoMsg}`;
 
       if (isSecret) {
@@ -602,11 +717,18 @@ function App() {
           setTimeout(() => { ignoreNextDiceSound.current = false; }, 2000);
           socket.emit('rollDice', { sides: 20, result: total, roomId, user: senderName });
       }
-      setTimeout(() => setShowBgDice(false), 2000);
+
+      // 👉 REMOVE DA FILA PARA O PRÓXIMO DADO APARECER
+      setTimeout(() => {
+          setShowBgDice(false);
+          setRollQueue(prev => prev.slice(1));
+      }, 2000);
   };
 
-  const openDiceRoller = () => { setDiceContext({ title: 'Rolagem Livre', subtitle: 'Sorte', dc: 10, mod: 0, prof: 0, bonuses: [], rollType: 'normal' }); setShowBgDice(true); };
-  const handleDMRoll = (title: string, subtitle: string, mod: number, rollType: 'normal' | 'advantage' | 'disadvantage' = 'normal') => { setDiceContext({ title, subtitle, dc: 10, mod, prof: 0, bonuses: [], rollType }); setShowBgDice(true); };
+  const openDiceRoller = () => { setRollQueue(prev => [...prev, { title: 'Rolagem Livre', subtitle: 'Sorte', dc: 10, mod: 0, entityId: null, targetName: '' }]); };
+  const handleDMRoll = (title: string, subtitle: string, mod: number, rollType: 'normal' | 'advantage' | 'disadvantage' = 'normal') => { 
+      setRollQueue(prev => [...prev, { title, subtitle, dc: 10, mod, entityId: null, targetName: '' }]); 
+  };
 
   const handleAddXP = (id: number, amount: number) => {
     const entity = entities.find(e => e.id === id); if (!entity || entity.type !== 'player') return;
@@ -856,9 +978,10 @@ function App() {
   const handleNextTurn = () => { 
       if (initiativeList.length === 0) return; 
       const nextId = initiativeList[(initiativeList.findIndex(i => i.id === activeTurnId) + 1) % initiativeList.length].id; 
-      setActiveTurnId(nextId); 
       
+      setActiveTurnId(nextId); 
       setAttackerId(nextId);
+      setTargetEntityIds([]); // 👉 A MAGIA AQUI: Limpa os alvos do turno anterior automaticamente!
       
       socket.emit('updateInitiative', { list: initiativeList, activeTurnId: nextId, roomId }); 
       const nextEntity = initiativeList.find(i => i.id === nextId); 
@@ -1006,6 +1129,11 @@ function App() {
         </div>
       )}
 
+      {/* 👉 O NOVO OVERLAY DE DANO FICA AQUI */}
+      {damageOverlayData && (
+          <DamageOverlay data={damageOverlayData} onComplete={() => setDamageOverlayData(null)} />
+      )}
+
       {privateChatTarget && (
           <div className="fixed bottom-4 right-[450px] z-[300] w-80 bg-gray-900 border border-pink-500/50 rounded-t-xl rounded-bl-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10">
               <div className="bg-gradient-to-r from-pink-900 to-purple-900 p-2 flex justify-between items-center border-b border-pink-500/30 shadow-md">
@@ -1041,7 +1169,6 @@ function App() {
       
       {editingEntity && (<EditEntityModal entity={editingEntity} onSave={(id, updates) => { handleEditEntity(id, updates); setEditingEntity(null); }} onClose={() => setEditingEntity(null)} availableClasses={availableClasses} availableRaces={availableRaces} />)}
       
-      {/* 👉 A FICHA DE PERSONAGEM FLUTUANTE */}
       {activeCharacterSheetId && entities.find(e => e.id === activeCharacterSheetId) && (
           <CharacterSheetFloating 
               character={entities.find(e => e.id === activeCharacterSheetId)!} 
@@ -1211,6 +1338,7 @@ function App() {
                     availableItems={availableItems} 
                     availableConditions={availableConditions}
                     onOpenLootGenerator={() => setShowLootGenerator(true)}
+                    onRequestInitiative={handleRequestInitiative}
                     /> 
                 : <SidebarPlayer entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name === playerName)?.id || 0} initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} onSelectEntity={(entity) => { setFocusEntity(entity); setTimeout(() => setFocusEntity(null), 100); }} onApplyDamageFromChat={handleApplyDamageFromChat} />
                 }
@@ -1218,7 +1346,6 @@ function App() {
           </>
       )}
 
-      {/* 👉 O MODAL DE TESOURO FICA AQUI */}
       {showLootGenerator && (
           <LootGeneratorModal 
               onClose={() => setShowLootGenerator(false)}

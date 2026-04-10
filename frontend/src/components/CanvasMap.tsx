@@ -21,7 +21,6 @@ interface CanvasMapProps {
   fogShape?: 'brush' | 'rect' | 'line';
   onFogBulkUpdate?: (cells: {x: number, y: number}[], shouldReveal: boolean) => void;
   
-  // NOVA FUNÇÃO UNIFICADA DE CÂMERA
   onMapTransform: (newOffset: { x: number, y: number }, newScale: number) => void;
   
   activeAoE: 'circle' | 'cone' | 'cube' | null;
@@ -41,7 +40,6 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [mapImage, setMapImage] = useState<HTMLImageElement | null>(null);
-  // O tamanho real da área disponível, descontando menus laterais
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
 
   const [measureStart, setMeasureStart] = useState<{x: number, y: number} | null>(null);
@@ -59,7 +57,6 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
   const lastFogUpdate = useRef<number>(0);
   const fogDebounceMs = 50; 
 
-  // Observador de tamanho de ecrã dinâmico
   useEffect(() => {
       const parent = canvasRef.current?.parentElement;
       if (!parent) return;
@@ -88,20 +85,17 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
     return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
   }, []);
 
-  // --- CÁLCULOS DE CÂMARA (IMPEDE VER O FUNDO PRETO) ---
   const clampView = useCallback((proposedOffset: {x: number, y: number}, proposedScale: number) => {
       if (!mapImage || canvasSize.w === 0 || canvasSize.h === 0) {
           return { offset: proposedOffset, scale: proposedScale };
       }
       
-      // 1. Zoom Mínimo (O mapa tem de preencher a ecrã)
       const minScaleX = canvasSize.w / mapImage.width;
       const minScaleY = canvasSize.h / mapImage.height;
       const minScale = Math.max(minScaleX, minScaleY);
       
-      const finalScale = Math.max(minScale, Math.min(proposedScale, 10)); // Limite máximo de zoom 10x
+      const finalScale = Math.max(minScale, Math.min(proposedScale, 10)); 
       
-      // 2. Limites de Arrastamento (Pan)
       const minX = canvasSize.w - (mapImage.width * finalScale);
       const minY = canvasSize.h - (mapImage.height * finalScale);
       
@@ -111,7 +105,6 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
       return { offset: { x: finalX, y: finalY }, scale: finalScale };
   }, [mapImage, canvasSize]);
 
-  // Garante que a ecrã nunca sai dos limites em nenhum momento (Ex: ao redimensionar a janela)
   useEffect(() => {
       if (!mapImage || canvasSize.w === 0) return;
       const clamped = clampView(offset, scale);
@@ -141,8 +134,29 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
     ctx.translate(offset.x, offset.y); 
     ctx.scale(scale, scale);
     
+    // 1. Desenha o Chão
     ctx.drawImage(mapImage, 0, 0, mapImage.width, mapImage.height);
 
+    // 👉 2. NOVO: Desenha a Grade de Combate (Esquadrinhado de 1,5m)
+    ctx.save();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.15)"; // Linha branca sutil
+    ctx.lineWidth = 1 / scale; // Mantém a linha fina independente do zoom
+    
+    ctx.beginPath();
+    // Linhas Verticais
+    for (let x = 0; x <= mapImage.width; x += gridSize) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, mapImage.height);
+    }
+    // Linhas Horizontais
+    for (let y = 0; y <= mapImage.height; y += gridSize) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(mapImage.width, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // 3. Desenha a Noite/Claridade
     if (globalBrightness < 1) {
         ctx.save();
         ctx.fillStyle = "#000000";
@@ -151,6 +165,7 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
         ctx.restore();
     }
 
+    // 4. Desenha a Neblina (Fog of War)
     if (fogGrid && fogGrid.length > 0) {
       ctx.fillStyle = "#000000"; 
       ctx.globalAlpha = role === 'DM' ? 0.6 : 1.0; 
@@ -260,7 +275,6 @@ const CanvasMap: React.FC<CanvasMapProps> = ({
     ctx.restore();
   }, [mapImage, offset, scale, gridSize, fogGrid, role, measureStart, aoeStart, activeAoE, aoeColor, globalBrightness, canvasSize, forceRender, fogDrawStart, isFogMode, fogShape, fogTool]); 
 
-  // --- ZOOM SUAVE NA POSIÇÃO DO RATO ---
   const handleWheel = (e: React.WheelEvent) => {
     if (!mapImage || canvasSize.w === 0) return;
     

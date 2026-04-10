@@ -92,6 +92,7 @@ interface SidebarDMProps {
   availableItems?: any[]; 
   availableConditions?: any[]; 
   onOpenLootGenerator?: () => void; 
+  onRequestInitiative?: (targetIds: number[]) => void; // 👉 ADICIONADO AQUI
 }
 
 const AoEColorPicker = ({ selected, onSelect }: { selected: string, onSelect: (c: string) => void }) => {
@@ -126,7 +127,7 @@ const EntityControlRow = ({ entity, onUpdateHP, onDeleteEntity, onClickEdit, onA
         </button>
 
         <button onClick={(e) => { e.stopPropagation(); onClickEdit(); }} className="text-gray-300 hover:text-blue-400 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Editar">✎</button>
-        <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Deletar ${entity.name}?`)) onDeleteEntity(entity.id); }} className="text-gray-300 hover:text-red-500 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Excluir">✕</button>
+        <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Deletar ${entity.name}?`)) onDeleteEntity(entity.id); }} className="text-gray-300 hover:text-red-500 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Excluir (Remove o Corpo)">✕</button>
       </div>
 
       {showXPInput && (<div className="absolute inset-0 z-30 bg-black/90 flex items-center justify-center p-2" onClick={(e) => e.stopPropagation()}><form onSubmit={handleGiveXP} className="flex gap-2 w-full"><input autoFocus type="number" placeholder="XP" className="w-full bg-gray-800 border border-purple-500 text-white px-2 py-1 rounded text-xs" value={xpAmount} onChange={(e) => setXpAmount(e.target.value)} /><button type="submit" className="bg-purple-600 text-white px-3 py-1 rounded text-xs font-bold">OK</button><button type="button" onClick={() => setShowXPInput(false)} className="text-gray-400 hover:text-white text-xs">X</button></form></div>)}
@@ -177,7 +178,7 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
     const handleVisualAttack = (rollType: 'normal' | 'advantage' | 'disadvantage') => {
         if (!attacker) return;
         const targetNames = targets.length > 0 ? targets.map((t: Entity) => t.name).join(', ') : 'o vazio';
-        onDMRoll(`Ataque de ${attacker.name}`, `Alvo(s): ${targetNames}`, atkMod, rollType);
+        onDMRoll(`Ataque de "${attacker.name}"`, `Alvo(s): ${targetNames}`, atkMod, rollType);
     };
 
     const renderHpBar = (entity: Entity) => {
@@ -186,11 +187,11 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
         if (hpPercent < 30) barColor = 'bg-red-600';
         else if (hpPercent < 60) barColor = 'bg-yellow-500';
         return (
-            <div className="flex flex-col items-center w-full px-1 mt-2">
+            <div className="flex flex-col items-center w-full px-1 mt-2" title="Vida Atual">
                 <div className="w-20 h-2 bg-gray-700 rounded-full border border-black/50 overflow-hidden relative shadow-inner">
                     <div className={`h-full ${barColor} transition-all duration-300`} style={{ width: `${hpPercent}%` }}></div>
                 </div>
-                <span className="text-[9px] text-white/80 font-mono mt-0.5 font-bold shadow-black drop-shadow-md">{entity.hp}/{entity.maxHp}</span>
+                <span className="text-[10px] text-white/90 font-mono mt-1 font-bold shadow-black drop-shadow-md">{entity.hp} / {entity.maxHp}</span>
             </div>
         );
     };
@@ -201,28 +202,29 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
         <section className="mb-4 bg-gradient-to-r from-blue-950/40 via-purple-900/20 to-red-950/40 border border-white/10 rounded-xl p-4 shadow-xl relative overflow-hidden">
             <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay pointer-events-none"></div>
             
-            <h3 className="text-yellow-500/80 font-bold text-[10px] uppercase tracking-widest mb-4 text-center flex items-center justify-center gap-2">
-                <span className="w-8 h-px bg-yellow-500/30"></span>
-                ⚔️ Mesa de Combate
-                <span className="w-8 h-px bg-yellow-500/30"></span>
+            <h3 className="text-yellow-500/90 font-black text-[11px] uppercase tracking-widest mb-4 text-center flex items-center justify-center gap-2">
+                <span className="w-8 h-px bg-yellow-500/50"></span>
+                ⚔️ {attacker ? `TURNO DE "${attacker.name.toUpperCase()}"` : 'MESA DE COMBATE'}
+                <span className="w-8 h-px bg-yellow-500/50"></span>
             </h3>
             
             <div className="flex items-center justify-between gap-4 mb-4 relative z-10">
                 <div className="flex flex-col items-center w-[40%]">
+                    <span className="text-[9px] text-blue-400 font-bold uppercase tracking-widest mb-2">⚔️ Atacante</span>
                     {attacker ? (
                         <>
-                            <div className="w-14 h-14 rounded-full border-2 border-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.4)] overflow-hidden bg-black relative group">
+                            <div className="w-16 h-16 rounded-full border-2 border-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.4)] overflow-hidden bg-black relative group">
                                 <img src={attacker.tokenImage || attacker.image || ''} className="w-full h-full object-cover group-hover:scale-110 transition-transform" alt="" />
                             </div>
-                            <span className="text-[11px] text-blue-300 font-black mt-2 truncate max-w-full text-center leading-tight drop-shadow-md">{attacker.name}</span>
-                            <div className="bg-black/60 border border-blue-500/30 rounded px-2 py-0.5 mt-1">
-                                <span className="text-[9px] font-bold text-gray-400 uppercase">Mod Atq: </span>
-                                <span className="text-[10px] font-black text-white">{modString}</span>
+                            <span className="text-[12px] text-blue-300 font-black mt-2 truncate max-w-full text-center leading-tight drop-shadow-md">{attacker.name}</span>
+                            <div className="bg-black/60 border border-blue-500/30 rounded px-3 py-1 mt-1" title="Modificador de Ataque (Soma no D20)">
+                                <span className="text-[9px] font-bold text-gray-400 uppercase">Mod: </span>
+                                <span className="text-[11px] font-black text-white">{modString}</span>
                             </div>
                             {renderHpBar(attacker)}
                         </>
                     ) : (
-                        <div className="w-14 h-14 rounded-full border-2 border-dashed border-blue-500/30 flex items-center justify-center text-blue-500/30 text-xs bg-black/40">Selecione</div>
+                        <div className="w-16 h-16 rounded-full border-2 border-dashed border-blue-500/30 flex items-center justify-center text-blue-500/30 text-[10px] uppercase font-bold bg-black/40 tracking-widest">Vazio</div>
                     )}
                 </div>
 
@@ -231,40 +233,47 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
                 </div>
 
                 <div className="flex flex-col items-center w-[40%]">
+                    <span className="text-[9px] text-red-400 font-bold uppercase tracking-widest mb-2">🎯 Alvo(s)</span>
                     {targets.length > 0 ? (
                         <>
                             <div className="flex -space-x-3 overflow-hidden justify-center w-full">
                                 {targets.slice(0, 3).map((t: Entity) => (
-                                    <div key={t.id} className="w-12 h-12 rounded-full border-2 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)] overflow-hidden bg-black flex-shrink-0 relative z-10">
+                                    <div key={t.id} className="w-16 h-16 rounded-full border-2 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)] overflow-hidden bg-black flex-shrink-0 relative z-10">
                                         <img src={t.tokenImage || t.image || ''} className="w-full h-full object-cover" alt="" />
                                     </div>
                                 ))}
-                                {targets.length > 3 && (<div className="w-12 h-12 rounded-full border-2 border-red-500 bg-red-950 text-white text-[10px] font-bold flex items-center justify-center z-0 relative -ml-4 shadow-lg shadow-red-500/20">+{targets.length - 3}</div>)}
+                                {targets.length > 3 && (<div className="w-16 h-16 rounded-full border-2 border-red-500 bg-red-950 text-white text-[10px] font-bold flex items-center justify-center z-0 relative -ml-4 shadow-lg shadow-red-500/20">+{targets.length - 3}</div>)}
                             </div>
-                            <span className="text-[10px] text-red-400 font-bold mt-2 uppercase tracking-widest">{targets.length} Alvo(s)</span>
+                            
+                            {targets.length === 1 ? (
+                                <span className="text-[12px] text-red-400 font-black mt-2 truncate max-w-full text-center leading-tight drop-shadow-md">{targets[0].name}</span>
+                            ) : (
+                                <span className="text-[11px] text-red-400 font-bold mt-2 uppercase tracking-widest">{targets.length} Alvos Selecionados</span>
+                            )}
+                            
                             {targets.length === 1 && (
-                                <div className="bg-black/60 border border-red-500/30 rounded px-2 py-0.5 mt-1">
-                                    <span className="text-[9px] font-bold text-gray-400 uppercase">CA: </span>
-                                    <span className="text-[10px] font-black text-white">{targets[0].ac}</span>
+                                <div className="bg-black/60 border border-red-500/30 rounded px-3 py-1 mt-1 cursor-help" title="Classe de Armadura / Classe de Dificuldade (O D20 precisa igualar ou superar esse número para acertar)">
+                                    <span className="text-[9px] font-bold text-gray-400 uppercase">CA/CD: </span>
+                                    <span className="text-[11px] font-black text-white">{targets[0].ac}</span>
                                 </div>
                             )}
                             {targets.length === 1 && renderHpBar(targets[0])}
                         </>
                     ) : (
-                        <div className="w-14 h-14 rounded-full border-2 border-dashed border-red-500/30 flex items-center justify-center text-red-500/30 text-xs bg-black/40">Alvo</div>
+                        <div className="w-16 h-16 rounded-full border-2 border-dashed border-red-500/30 flex items-center justify-center text-red-500/30 text-[10px] uppercase font-bold bg-black/40 tracking-widest">Vazio</div>
                     )}
                 </div>
             </div>
 
             {attacker && targets.length > 0 && (
-                <div className="flex gap-2 justify-center mt-4 border-t border-white/10 pt-4 relative z-10">
-                    <button onClick={() => handleVisualAttack('disadvantage')} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-[9px] font-bold py-2 rounded border border-gray-600 transition-colors uppercase" title="Rolar com Desvantagem">
+                <div className="flex gap-2 justify-center mt-5 border-t border-white/10 pt-4 relative z-10">
+                    <button onClick={() => handleVisualAttack('disadvantage')} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-[9px] font-bold py-2 rounded border border-gray-600 transition-colors uppercase" title="Rolar 2 dados e pegar o MENOR">
                         Desvantagem
                     </button>
-                    <button onClick={() => handleVisualAttack('normal')} className="flex-[2] bg-gradient-to-b from-yellow-600 to-yellow-800 hover:from-yellow-500 hover:to-yellow-700 text-white text-[11px] font-black py-2 rounded shadow-[0_0_15px_rgba(202,138,4,0.4)] border border-yellow-400/50 transition-all active:scale-95 uppercase tracking-widest flex items-center justify-center gap-1">
+                    <button onClick={() => handleVisualAttack('normal')} className="flex-[2] bg-gradient-to-b from-yellow-600 to-yellow-800 hover:from-yellow-500 hover:to-yellow-700 text-white text-[11px] font-black py-2 rounded shadow-[0_0_15px_rgba(202,138,4,0.4)] border border-yellow-400/50 transition-all active:scale-95 uppercase tracking-widest flex items-center justify-center gap-1" title="Rolar D20 padrão">
                         <span className="text-sm">🎲</span> Rolar Ataque
                     </button>
-                    <button onClick={() => handleVisualAttack('advantage')} className="flex-1 bg-gray-800 hover:bg-gray-700 text-green-400 text-[9px] font-bold py-2 rounded border border-green-900/50 transition-colors uppercase" title="Rolar com Vantagem">
+                    <button onClick={() => handleVisualAttack('advantage')} className="flex-1 bg-gray-800 hover:bg-gray-700 text-green-400 text-[9px] font-bold py-2 rounded border border-green-900/50 transition-colors uppercase" title="Rolar 2 dados e pegar o MAIOR">
                         Vantagem
                     </button>
                 </div>
@@ -272,9 +281,9 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
 
             {targets.length > 0 && (
                 <div className="flex gap-2 mt-4 pt-4 border-t border-white/5 relative z-10">
-                    <input type="number" placeholder="HP..." className="w-14 bg-black/80 border border-white/10 rounded p-1 text-center text-white text-xs font-bold outline-none focus:border-red-500" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') applyToAll(true); }} />
-                    <button onClick={() => applyToAll(true)} className="flex-1 bg-red-900/60 hover:bg-red-600 border border-red-700/50 text-red-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1">🩸 Dano Direto</button>
-                    <button onClick={() => applyToAll(false)} className="flex-1 bg-green-900/60 hover:bg-green-600 border border-green-700/50 text-green-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1">💚 Cura</button>
+                    <input type="number" placeholder="HP..." title="Quantidade de Dano ou Cura" className="w-16 bg-black/80 border border-white/10 rounded p-1 text-center text-white text-xs font-bold outline-none focus:border-red-500" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') applyToAll(true); }} />
+                    <button onClick={() => applyToAll(true)} className="flex-1 bg-red-900/60 hover:bg-red-600 border border-red-700/50 text-red-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1" title="Aplica o valor como DANO nos alvos selecionados">🩸 Aplicar Dano</button>
+                    <button onClick={() => applyToAll(false)} className="flex-1 bg-green-900/60 hover:bg-green-600 border border-green-700/50 text-green-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1" title="Aplica o valor como CURA nos alvos selecionados">💚 Curar</button>
                 </div>
             )}
         </section>
@@ -293,7 +302,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   onOpenCreator, onAddXP, customMonsters, globalBrightness = 1, onSetGlobalBrightness, onRequestRoll, onToggleVisibility,
   currentTrack, onPlayMusic, onStopMusic, onPlaySFX, audioVolume, onSetAudioVolume,
   onResetView, onGiveItem, onApplyDamageFromChat,
-  onDMRoll, onLongRest, availableItems, availableConditions, onOpenLootGenerator 
+  onDMRoll, onLongRest, availableItems, availableConditions, onOpenLootGenerator, onRequestInitiative 
 }) => {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>('combat');
@@ -358,7 +367,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const attacker = entities.find(e => e.id === attackerId) || null;
   const targets = entities.filter(e => targetEntityIds.includes(e.id));
   const toggleConditionForAll = (cond: string) => { targets.forEach(t => onToggleCondition(t.id, cond)); };
-  const rollBulkInitiative = (type: 'npc' | 'selected') => { const targetsToRoll = type === 'npc' ? entities.filter(e => e.type === 'enemy') : entities.filter(e => targetEntityIds.includes(e.id)); if(targetsToRoll.length === 0) return; targetsToRoll.forEach(ent => { if (!initiativeList.find(i => i.id === ent.id)) onAddToInitiative(ent); }); };
+  
   const sidebarStyle = { backgroundColor: '#1a1510', backgroundImage: `url('/assets/bg-couro-sidebar.png')`, backgroundSize: 'cover', backgroundRepeat: 'no-repeat', boxShadow: 'inset 0 0 60px rgba(0,0,0,0.9)', width: '420px', minWidth: '420px', maxWidth: '420px', flex: '0 0 420px' };
 
   const CONDITION_MAP = [
@@ -411,10 +420,10 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                 <button onClick={() => setMainTab('chat')} className={`flex-1 py-3 text-center text-sm font-bold uppercase tracking-wider transition-all ${mainTab === 'chat' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>💬 Chat</button>
             </div>
 
-            <div className={`flex-grow flex-col h-full overflow-hidden w-full ${mainTab === 'chat' ? 'flex' : 'hidden'}`}>
-                <div className="flex items-center justify-between px-4 py-1 border-b border-white/5 bg-black/20">
-                    <p className="text-[8px] text-rpgText/30 font-mono italic">Canal Global</p>
-                    <span className="text-[8px] text-rpgAccent/50 font-mono uppercase">Mestre On-line</span>
+            <div className={`flex-1 min-h-0 flex-col w-full relative z-20 bg-black/50 ${mainTab === 'chat' ? 'flex' : 'hidden'}`}>
+                <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-black/40 shrink-0">
+                    <p className="text-[8px] text-rpgText/50 font-mono italic">Canal Global</p>
+                    <span className="text-[8px] text-rpgAccent/80 font-bold font-mono uppercase tracking-widest">Mestre On-line</span>
                 </div>
                 <div className="flex-1 w-full max-w-full overflow-hidden">
                     <Chat 
@@ -426,7 +435,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                 </div>
             </div>
 
-            <div className={`flex-col h-full overflow-hidden w-full ${mainTab === 'tools' ? 'flex' : 'hidden'}`}>
+            <div className={`flex-1 min-h-0 flex-col w-full ${mainTab === 'tools' ? 'flex' : 'hidden'}`}>
                 <div className="flex border-b border-white/10 bg-black/40 flex-shrink-0">
                     <button onClick={() => setActiveTab('combat')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'combat' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Combate">⚔️</button>
                     <button onClick={() => setActiveTab('map')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'map' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Mapa">🗺️</button>
@@ -486,9 +495,16 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                     {activeTab === 'combat' && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                             <CombatVsPanel attacker={attacker} targets={targets} onUpdateHP={onUpdateHP} onSendMessage={onSendMessage} onDMRoll={onDMRoll} />
+                            
+                            {/* 👉 NOVO BOTÃO DE INICIATIVA GLOBAL */}
                             <section className="mb-4 flex gap-2">
-                                <button onClick={() => rollBulkInitiative('npc')} className="flex-1 bg-red-900/30 hover:bg-red-800 border border-red-500/20 text-[10px] text-red-200 py-2 rounded uppercase font-bold tracking-wider">🎲 Rolar NPCs</button>
-                                <button onClick={() => rollBulkInitiative('selected')} className="flex-1 bg-blue-900/30 hover:bg-blue-800 border border-blue-500/20 text-[10px] text-blue-200 py-2 rounded uppercase font-bold tracking-wider">🎲 Rolar Selec.</button>
+                                <button 
+                                    onClick={() => onRequestInitiative && onRequestInitiative(targetEntityIds)} 
+                                    disabled={targetEntityIds.length === 0}
+                                    className="w-full bg-gradient-to-r from-yellow-700 to-amber-900 hover:from-yellow-600 hover:to-amber-800 disabled:from-gray-800 disabled:to-gray-900 disabled:border-gray-700 disabled:text-gray-500 border border-yellow-500 text-[11px] text-white py-3 rounded shadow-[0_0_15px_rgba(234,179,8,0.4)] uppercase font-black tracking-widest active:scale-95 transition-all"
+                                >
+                                   ⚔️ Solicitar Iniciativa ({targetEntityIds.length} Alvos)
+                                </button>
                             </section>
                             
                             <section className="mb-6 bg-black/40 border border-yellow-900/30 rounded p-2">
@@ -671,7 +687,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                 </button>
                             </div>
 
-                            {/* 👉 BOTÃO DE GERAR SAQUE NO TOPO DO BESTIÁRIO */}
                             <div className="mb-6">
                                 <button 
                                     onClick={onOpenLootGenerator} 

@@ -21,10 +21,8 @@ interface GameMapProps {
   isFogMode: boolean;
   fogTool: 'reveal' | 'hide';
   onFogUpdate: (x: number, y: number, shouldReveal: boolean) => void;
-  
   fogShape?: 'brush' | 'rect' | 'line';
   onFogBulkUpdate?: (cells: {x: number, y: number}[], shouldReveal: boolean) => void;
-
   activeTurnId: number | null; 
   onMoveToken: (id: number, x: number, y: number) => void;
   onAddToken?: (type: string, x: number, y: number) => void; 
@@ -45,11 +43,9 @@ interface GameMapProps {
   onMapChange?: (offset: { x: number, y: number }, scale: number) => void;
   focusEntity?: Entity | null;
   globalBrightness?: number; 
-  
   onDropItem?: (item: Item, sourceId: number, x: number, y: number) => void;
   onGiveItemToToken?: (item: Item, sourceId: number, targetId: number) => void;
   onContextMenu?: (e: React.MouseEvent, entity: Entity) => void;
-  
   pings?: MapPing[];
   onPing?: (x: number, y: number) => void;
 }
@@ -96,7 +92,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         id: string; 
     } | null>(null);
 
-    // Refs para acessar os valores atuais dentro dos event listeners sem closures antigas
     const scaleRef = useRef(scale);
     const offsetRef = useRef(offset);
     
@@ -215,7 +210,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         };
     }, [role, entities, onFlipToken, isMeasuring, activeAoE, targetEntityIds, attackerId, onAoEComplete, onSetTarget, onSetAttacker]);
 
-    // 👉 ZOOM SUPREMO COM SCROLL NO MOUSE
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
@@ -243,18 +237,15 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             const currentScale = scaleRef.current;
             const currentOffset = offsetRef.current;
 
-            // Determina onde o mouse está no "mundo real" do mapa antes do zoom
             const worldX = (mouseX - currentOffset.x) / currentScale;
             const worldY = (mouseY - currentOffset.y) / currentScale;
 
-            // Aplica o zoom
             const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
             let newScale = currentScale * zoomFactor;
-            newScale = Math.min(Math.max(0.2, newScale), 5); // Aumentado o zoom in máximo para 5x
+            newScale = Math.min(Math.max(0.2, newScale), 5); 
 
             if (newScale === currentScale) return;
 
-            // Reposiciona o mapa para que o "mundo real" continue exatamente embaixo do ponteiro
             const newOffsetX = mouseX - (worldX * newScale);
             const newOffsetY = mouseY - (worldY * newScale);
 
@@ -310,7 +301,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     const handleMouseDown = (e: React.MouseEvent) => {
         const isToolActive = isFogMode || activeAoE || isMeasuringMode.current !== null || e.altKey;
 
-        // Se usar qualquer botão e não houver ferramenta, arrasta o mapa
         if (e.button === 1 || e.button === 2 || (e.button === 0 && !isToolActive)) {
             e.preventDefault();
             isPanning.current = true;
@@ -505,11 +495,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 fogShape={fogShape}
                 onFogBulkUpdate={onFogBulkUpdate}
                 onFogUpdate={onFogUpdate}
-                onMapTransform={(newOff, newSc) => { 
-                    if(!isMeasuring && !isMapMouseDown.current && !isPanning.current) {
-                        handleMapTransform(newOff, newSc);
-                    }
-                }}
+                onMapTransform={handleMapTransform}
                 activeAoE={activeAoE}
                 aoeColor={aoeColor}
                 onAoEComplete={handleAoECompleted}
@@ -608,7 +594,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                     targetEntityIds={targetEntityIds}
                     onMoveToken={onMoveToken}
                     
-                    onSelectToken={(entity) => {
+                    onSelectToken={(entity: Entity, multi?: boolean) => {
                         if (!entity) return; 
                         if (entity.classType === 'Item' || entity.type === 'loot') {
                             onSelectEntity(entity, 0, 0); 
@@ -622,15 +608,15 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                         }
                     }} 
                     
-                    onTokenDoubleClick={(entity) => {
+                    onTokenDoubleClick={(entity: Entity, multi?: boolean) => {
                         if (entity.classType === 'Item' || entity.type === 'loot') {
                             onSelectEntity(entity, 0, 0); 
                         } else {
-                            onTokenDoubleClick(entity);
+                            onTokenDoubleClick(entity, multi);
                         }
                     }} 
 
-                    onTokenContextMenu={(e, entity) => { 
+                    onTokenContextMenu={(e: React.MouseEvent, entity: Entity) => { 
                         e.preventDefault(); 
                         if (entity.classType === 'Item' || entity.type === 'loot') {
                             onSelectEntity(entity, 0, 0); 

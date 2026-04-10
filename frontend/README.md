@@ -1,46 +1,53 @@
-# Getting Started with Create React App
+# ⚔️ Nexus RPG - Virtual Tabletop
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+<div align="center">
+  <img src="banner.jpg" width="100%" alt="Nexus RPG Interface">
+  <p><i>Uma plataforma imersiva para Dungeons & Dragons 5e focada em agilidade e feedback visual.</i></p>
+</div>
 
-## Available Scripts
+---
 
-In the project directory, you can run:
+## 🐲 Sobre o Projeto
+O **Nexus RPG** é um VTT (Virtual Tabletop) moderno desenvolvido para facilitar a vida do Mestre e aumentar a imersão dos jogadores. O projeto nasceu da necessidade de um fluxo de combate mais dinâmico, onde os jogadores rolam seus próprios dados e o Mestre mantém o controle total do cenário em tempo real.
 
-### `npm start`
+## 🌌 Funcionalidades de Destaque
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+### ⚔️ Combate Tático & Visceral
+* **Fila de Iniciativa Inteligente:** Chega de rolar um por um. Selecione o grupo inteiro e solicite a iniciativa; jogadores rolam em suas telas e os monstros entram na fila do Mestre automaticamente.
+* **Sistema de Dano Impactante:** Overlay visual de impacto com cálculos automáticos de HP e animações de cura/dano.
+* **Painel de Duelo (DM):** Interface dedicada para gerenciar Atacante vs Alvo, facilitando a aplicação de modificadores e condições.
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+<div align="center">
+  <img src="combat.jpg" width="80%" alt="Painel de Combate">
+</div>
 
-### `npm test`
+### 🗺️ Gestão de Mapa Profissional
+* **Fog of War Dinâmico:** Ferramentas de pincel, salas (retângulos) e linhas para esconder segredos dos jogadores.
+* **Ambientação Global:** Controle de iluminação (Dia/Noite) sincronizado para todos os usuários.
+* **Régua de Medição:** Ferramentas integradas para medir deslocamento (padrão 9m/1,5m) e alcance de ataques.
+* **Áreas de Efeito (AoE):** Marcadores visuais para Círculos, Cones e Cubos.
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+### ⌨️ Atalhos Rápidos para o Mestre
+Focado em produtividade, o Nexus conta com comandos rápidos:
+- **M / N:** Ativa as réguas de medição.
+- **ESC:** Limpa seleções e alvos.
+- **Alt + Clique:** Ping de sinalização no mapa.
+- **F:** Espelha (flip) o token selecionado.
 
-### `npm run build`
+---
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## 🛠️ Tecnologias
+O sistema utiliza o que há de mais moderno no desenvolvimento web:
+- **Frontend:** [React.js](https://reactjs.org/) + [TypeScript](https://www.typescriptlang.org/)
+- **Real-time:** [Socket.io](https://socket.io/) (Sincronização instantânea entre Mestre e Jogadores)
+- **Gráficos:** HTML5 Canvas & Three.js
+- **Estilização:** Tailwind CSS (Interface Dark/Modern)
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+---
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## 👤 Autor
+Desenvolvido com paixão por **João Victor (Jones)**.  
+*Estudante de Análise e Desenvolvimento de Sistemas e entusiasta de RPG.*
 
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
-
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
-
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
+---
+> "Um bom sistema não substitui a história, ele a liberta." 🎲

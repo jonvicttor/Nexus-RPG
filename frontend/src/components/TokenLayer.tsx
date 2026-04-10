@@ -131,18 +131,13 @@ const TokenLayer: React.FC<TokenLayerProps> = ({
                                 height: (entity.size || 1) * gridSize,
                             }}
                         >
-                            {/* Brilho base pulsante */}
                             <div className="absolute inset-[-20%] rounded-full bg-yellow-500/30 animate-pulse blur-md"></div>
-                            
-                            {/* Anel Externo Giratório (Lento) */}
                             <div className="absolute inset-[-30%] rounded-full border-2 border-dashed border-yellow-400/60 animate-[spin_10s_linear_infinite] drop-shadow-[0_0_10px_#facc15]"></div>
-                            
-                            {/* Anel Interno Giratório (Rápido e Inverso) */}
                             <div className="absolute inset-[-10%] rounded-full border-[3px] border-dotted border-yellow-500/80 animate-[spin_6s_linear_infinite_reverse]"></div>
                         </div>
                     )}
 
-                    {/* O Token em si (Renderizado por cima da Aura) */}
+                    {/* O Token em si */}
                     <div className="relative z-10">
                         <Token
                             entity={entity}
@@ -161,6 +156,21 @@ const TokenLayer: React.FC<TokenLayerProps> = ({
                             onDropItemOnToken={onGiveItemToToken}
                         />
                     </div>
+
+                    {/* 👉 MARCADOR CENTRAL DE DISTÂNCIA E MIRA */}
+                    {entity.type !== 'loot' && entity.classType !== 'Item' && (
+                        <div 
+                            className="absolute pointer-events-none z-20 flex items-center justify-center"
+                            style={{
+                                left: entity.x * gridSize,
+                                top: entity.y * gridSize,
+                                width: (entity.size || 1) * gridSize,
+                                height: (entity.size || 1) * gridSize,
+                            }}
+                        >
+                            <div className="w-1.5 h-1.5 bg-white/80 rounded-full shadow-[0_0_5px_black]"></div>
+                        </div>
+                    )}
                 </div>
             );
         })}

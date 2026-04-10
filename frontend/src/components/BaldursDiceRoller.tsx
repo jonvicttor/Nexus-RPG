@@ -4,7 +4,7 @@ import { Environment, OrbitControls, ContactShadows, Stars, Sparkles } from '@re
 import { DiceModel } from './DiceModel'; 
 import * as THREE from 'three';
 import { Howl } from 'howler';
-import { Dice5, Eye, EyeOff } from 'lucide-react'; // Importar ícones
+import { Dice5, Eye, EyeOff } from 'lucide-react'; 
 
 // --- SONS ---
 const spinSound = new Howl({ src: ['/sfx/dado.mp3'], volume: 0.4, rate: 1.5 });
@@ -122,7 +122,6 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
   const [isSecret, setIsSecret] = useState(false);
 
   // 👉 LÓGICA DE OCULTAÇÃO DA CD
-  // Verifica se a jogada foi originada por um Pedido do Mestre ou um Ataque
   const isTargetDCHidden = subtitle.toLowerCase().includes('exigido pelo mestre') || subtitle.toLowerCase().includes('ataque');
 
   useEffect(() => {
@@ -130,7 +129,7 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
         setResult(null);
         setShowTotal(false);
         setIsRolling(false);
-        setIsSecret(false); // Resetar ao abrir
+        setIsSecret(false); 
     }
   }, [isOpen]);
 
@@ -169,6 +168,11 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
 
   if (!isOpen) return null;
 
+  const totalFinal = (result || 0) + baseModifier + proficiency;
+  const isSuccessFinal = totalFinal >= difficultyClass;
+  const isCritFinal = result === 20;
+  const isCritFail = result === 1;
+
   return (
     <div className="fixed inset-0 z-[999] flex items-center justify-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0e] to-black animate-in fade-in duration-500">
       <div className="absolute inset-0 opacity-30 pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] brightness-100 contrast-150"></div>
@@ -185,35 +189,40 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
             <span className="text-xs font-bold uppercase tracking-wider">{isSecret ? "Secreto" : "Público"}</span>
         </button>
 
-        {/* CABEÇALHO */}
-        <div className="absolute top-16 text-center z-20 pointer-events-none space-y-2">
-          <h2 className="text-5xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 to-yellow-600 tracking-widest uppercase drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] filter">
-            {title}
-          </h2>
-          <div className="flex items-center justify-center gap-2">
-             <div className="h-[1px] w-12 bg-gradient-to-r from-transparent via-yellow-500 to-transparent"></div>
-             <p className="text-yellow-100/60 italic text-xl font-serif tracking-wider">{subtitle}</p>
-             <div className="h-[1px] w-12 bg-gradient-to-r from-transparent via-yellow-500 to-transparent"></div>
+        {/* --- CABEÇALHO (Atacante e Alvo Limpos) --- */}
+        <div className="absolute top-10 text-center z-20 pointer-events-none w-full flex flex-col items-center">
+          {/* Nome do Atacante na Placa */}
+          <div className="bg-black/60 border border-amber-900/50 px-8 py-2 rounded-t-xl backdrop-blur-sm border-b-0">
+             <h2 className="text-xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-100 via-yellow-400 to-amber-600 tracking-[0.2em] uppercase drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] filter" style={{ fontFamily: '"Cinzel Decorative", serif' }}>
+               {title.replace(/"/g, '')}
+             </h2>
+          </div>
+          <div className="h-[2px] w-[60%] md:w-[400px] bg-gradient-to-r from-transparent via-yellow-500/80 to-transparent shadow-[0_0_10px_#f59e0b]"></div>
+          
+          {/* Nome do Alvo (Pequeno e Transparente) */}
+          <div className="mt-2 bg-black/40 px-4 py-1 rounded-full border border-white/5 backdrop-blur-sm">
+             <p className="text-gray-400/80 text-[10px] md:text-xs font-mono font-bold tracking-widest uppercase truncate max-w-[300px]">
+               {subtitle.replace('Alvo(s):', '🎯 ALVO:')}
+             </p>
           </div>
         </div>
 
-        {/* DIFICULDADE (COM OCULTAÇÃO) */}
-        <div className="absolute top-20 right-10 z-20 flex flex-col items-center group">
-            <span className="text-yellow-500/80 text-[10px] font-bold uppercase tracking-[0.2em] mb-1">Dificuldade</span>
-            <div className="relative flex items-center justify-center w-16 h-16">
-                <div className={`absolute inset-0 rounded-full border border-yellow-500/30 ${isTargetDCHidden ? 'animate-pulse' : 'animate-[spin_10s_linear_infinite]'}`}></div>
-                <div className="absolute inset-0 rounded-full border border-yellow-500/10 scale-125"></div>
-                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-gray-800 to-black border-2 border-yellow-600 shadow-[0_0_20px_rgba(234,179,8,0.2)] flex items-center justify-center">
-                    {/* 👉 EXIBE '???' SE A CD FOR OCULTA */}
-                    <span className={`font-bold font-serif ${isTargetDCHidden ? 'text-xl text-yellow-500/50' : 'text-2xl text-white'}`}>
+        {/* --- DIFICULDADE (CD) --- */}
+        <div className="absolute top-24 right-10 z-20 flex flex-col items-center group bg-black/40 p-2 rounded-2xl border border-white/5 backdrop-blur-md">
+            <span className="text-red-400/80 text-[10px] font-black uppercase tracking-[0.2em] mb-1">CD</span>
+            <div className="relative flex items-center justify-center w-14 h-14">
+                <div className={`absolute inset-0 rounded-full border border-red-500/30 ${isTargetDCHidden ? 'animate-pulse' : 'animate-[spin_10s_linear_infinite]'}`}></div>
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-red-950 to-black border-2 border-red-600 shadow-[0_0_20px_rgba(220,38,38,0.2)] flex items-center justify-center">
+                    <span className={`font-bold font-serif ${isTargetDCHidden ? 'text-lg text-red-500/50' : 'text-xl text-white'}`}>
                         {isTargetDCHidden ? '???' : difficultyClass}
                     </span>
                 </div>
             </div>
+            <span className="text-gray-500 text-[8px] mt-1 italic max-w-[60px] text-center leading-tight">Para Acertar</span>
         </div>
 
-        {/* PALCO 3D */}
-        <div className="w-full h-[600px] relative cursor-pointer group" onClick={!isRolling && !showTotal ? handleRoll : undefined}>
+        {/* PALCO 3D (O dado não cobre mais os nomes em cima) */}
+        <div className="w-full h-[550px] relative cursor-pointer group mt-10" onClick={!isRolling && !showTotal ? handleRoll : undefined}>
             <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none transition-all duration-1000 ${isRolling ? 'bg-yellow-500/30 scale-110' : 'bg-blue-500/10 scale-100'} group-hover:bg-yellow-500/20`}></div>
 
             <Canvas camera={{ position: [0, 1.5, 6], fov: 35 }}> 
@@ -237,82 +246,81 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
             {!isRolling && result === null && (
                 <div className="absolute top-[80%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center z-10 pointer-events-none w-full">
                   <p className="text-amber-100/60 text-[10px] md:text-xs uppercase tracking-[0.5em] font-serif mb-2 animate-pulse">Clique para</p>
-                  <h2 className="text-3xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-amber-300 to-amber-600 drop-shadow-[0_0_15px_rgba(245,158,11,0.8)] uppercase tracking-[0.15em] transition-all duration-300" style={{ fontFamily: '"Cinzel Decorative", serif' }}>Iniciar o Destino</h2>
-                  <div className="w-64 h-[1px] bg-gradient-to-r from-transparent via-amber-500 to-transparent mx-auto mt-4 opacity-60 shadow-[0_0_10px_#f59e0b]"></div>
+                  <h2 className="text-3xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-amber-300 to-amber-600 drop-shadow-[0_0_15px_rgba(245,158,11,0.8)] uppercase tracking-[0.15em] transition-all duration-300" style={{ fontFamily: '"Cinzel Decorative", serif' }}>Lançar os Dados</h2>
                 </div>
             )}
         </div>
 
-        {/* --- PAINEL DE RESULTADO (PREMIUM HUD) --- */}
+        {/* --- PAINEL DE RESULTADO (PREMIUM HUD COM LEGENDAS) --- */}
         {showTotal && (
-             <div className="absolute top-[60%] left-1/2 transform -translate-x-1/2 z-30 w-full max-w-md flex justify-center animate-in slide-in-from-bottom-10 fade-in duration-700">
+             <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-30 w-full max-w-md flex justify-center animate-in slide-in-from-bottom-10 fade-in duration-700">
                  
-                 {/* Fundo de Vidro Mágico com Borda Dourada */}
-                 <div className="relative w-full bg-gradient-to-b from-black/80 via-[#0F0F13]/95 to-black px-8 py-6 flex flex-col items-center gap-4 border-t-2 border-yellow-500/50 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl rounded-t-[3rem]">
+                 <div className="relative w-full bg-gradient-to-b from-black/90 via-[#0F0F13]/95 to-black px-8 py-6 flex flex-col items-center gap-2 border-t-2 border-yellow-500/50 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl rounded-3xl">
                     
                     {/* Joia do Topo */}
                     <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-yellow-400 shadow-[0_0_15px_#facc15] z-50"></div>
-                    <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-32 h-[2px] bg-gradient-to-r from-transparent via-yellow-400 to-transparent blur-[1px]"></div>
+                    
+                    <span className="text-yellow-500/50 text-[9px] uppercase tracking-[0.4em] font-bold block mb-1">TOTAL OBTIDO</span>
 
-                    {/* CONTEÚDO */}
-                    <div className="text-center w-full">
-                        <span className="text-yellow-500/40 text-[10px] uppercase tracking-[0.4em] font-bold block mb-1">Resultado Final</span>
+                    {/* NÚMERO GIGANTE */}
+                    <div className="flex items-center justify-center mb-2 relative">
+                        <span className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-yellow-100 to-yellow-600 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)]" style={{ fontFamily: '"Cinzel Decorative", serif' }}>
+                            {totalFinal}
+                        </span>
+                        <div className="absolute inset-0 bg-yellow-500/10 blur-[20px] rounded-full -z-10"></div>
+                    </div>
+
+                    {/* --- BREAKDOWN MATEMÁTICO COM LEGENDAS --- */}
+                    <div className="flex items-start justify-center gap-4 w-full bg-black/40 rounded-xl p-3 border border-white/5">
                         
-                        {/* Número Gigante do Total */}
-                        <div className="flex items-center justify-center mb-4 relative">
-                            <span className="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-yellow-100 to-yellow-600 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)]" style={{ fontFamily: '"Cinzel Decorative", serif' }}>
-                                {(result || 0) + baseModifier + proficiency}
-                            </span>
-                            <div className="absolute inset-0 bg-yellow-500/20 blur-[30px] rounded-full -z-10"></div>
+                        {/* DADO */}
+                        <div className="flex flex-col items-center flex-1">
+                            <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-xl shadow-lg mb-1">
+                                <Dice5 size={18} className={isCritFinal ? 'text-green-400' : isCritFail ? 'text-red-500' : 'text-gray-300'}/>
+                            </div>
+                            <span className={`font-black text-sm ${isCritFinal ? 'text-green-400' : isCritFail ? 'text-red-500' : 'text-white'}`}>{result}</span>
+                            <span className="text-[8px] text-gray-500 uppercase tracking-widest mt-1">1d20</span>
                         </div>
 
-                        {/* Breakdown Matemático Visual (Ícones) */}
-                        <div className="flex items-center justify-center gap-4 text-xs font-mono w-full">
-                            
-                            {/* DADO */}
-                            <div className="flex flex-col items-center gap-1 group cursor-help transition-transform hover:scale-110">
-                                <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-xl shadow-lg group-hover:border-white/30 transition-colors">
-                                    <Dice5 size={18} />
-                                </div>
-                                <span className="text-gray-400 font-bold">{result}</span>
+                        <span className="text-gray-600 text-xl font-thin mt-2">+</span>
+
+                        {/* MODIFICADOR */}
+                        <div className="flex flex-col items-center flex-1">
+                            <div className="w-10 h-10 rounded-xl bg-blue-900/20 border border-blue-500/20 flex items-center justify-center text-xl shadow-lg text-blue-300 mb-1">
+                                💪
                             </div>
+                            <span className="text-blue-400 font-bold text-sm">{baseModifier}</span>
+                            <span className="text-[8px] text-gray-500 uppercase tracking-widest mt-1">Mod</span>
+                        </div>
 
-                            <span className="text-gray-600 text-xl font-thin">+</span>
+                        <span className="text-gray-600 text-xl font-thin mt-2">+</span>
 
-                            {/* MODIFICADOR */}
-                            <div className="flex flex-col items-center gap-1 group cursor-help transition-transform hover:scale-110">
-                                <div className="w-10 h-10 rounded-xl bg-blue-900/20 border border-blue-500/20 flex items-center justify-center text-xl shadow-lg text-blue-300 group-hover:border-blue-500/50 transition-colors">
-                                    💪
-                                </div>
-                                <span className="text-blue-400 font-bold">{baseModifier}</span>
+                        {/* PROFICIÊNCIA */}
+                        <div className="flex flex-col items-center flex-1">
+                            <div className="w-10 h-10 rounded-xl bg-purple-900/20 border border-purple-500/20 flex items-center justify-center text-xl shadow-lg text-purple-300 mb-1">
+                                🎓
                             </div>
-
-                            <span className="text-gray-600 text-xl font-thin">+</span>
-
-                            {/* PROFICIÊNCIA */}
-                            <div className="flex flex-col items-center gap-1 group cursor-help transition-transform hover:scale-110">
-                                <div className="w-10 h-10 rounded-xl bg-purple-900/20 border border-purple-500/20 flex items-center justify-center text-xl shadow-lg text-purple-300 group-hover:border-purple-500/50 transition-colors">
-                                    🎓
-                                </div>
-                                <span className="text-purple-400 font-bold">{proficiency}</span>
-                            </div>
+                            <span className="text-purple-400 font-bold text-sm">{proficiency}</span>
+                            <span className="text-[8px] text-gray-500 uppercase tracking-widest mt-1">Profic</span>
                         </div>
                     </div>
 
-                    {/* BOTÕES ESTILIZADOS */}
-                    <div className="flex gap-4 mt-2 w-full pt-4 border-t border-white/5">
-                      <button 
-                        onClick={handleReset} 
-                        className="flex-1 py-3 text-gray-500 hover:text-white text-[10px] uppercase tracking-widest font-bold transition-colors hover:bg-white/5 rounded-lg flex items-center justify-center gap-2 group"
-                      >
-                        <span className="text-lg group-hover:-rotate-180 transition-transform duration-500">↺</span> Rolar Novamente
+                    {/* --- FEEDBACK ACERTO/ERRO E BOTÕES --- */}
+                    <div className="flex gap-3 mt-4 w-full">
+                      <button onClick={handleReset} className="px-4 py-3 bg-gray-900 hover:bg-gray-800 text-gray-400 hover:text-white border border-gray-700 rounded-lg transition-colors flex items-center justify-center" title="Rolar Novamente">
+                        <span className="text-lg">↺</span>
                       </button>
                       
                       <button 
-                        onClick={() => onComplete((result || 0) + baseModifier + proficiency, (result || 0) + baseModifier + proficiency >= difficultyClass, result === 20, isSecret)} 
-                        className="flex-[1.5] py-3 bg-gradient-to-r from-yellow-700 via-yellow-600 to-yellow-800 hover:brightness-110 text-white font-bold text-xs uppercase tracking-[0.2em] rounded-lg shadow-[0_0_20px_rgba(234,179,8,0.3)] border border-yellow-400/30 active:scale-95 transition-all"
+                        onClick={() => onComplete(totalFinal, isSuccessFinal, isCritFinal, isSecret)} 
+                        className={`flex-1 py-3 text-white font-black text-sm uppercase tracking-[0.2em] rounded-lg shadow-lg active:scale-95 transition-all ${
+                          isCritFinal ? 'bg-gradient-to-r from-green-600 to-emerald-800 border-2 border-green-400 shadow-[0_0_20px_rgba(34,197,94,0.4)]' :
+                          isCritFail ? 'bg-gradient-to-r from-red-700 to-red-900 border-2 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.4)]' :
+                          isSuccessFinal ? 'bg-gradient-to-r from-green-700 to-green-900 border-2 border-green-500/50' : 
+                          'bg-gradient-to-r from-gray-700 to-gray-900 border-2 border-gray-500/50'
+                        }`}
                       >
-                        Aceitar
+                        {isCritFinal ? 'ACERTO CRÍTICO!' : isCritFail ? 'FALHA CRÍTICA!' : isSuccessFinal ? 'ACERTO!' : 'FALHOU!'} ❯
                       </button>
                     </div>
 
