@@ -69,4 +69,6 @@ Desenvolvido por João Victor (Jones).
 
 Análise e Desenvolvimento de Sistemas | Entusiasta de Java e D&D
 
+Link: https://nexusrpg.vercel.app/
+
 "Que seus acertos sejam críticos e suas falhas... bem, que rendam boas histórias!" 🎲
