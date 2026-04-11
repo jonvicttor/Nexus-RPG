@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Chat, { ChatMessage } from './Chat';
 import { Entity, Item } from '../App';
 import LevelUpModal from './LevelUpModal';
@@ -7,7 +7,7 @@ import SkillList from './SkillList';
 import Inventory from './Inventory';
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
 import { 
-  Shield, Zap, Skull, Backpack, Dna, Flame, Heart, Scroll, Coins, Scale, Trash2, Sword 
+  Shield, Zap, Skull, Backpack, Dna, Flame, Heart, Scroll, Coins, Scale, Sword, BookOpen, Sparkles, AlertCircle
 } from 'lucide-react';
 
 // --- TIPAGEM ---
@@ -31,6 +31,12 @@ const CLASS_ABILITIES: Record<string, { name: string; max: number; icon: string;
     { name: 'Curar Ferimentos', max: 2, icon: '✨', desc: 'Rola 1d8 + Sabedoria de cura.', color: 'text-blue-400', unlockLevel: 1 },
     { name: 'Canalizar Divindade', max: 1, icon: '🙏', desc: 'Efeito especial do domínio.', color: 'text-yellow-400', unlockLevel: 2 }
   ],
+};
+
+// Dicionário para formatar nomes de magias caso venham muito longos/estranhos do JSON
+const formatSpellName = (name: string) => {
+    if (!name) return "Magia Desconhecida";
+    return name.split(' (')[0].replace(/\{@[^}]+\}/g, '').trim();
 };
 
 interface SidebarPlayerProps {
@@ -57,10 +63,6 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   const [abilityUsage, setAbilityUsage] = useState<Record<string, number>>({});
   const [deathSaves, setDeathSaves] = useState({ successes: 0, failures: 0 });
 
-  // Estados para o formulário de Magias
-  const [newSpellName, setNewSpellName] = useState('');
-  const [newSpellLevel, setNewSpellLevel] = useState(1);
-
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const myCharacter = entities.find(e => e.id === myCharacterId) || entities.find(e => e.type === 'player' && e.name === myCharacterName); 
@@ -72,7 +74,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   const attributes = myCharacter ? mapEntityStatsToAttributes(myCharacter) : { FOR: 10, DES: 10, CON: 10, INT: 10, SAB: 10, CAR: 10 };
   
   const inventory = (myCharacter?.inventory || []);
-  const equippedWeapons = inventory.filter(i => i.type === 'weapon' && i.isEquipped); // 👈 Arsenal separado aqui
+  const equippedWeapons = inventory.filter(i => i.type === 'weapon' && i.isEquipped); 
 
   const dexMod = Math.floor((attributes.DES - 10) / 2);
   const equippedArmor = inventory.find(i => i.isEquipped && i.type === 'armor');
@@ -88,6 +90,32 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   const totalWeight = inventory.reduce((acc, item) => acc + (item.weight || 0) * item.quantity, 0);
   const maxWeight = (attributes.FOR || 10) * 7.5; 
   const weightPercent = Math.min(100, (totalWeight / maxWeight) * 100);
+
+  // Calcula atributo base de conjuração
+  const getSpellcastingMod = () => {
+      const cType = myCharacter?.classType?.toLowerCase() || '';
+      if (cType.includes('wizard') || cType.includes('mago') || cType.includes('artificer') || cType.includes('artifice')) return Math.floor((attributes.INT - 10) / 2);
+      if (cType.includes('sorcerer') || cType.includes('feiticeiro') || cType.includes('warlock') || cType.includes('bruxo') || cType.includes('bard') || cType.includes('bardo') || cType.includes('paladin') || cType.includes('paladino')) return Math.floor((attributes.CAR - 10) / 2);
+      return Math.floor((attributes.SAB - 10) / 2); // Default (Cleric, Druid, Ranger)
+  };
+  
+  const spellMod = getSpellcastingMod();
+  const spellAttackBonus = spellMod + proficiencyBonus;
+  const spellDC = 8 + proficiencyBonus + spellMod;
+
+  // Organiza magias
+  const organizedSpells = useMemo(() => {
+      const sp = myCharacter?.spells || [];
+      return {
+          cantrips: sp.filter((s:any) => typeof s === 'object' && s.name && (s.level === 0 || String(s.level) === "0")),
+          level1: sp.filter((s:any) => typeof s === 'object' && s.name && (s.level === 1 || String(s.level) === "1")),
+          level2: sp.filter((s:any) => typeof s === 'object' && s.name && (s.level === 2 || String(s.level) === "2")),
+          stringSpells: sp.filter((s:any) => typeof s === 'string') // Backward compatibility fallback
+      };
+  }, [myCharacter?.spells]);
+
+  const hasMagic = organizedSpells.cantrips.length > 0 || organizedSpells.level1.length > 0 || organizedSpells.stringSpells.length > 0;
+
 
   const handleCoinChange = (coinType: 'cp' | 'sp' | 'ep' | 'gp' | 'pp', amount: number) => {
       if (!myCharacter || !onUpdateCharacter) return;
@@ -208,27 +236,13 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
     }
   };
 
-  // --- NOVA LÓGICA DE MAGIAS ---
-  const handleAddSpell = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!myCharacter || !newSpellName.trim() || !onUpdateCharacter) return;
-      const newSpell = { id: Date.now().toString(), name: newSpellName.trim(), level: newSpellLevel };
-      const updatedSpells = [...(myCharacter.spells || []), newSpell];
-      onUpdateCharacter(myCharacter.id, { spells: updatedSpells });
-      setNewSpellName('');
-  };
-
-  const handleRemoveSpell = (spellId: string) => {
-      if (!myCharacter || !onUpdateCharacter) return;
-      const updatedSpells = (myCharacter.spells || []).filter(s => s.id !== spellId);
-      onUpdateCharacter(myCharacter.id, { spells: updatedSpells });
-  };
-
+  // --- LÓGICA DE MAGIAS ATUALIZADA ---
   const handleCastSpell = (spellName: string, level: number) => {
       if (!myCharacter || !onUpdateCharacter) return; 
+      const sName = formatSpellName(spellName);
       
       if (level === 0) {
-          onSendMessage(`✨ **${myCharacter.name}** conjurou o truque **${spellName}**!`);
+          onSendMessage(`✨ **${myCharacter.name}** conjurou o truque **${sName}**!`);
           return;
       }
 
@@ -243,7 +257,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
       onUpdateCharacter(myCharacter.id, {
           spellSlots: { ...currentSlots, [level]: { ...levelData, used: levelData.used + 1 } }
       });
-      onSendMessage(`✨ **${myCharacter.name}** conjurou **${spellName}** (Espaço Círculo ${level})!`);
+      onSendMessage(`✨ **${myCharacter.name}** conjurou **${sName}** (Espaço Círculo ${level})!`);
   };
 
   const handleSpellSlotChange = (levelIndex: number, action: 'add_max' | 'remove_max' | 'toggle_used', slotIndex?: number) => {
@@ -326,11 +340,13 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                             <div className="bg-black/40 border border-white/10 rounded p-2 text-center"><span className="text-[9px] text-gray-500 uppercase font-bold block mb-1">Deslocamento</span><div className="text-xl font-black text-white">9m</div></div>
                         </div>
 
-                        {/* 👉 E AQUI ESTÁ O ARSENAL (AÇÕES DE COMBATE) */}
-                        {equippedWeapons.length > 0 && (
+                        {/* 👉 AÇÕES DE COMBATE (ARMAS E MAGIA) */}
+                        {(equippedWeapons.length > 0 || hasMagic) && (
                             <div className="mb-6 mt-6">
                                 <p className="text-[10px] text-blue-400 uppercase font-bold mb-2 tracking-widest border-b border-white/5 pb-1">Ações de Combate</p>
                                 <div className="flex flex-col gap-2">
+                                    
+                                    {/* ARMAS */}
                                     {equippedWeapons.map(weapon => {
                                         const strMod = Math.floor((attributes.FOR - 10) / 2);
                                         const dexMod = Math.floor((attributes.DES - 10) / 2);
@@ -356,6 +372,25 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                             </div>
                                         )
                                     })}
+
+                                    {/* ATAQUE MÁGICO */}
+                                    {hasMagic && (
+                                        <div className="bg-black/30 border border-purple-900/30 rounded p-2 flex items-center justify-between group hover:border-purple-500/30 transition-colors">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 bg-purple-900/30 rounded border border-purple-700/50 flex items-center justify-center">
+                                                    <Sparkles size={16} className="text-purple-400" />
+                                                </div>
+                                                <div>
+                                                    <span className="text-xs font-bold text-purple-200 block truncate max-w-[140px]">Ataque Mágico</span>
+                                                    <span className="text-[9px] text-purple-500/70 uppercase tracking-widest">CD de Resistência: {spellDC}</span>
+                                                </div>
+                                            </div>
+                                            <button onClick={() => onRollAttribute(myCharacter.name, `Ataque Mágico`, spellAttackBonus)} className="flex items-center gap-1.5 bg-purple-900/40 hover:bg-purple-600 text-purple-200 hover:text-white px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider border border-purple-700/50 transition-all active:scale-95 shadow-md">
+                                                <span className="text-sm">🎲</span> {spellAttackBonus >= 0 ? `+${spellAttackBonus}` : spellAttackBonus}
+                                            </button>
+                                        </div>
+                                    )}
+
                                 </div>
                             </div>
                         )}
@@ -424,111 +459,119 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                     </div>
                 )}
 
-                {/* 3. ABA MAGIAS */}
+                {/* 3. ABA MAGIAS ATUALIZADA (SEM BOTÃO DE ADICIONAR, LENDO DO STATE) */}
                 {activeTab === 'spells' && (
                     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                         {myCharacter ? (
                             <>
-                                <div className="text-center mb-6">
-                                    <h3 className="text-purple-400 font-mono text-xs uppercase tracking-widest mb-1">Grimório Arcano</h3>
-                                    <p className="text-[10px] text-gray-500">Sabedoria {attributes.SAB} • CD {8+proficiencyBonus+Math.floor((attributes.SAB-10)/2)}</p>
+                                <div className="bg-gradient-to-r from-purple-900/20 via-indigo-900/20 to-purple-900/20 border border-purple-500/30 rounded-xl p-4 mb-6 text-center shadow-inner relative overflow-hidden">
+                                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-500 to-transparent opacity-50"></div>
+                                    <h3 className="text-purple-300 font-black text-sm uppercase tracking-[0.2em] mb-2 flex items-center justify-center gap-2">
+                                        <BookOpen size={16} /> Grimório Arcano
+                                    </h3>
+                                    <div className="flex justify-center gap-4 text-xs">
+                                        <div className="bg-black/40 px-3 py-1 rounded border border-white/5">
+                                            <span className="text-gray-400 font-bold uppercase mr-2">Modificador:</span>
+                                            <span className="text-purple-400 font-black">{spellMod >= 0 ? `+${spellMod}` : spellMod}</span>
+                                        </div>
+                                        <div className="bg-black/40 px-3 py-1 rounded border border-white/5">
+                                            <span className="text-gray-400 font-bold uppercase mr-2">CD de Resistência:</span>
+                                            <span className="text-red-400 font-black">{spellDC}</span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3">
+                                        <button onClick={() => onRollAttribute(myCharacter.name, `Ataque Mágico`, spellAttackBonus)} className="bg-purple-900/60 hover:bg-purple-600 text-white text-[10px] uppercase font-bold tracking-widest px-4 py-2 rounded-lg border border-purple-500 transition-colors shadow-lg shadow-purple-900/50 flex items-center justify-center gap-2 mx-auto">
+                                            <span className="text-sm">🎲</span> Rolar Ataque Mágico ({spellAttackBonus >= 0 ? `+${spellAttackBonus}` : spellAttackBonus})
+                                        </button>
+                                    </div>
                                 </div>
 
-                                <form onSubmit={handleAddSpell} className="flex gap-2 mb-6 bg-black/40 p-3 rounded-xl border border-purple-900/30 shadow-inner">
-                                    <input 
-                                        type="text" 
-                                        value={newSpellName}
-                                        onChange={e => setNewSpellName(e.target.value)}
-                                        placeholder="Nova Magia..."
-                                        className="flex-1 bg-black/50 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
-                                    />
-                                    <select 
-                                        value={newSpellLevel}
-                                        onChange={e => setNewSpellLevel(Number(e.target.value))}
-                                        className="bg-black/50 border border-gray-800 rounded-lg px-2 py-2 text-xs text-white outline-none focus:border-purple-500"
-                                    >
-                                        <option value={0}>Truque</option>
-                                        {[1,2,3,4,5,6,7,8,9].map(l => <option key={l} value={l}>Círculo {l}</option>)}
-                                    </select>
-                                    <button type="submit" disabled={!newSpellName.trim()} className="bg-purple-700 hover:bg-purple-600 disabled:bg-gray-800 text-white px-4 rounded-lg font-bold transition-all active:scale-95">+</button>
-                                </form>
+                                {!hasMagic ? (
+                                    <div className="flex flex-col items-center justify-center p-8 bg-black/40 rounded-xl border border-dashed border-white/10 text-gray-500">
+                                        <AlertCircle size={32} className="mb-2 opacity-50" />
+                                        <p className="text-xs uppercase font-bold tracking-widest text-center">Nenhuma Magia Memorizada</p>
+                                        <p className="text-[10px] text-center mt-2">Você deve escolher suas magias na tela de Login (Nexus Builder).</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {[0, 1, 2].map(level => {
+                                            let levelSpells: any[] = [];
+                                            let title = "";
+                                            
+                                            if (level === 0) { levelSpells = organizedSpells.cantrips; title = "Truques (Infinito)"; }
+                                            if (level === 1) { levelSpells = organizedSpells.level1; title = "Círculo 1"; }
+                                            if (level === 2) { levelSpells = organizedSpells.level2; title = "Círculo 2"; }
 
-                                <div className="space-y-5">
-                                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(level => {
-                                        const levelSpells = (myCharacter.spells || []).filter(s => s.level === level);
-                                        const slotData = myCharacter.spellSlots?.[level] || { max: 0, used: 0 };
-                                        
-                                        const hasMax = slotData.max > 0;
-                                        const prevLevelData = level > 1 ? myCharacter.spellSlots?.[level-1] : null;
-                                        const canAddSlots = level > 0 && (hasMax || level === 1 || (prevLevelData && prevLevelData.max > 0));
+                                            // Fallback strings se houver
+                                            if (level === 0) levelSpells = [...levelSpells, ...organizedSpells.stringSpells];
 
-                                        if (level > 0 && !canAddSlots && !hasMax && levelSpells.length === 0) return null;
-                                        if (level === 0 && levelSpells.length === 0) return null;
+                                            const slotData = myCharacter.spellSlots?.[level] || { max: 0, used: 0 };
+                                            if (levelSpells.length === 0) return null;
 
-                                        return (
-                                            <div key={`spell-lvl-${level}`} className="bg-black/30 border border-purple-900/30 rounded-xl overflow-hidden shadow-md">
-                                                <div className="flex items-center justify-between bg-purple-950/20 p-3 border-b border-purple-900/30">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="text-xs font-black text-purple-300 uppercase tracking-widest">
-                                                            {level === 0 ? 'Truques (Infinito)' : `Círculo ${level}`}
-                                                        </span>
+                                            return (
+                                                <div key={`spell-lvl-${level}`} className="bg-black/30 border border-purple-900/30 rounded-xl overflow-hidden shadow-md">
+                                                    <div className="flex items-center justify-between bg-purple-950/20 p-3 border-b border-purple-900/30">
+                                                        <div className="flex items-center gap-3">
+                                                            <span className="text-xs font-black text-purple-300 uppercase tracking-widest">
+                                                                {title}
+                                                            </span>
+                                                            {level > 0 && (
+                                                                <div className="flex gap-1.5 ml-2">
+                                                                    {[...Array(Math.max(1, slotData.max))].map((_, i) => {
+                                                                        if (slotData.max === 0) return null;
+                                                                        const isUsed = i < slotData.used;
+                                                                        return (
+                                                                            <div 
+                                                                                key={`bubble-${level}-${i}`} 
+                                                                                onClick={() => handleSpellSlotChange(level, 'toggle_used', i)}
+                                                                                className="cursor-pointer hover:scale-110 transition-transform"
+                                                                            >
+                                                                                {isUsed ? (
+                                                                                    <div className="w-[14px] h-[14px] rounded-full bg-black border border-purple-900/50"></div>
+                                                                                ) : (
+                                                                                    <div className="w-[14px] h-[14px] rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.6)]"></div>
+                                                                                )}
+                                                                            </div>
+                                                                        )
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                         {level > 0 && (
-                                                            <div className="flex gap-1.5 ml-2">
-                                                                {[...Array(Math.max(1, slotData.max))].map((_, i) => {
-                                                                    if (slotData.max === 0) return null;
-                                                                    const isUsed = i < slotData.used;
-                                                                    return (
-                                                                        <div 
-                                                                            key={`bubble-${level}-${i}`} 
-                                                                            onClick={() => handleSpellSlotChange(level, 'toggle_used', i)}
-                                                                            className="cursor-pointer hover:scale-110 transition-transform"
-                                                                        >
-                                                                            {isUsed ? (
-                                                                                <div className="w-[14px] h-[14px] rounded-full bg-black border border-purple-900/50"></div>
-                                                                            ) : (
-                                                                                <div className="w-[14px] h-[14px] rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.6)]"></div>
-                                                                            )}
-                                                                        </div>
-                                                                    )
-                                                                })}
+                                                            <div className="flex gap-1 border-l border-white/10 pl-3">
+                                                                <button onClick={() => handleSpellSlotChange(level, 'remove_max')} className="w-5 h-5 flex items-center justify-center bg-red-900/30 text-red-400 rounded hover:bg-red-900/50 text-xs font-black">-</button>
+                                                                <button onClick={() => handleSpellSlotChange(level, 'add_max')} className="w-5 h-5 flex items-center justify-center bg-green-900/30 text-green-400 rounded hover:bg-green-900/50 text-xs font-black">+</button>
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {level > 0 && (
-                                                        <div className="flex gap-1 border-l border-white/10 pl-3">
-                                                            <button onClick={() => handleSpellSlotChange(level, 'remove_max')} className="w-5 h-5 flex items-center justify-center bg-red-900/30 text-red-400 rounded hover:bg-red-900/50 text-xs font-black">-</button>
-                                                            <button onClick={() => handleSpellSlotChange(level, 'add_max')} className="w-5 h-5 flex items-center justify-center bg-green-900/30 text-green-400 rounded hover:bg-green-900/50 text-xs font-black">+</button>
-                                                        </div>
-                                                    )}
-                                                </div>
 
-                                                <div className="p-2 space-y-1">
-                                                    {levelSpells.length === 0 ? (
-                                                        <p className="text-[10px] text-gray-600 italic text-center py-3">Nenhuma magia memorizada.</p>
-                                                    ) : (
-                                                        levelSpells.map(spell => (
-                                                            <div key={spell.id} className="flex justify-between items-center group p-2.5 rounded-lg hover:bg-purple-900/20 transition-colors border border-transparent hover:border-purple-900/30">
-                                                                <span className="text-xs font-bold text-gray-200">{spell.name}</span>
-                                                                <div className="flex items-center gap-3">
-                                                                    <button 
-                                                                        onClick={() => handleCastSpell(spell.name, level)} 
-                                                                        disabled={level > 0 && slotData.used >= slotData.max} 
-                                                                        className="text-[9px] bg-purple-900/60 border border-purple-700 text-purple-200 hover:bg-purple-600 hover:text-white px-3 py-1.5 rounded-md font-bold uppercase tracking-wider transition-all disabled:opacity-30 disabled:hover:bg-purple-900/60 active:scale-95"
-                                                                    >
-                                                                        Conjurar
-                                                                    </button>
-                                                                    <button onClick={() => handleRemoveSpell(spell.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Apagar magia">
-                                                                        <Trash2 size={14} />
-                                                                    </button>
+                                                    <div className="p-2 space-y-1">
+                                                        {levelSpells.map((spell, i) => {
+                                                            const isString = typeof spell === 'string';
+                                                            const name = isString ? spell : formatSpellName(spell.name);
+                                                            const sId = isString ? `str-${i}` : spell.id || spell.name;
+                                                            
+                                                            return (
+                                                                <div key={sId} className="flex justify-between items-center group p-2.5 rounded-lg hover:bg-purple-900/20 transition-colors border border-transparent hover:border-purple-900/30">
+                                                                    <span className="text-xs font-bold text-gray-200">{name}</span>
+                                                                    <div className="flex items-center gap-3">
+                                                                        <button 
+                                                                            onClick={() => handleCastSpell(name, level)} 
+                                                                            disabled={level > 0 && slotData.used >= slotData.max} 
+                                                                            className="text-[9px] bg-purple-900/60 border border-purple-700 text-purple-200 hover:bg-purple-600 hover:text-white px-3 py-1.5 rounded-md font-bold uppercase tracking-wider transition-all disabled:opacity-30 disabled:hover:bg-purple-900/60 active:scale-95 flex items-center gap-1"
+                                                                        >
+                                                                            <Sparkles size={10} /> Conjurar
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                        ))
-                                                    )}
+                                                            )
+                                                        })}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        )
-                                    })}
-                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                )}
                             </>
                         ) : (
                             <div className="flex flex-col items-center justify-center h-40 text-gray-500">
