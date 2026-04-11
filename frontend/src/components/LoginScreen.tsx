@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import socket from '../services/socket';
 import { Howl } from 'howler';
-import { Trash2, Play, Sword, Crown, ChevronRight, Search, UserPlus, Sparkles, XCircle, Scroll, Map as MapIcon, Key, ChevronLeft, Upload, User, Swords, Star, Fingerprint, Save, X, ChevronDown, ChevronUp, Backpack, BookOpen } from 'lucide-react';
+import { Trash2, Play, Sword, Crown, ChevronRight, Search, UserPlus, Sparkles, XCircle, Scroll, Map as MapIcon, Key, ChevronLeft, Upload, User, Swords, Star, Fingerprint, Save, X, ChevronDown, ChevronUp, Backpack, BookOpen, Wand2 } from 'lucide-react'; 
 
 // ============================================================================
-// 📖 DICIONÁRIO ARCANO (Tradução Automática do 5eTools para PT-BR)
+// 📖 DICIONÁRIO ARCANO E LIMITES DE CLASSE
 // ============================================================================
 const PT_BR_DICT: Record<string, string> = {
     "acrobatics": "Acrobacia", "animal handling": "Lidar com Animais", "arcana": "Arcanismo",
@@ -13,20 +13,43 @@ const PT_BR_DICT: Record<string, string> = {
     "nature": "Natureza", "perception": "Percepção", "performance": "Atuação",
     "persuasion": "Persuasão", "religion": "Religião", "sleight of hand": "Prestidigitação",
     "stealth": "Furtividade", "survival": "Sobrevivência",
+    "str": "FOR", "dex": "DES", "con": "CON", "int": "INT", "wis": "SAB", "cha": "CAR",
+    "Life Domain": "Domínio da Vida", "Light Domain": "Domínio da Guerra", "Tempest Domain": "Domínio da Luz",
+    "Trickery Domain": "Domínio da Enganação", "Knowledge Domain": "Domínio do Conhecimento",
+    "Nature Domain": "Domínio da Natureza", "The Fiend": "O Corruptor (Índio)", 
+    "The Archfey": "O Arquifada", "The Great Old One": "O Grande Antigo", "Hexblade": "A Lâmina Maldita",
+    "Draconic Bloodline": "Linhagem Dracônica", "Wild Magic": "Magia Selvagem", "Divine Soul": "Alma Divina",
     "Expertise": "Especialidade", "Sneak Attack": "Ataque Furtivo", "Thieves' Cant": "Gíria de Ladrão",
-    "Cunning Action": "Ação Astuta", "Uncanny Dodge": "Esquiva Sobrenatural", "Evasion": "Evasão",
-    "Reliable Talent": "Talento Confiável", "Slippery Mind": "Mente Escorregadia", "Elusive": "Elusivo",
-    "Stroke of Luck": "Golpe de Sorte", "Ability Score Improvement": "Aumento no Valor de Habilidade",
-    "Weapon Mastery": "Maestria em Armas", "Steady Aim": "Mira Estável", "Cunning Strike": "Ataque Astuto",
-    "Devious Strikes": "Golpes Desonestos", "Spellcasting": "Conjuração", "Divine Sense": "Sentido Divino",
-    "Lay on Hands": "Cura pelas Mãos", "Fighting Style": "Estilo de Luta", "Second Wind": "Retomar o Fôlego",
-    "Action Surge": "Ação Surtada", "Rage": "Fúria", "Unarmored Defense": "Defesa Sem Armadura",
-    "str": "FOR", "dex": "DES", "con": "CON", "int": "INT", "wis": "SAB", "cha": "CAR"
+    "Spellcasting": "Conjuração", "Divine Sense": "Sentido Divino", "Lay on Hands": "Cura pelas Mãos",
+    "Fighting Style": "Estilo de Luta", "Second Wind": "Retomar o Fôlego", "Rage": "Fúria",
+    "action": "Ação", "bonus": "Ação Bônus", "reaction": "Reação", "feet": "Pés", "touch": "Toque", "self": "Pessoal"
 };
 
-const translateTerm = (term: string) => PT_BR_DICT[term] || PT_BR_DICT[term.toLowerCase()] || term;
+// Limites oficiais do Livro do Jogador (Nível 1)
+const SPELL_LIMITS: Record<string, { cantrips: number, level1: number }> = {
+    'warlock': { cantrips: 2, level1: 2 },
+    'wizard': { cantrips: 3, level1: 6 }, // Magos começam com 6 no grimório
+    'sorcerer': { cantrips: 4, level1: 2 },
+    'cleric': { cantrips: 3, level1: 4 }, // Aproximação (Mod. Sab + Nv)
+    'bard': { cantrips: 2, level1: 4 },
+    'druid': { cantrips: 2, level1: 4 }, // Aproximação (Mod. Sab + Nv)
+    'paladin': { cantrips: 0, level1: 4 }, 
+    'ranger': { cantrips: 0, level1: 2 }, 
+};
+
+const translateTerm = (term: string) => {
+    if (!term) return "";
+    return PT_BR_DICT[term] || PT_BR_DICT[term.toLowerCase()] || term;
+};
 
 const clean5eText = (text: any): string => {
+    if (!text) return "";
+    if (Array.isArray(text)) return text.map(t => clean5eText(t)).filter(Boolean).join('\n\n');
+    if (typeof text === 'object') {
+        if (text.type === 'list' && text.items) return text.items.map((i:any) => `• ${clean5eText(i)}`).join('\n');
+        if (text.entries) return clean5eText(text.entries);
+        return ""; 
+    }
     if (typeof text !== 'string') return "";
     let cleaned = text.replace(/\{@[a-z]+\s([^}]+)\}/gi, (match, contents) => {
         const parts = contents.split('|');
@@ -36,20 +59,56 @@ const clean5eText = (text: any): string => {
     return cleaned;
 };
 
-const CLASS_METADATA: Record<string, { icon: string, ac: number, fileKey: string }> = {
-  'barbarian': { icon: '🪓', ac: 14, fileKey: 'barbarian' },
-  'bard':      { icon: '🎵', ac: 13, fileKey: 'bard' },
-  'cleric':    { icon: '✨', ac: 18, fileKey: 'cleric' },
-  'druid':     { icon: '🌿', ac: 14, fileKey: 'druid' },
-  'fighter':   { icon: '⚔️', ac: 16, fileKey: 'fighter' },
-  'monk':      { icon: '👊', ac: 15, fileKey: 'monk' },
-  'paladin':   { icon: '🛡️', ac: 18, fileKey: 'paladin' },
-  'ranger':    { icon: '🏹', ac: 15, fileKey: 'ranger' },
-  'rogue':     { icon: '👥', ac: 14, fileKey: 'rogue' },
-  'sorcerer':  { icon: '🔥', ac: 12, fileKey: 'sorcerer' },
-  'warlock':   { icon: '👁️', ac: 13, fileKey: 'warlock' },
-  'wizard':    { icon: '🔮', ac: 12, fileKey: 'wizard' },
-  'artificer': { icon: '🔧', ac: 14, fileKey: 'artificer' },
+const getSpellMeta = (spell: any) => {
+    let time = "1 ação";
+    if (spell.time && Array.isArray(spell.time) && spell.time[0]) {
+        time = `${spell.time[0].number} ${translateTerm(spell.time[0].unit)}`;
+    } else if (typeof spell.time === 'string') time = spell.time;
+
+    let range = "Visão";
+    if (spell.range && spell.range.distance) {
+        range = spell.range.distance.amount ? `${spell.range.distance.amount} ${translateTerm(spell.range.distance.type)}` : translateTerm(spell.range.distance.type);
+    } else if (typeof spell.range === 'string') range = spell.range;
+
+    let comps = "V, S";
+    if (spell.components && typeof spell.components === 'object') {
+        const c = [];
+        if (spell.components.v) c.push("V");
+        if (spell.components.s) c.push("S");
+        if (spell.components.m) c.push("M");
+        if (c.length > 0) comps = c.join(", ");
+    } else if (typeof spell.components === 'string') comps = spell.components;
+    
+    const desc = spell.description || clean5eText(spell.entries) || "Descrição não encontrada.";
+    return { time, range, comps, desc };
+};
+
+const getMappedClass = (cName: string) => {
+    const lower = String(cName || '').toLowerCase();
+    if (lower.includes('wizard') || lower.includes('mago')) return 'wizard';
+    if (lower.includes('sorcerer') || lower.includes('feiticeiro')) return 'sorcerer';
+    if (lower.includes('cleric') || lower.includes('clérigo') || lower.includes('clerigo')) return 'cleric';
+    if (lower.includes('bard') || lower.includes('bardo')) return 'bard';
+    if (lower.includes('druid') || lower.includes('druida')) return 'druid';
+    if (lower.includes('paladin') || lower.includes('paladino')) return 'paladin';
+    if (lower.includes('ranger') || lower.includes('patrulheiro')) return 'ranger';
+    return 'warlock';
+};
+
+const CLASS_METADATA: Record<string, { icon: string, ac: number, fileKey: string, subclassAt1: boolean, isCaster: boolean }> = {
+  'barbarian': { icon: '🪓', ac: 14, fileKey: 'barbarian', subclassAt1: false, isCaster: false },
+  'bard':      { icon: '🎵', ac: 13, fileKey: 'bard', subclassAt1: false, isCaster: true },
+  'cleric':    { icon: '✨', ac: 18, fileKey: 'cleric', subclassAt1: true, isCaster: true }, 
+  'druid':     { icon: '🌿', ac: 14, fileKey: 'druid', subclassAt1: false, isCaster: true },
+  'fighter':   { icon: '⚔️', ac: 16, fileKey: 'fighter', subclassAt1: false, isCaster: false },
+  'monk':      { icon: '👊', ac: 15, fileKey: 'monk', subclassAt1: false, isCaster: false },
+  'paladin':   { icon: '🛡️', ac: 18, fileKey: 'paladin', subclassAt1: false, isCaster: true }, 
+  'ranger':    { icon: '🏹', ac: 15, fileKey: 'ranger', subclassAt1: false, isCaster: true }, 
+  'rogue':     { icon: '👥', ac: 14, fileKey: 'rogue', subclassAt1: false, isCaster: false },
+  'sorcerer':  { icon: '🔥', ac: 12, fileKey: 'sorcerer', subclassAt1: true, isCaster: true }, 
+  'warlock':   { icon: '👁️', ac: 13, fileKey: 'warlock', subclassAt1: true, isCaster: true },  
+  'wizard':    { icon: '🔮', ac: 12, fileKey: 'wizard', subclassAt1: false, isCaster: true },
+  'artificer': { icon: '🔧', ac: 14, fileKey: 'artificer', subclassAt1: false, isCaster: true },
 };
 
 const RACE_BONUS_FALLBACK: Record<string, any> = {
@@ -88,28 +147,18 @@ const ArcaneContainer = ({ children, className = '', width = 'w-full md:w-[500px
 );
 
 const MetalButton = ({ children, onClick, disabled, variant = 'amber', className = '', fullWidth = false }: any) => {
-  const colors = variant === 'amber' 
-      ? 'from-amber-700 via-amber-600 to-amber-800 border-amber-500/40 shadow-amber-900/30 text-amber-50 hover:text-white' 
-      : variant === 'blue'
-      ? 'from-blue-900 via-blue-800 to-blue-950 border-blue-500/40 shadow-blue-900/30 text-blue-50 hover:text-white'
-      : 'from-red-900 via-red-800 to-red-950 border-red-500/40 shadow-red-900/30 text-red-50 hover:text-white';
-  
+  const colors = variant === 'amber' ? 'from-amber-700 via-amber-600 to-amber-800 border-amber-500/40 shadow-amber-900/30 text-amber-50 hover:text-white' : variant === 'blue' ? 'from-blue-900 via-blue-800 to-blue-950 border-blue-500/40 shadow-blue-900/30 text-blue-50 hover:text-white' : 'from-red-900 via-red-800 to-red-950 border-red-500/40 shadow-red-900/30 text-red-50 hover:text-white';
   return (
       <button type="button" onClick={onClick} disabled={disabled} className={`relative group overflow-hidden px-4 md:px-6 py-2 md:py-3 rounded-xl border-t border-b ${colors} bg-gradient-to-r shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all duration-200 ${fullWidth ? 'w-full' : ''} ${className} disabled:opacity-50 disabled:cursor-not-allowed`}>
           <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          <span className={`relative z-10 font-black uppercase tracking-[0.2em] text-[10px] md:text-xs flex items-center justify-center gap-2 drop-shadow-md`}>
-              {children}
-          </span>
+          <span className={`relative z-10 font-black uppercase tracking-[0.2em] text-[10px] md:text-xs flex items-center justify-center gap-2 drop-shadow-md`}>{children}</span>
       </button>
   );
 }
 
 const StoneInput = (props: any) => (
   <div className="relative group/input flex-grow w-full">
-      <input 
-          {...props}
-          className={`w-full bg-black/60 border-b-2 border-white/10 focus:border-amber-500/80 p-3 text-sm md:text-base text-amber-50 outline-none transition-all font-serif placeholder-white/20 shadow-[inset_0_5px_10px_rgba(0,0,0,0.5)] rounded-t-lg group-hover/input:bg-black/80 ${props.className}`}
-      />
+      <input {...props} className={`w-full bg-black/60 border-b-2 border-white/10 focus:border-amber-500/80 p-3 text-sm md:text-base text-amber-50 outline-none transition-all font-serif placeholder-white/20 shadow-[inset_0_5px_10px_rgba(0,0,0,0.5)] rounded-t-lg group-hover/input:bg-black/80 ${props.className}`} />
       <div className="absolute bottom-0 left-0 w-0 h-[2px] bg-amber-500 transition-all duration-500 group-focus-within/input:w-full"></div>
   </div>
 );
@@ -125,9 +174,7 @@ const BackgroundWrapper = ({ children, isMuted, toggleMute }: { children: React.
     </button>
     
     <div className="relative z-10 w-full h-full overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in duration-700">
-      <div className="m-auto w-full max-w-full flex justify-center py-0 md:py-8 px-0 md:px-4 h-full md:h-auto">
-          {children}
-      </div>
+      <div className="m-auto w-full max-w-full flex justify-center py-0 md:py-8 px-0 md:px-4 h-full md:h-auto">{children}</div>
     </div>
   </div>
 );
@@ -163,27 +210,24 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
   const [savedChar, setSavedChar] = useState<any>(null);
   const [savedCampaigns, setSavedCampaigns] = useState<{name: string, roomId: string}[]>([]);
 
-  // Estados do Mestre
   const [campaignName, setCampaignName] = useState('A Mina Perdida de Phandelver');
   const [roomPassword, setRoomPassword] = useState('mesa-do-victor');
 
-  // =====================================
-  // Estados do Builder (D&D Beyond Style)
-  // =====================================
   const [builderStep, setBuilderStep] = useState(1);
   const [selectedRaceName, setSelectedRaceName] = useState<string>(''); 
   const [selectedClassName, setSelectedClassName] = useState<string>(''); 
+  const [selectedSubclass, setSelectedSubclass] = useState<string>('');
+
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [selectedEquipmentChoice, setSelectedEquipmentChoice] = useState<'A' | 'B'>('A');
-
-  // NOVO: Controle de opções de raças flexíveis (Tasha / One D&D)
   const [racialChoices, setRacialChoices] = useState<Record<string, string>>({});
+  
+  const [compendiumSpells, setCompendiumSpells] = useState<any[]>([]);
+  const [selectedSpells, setSelectedSpells] = useState<string[]>([]); 
 
-  // Atributos (Point Buy)
   const [stats, setStats] = useState({ str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 });
   const [pointsLeft, setPointsLeft] = useState(27);
 
-  // Identidade & Descrição
   const [charDetails, setCharDetails] = useState({
       background: 'Personalizado', alignment: 'Neutro', faith: '', lifestyle: 'Modesto',
       physical: { hair: '', skin: '', eyes: '', height: '', weight: '', age: '', gender: '' },
@@ -205,13 +249,27 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
   };
 
   useEffect(() => {
-      socket.emit('requestCompendium');
-      const intervalId = setInterval(() => {
-          if (!availableRaces || availableRaces.length === 0) socket.emit('requestCompendium');
-          else clearInterval(intervalId);
-      }, 3000);
-      return () => clearInterval(intervalId);
-  }, [availableRaces]);
+      const handleCompendium = (data: any) => {
+          if (data.availableSpells && data.availableSpells.length > 0) {
+              setCompendiumSpells(data.availableSpells);
+          }
+      };
+      
+      socket.on('compendiumSync', handleCompendium);
+      socket.emit('requestCompendium'); 
+      
+      const timer = setInterval(() => {
+          setCompendiumSpells(prev => {
+              if (prev.length === 0) socket.emit('requestCompendium');
+              return prev;
+          });
+      }, 2000);
+      
+      return () => {
+          socket.off('compendiumSync', handleCompendium);
+          clearInterval(timer);
+      };
+  }, []);
 
   const dynamicRaces = useMemo(() => {
       if (!availableRaces || availableRaces.length === 0) return [];
@@ -248,21 +306,80 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
           const nameLower = c.name.toLowerCase();
           const metaKey = Object.keys(CLASS_METADATA).find(k => nameLower.includes(k)) || 'fighter';
           const meta = CLASS_METADATA[metaKey];
-          return { ...c, ac: meta.ac, icon: meta.icon, fileKey: meta.fileKey };
+          return { ...c, ac: meta.ac, icon: meta.icon, fileKey: meta.fileKey, subclassAt1: meta.subclassAt1, isCaster: meta.isCaster, subclasses: c.subclasses || [], classFeature: c.classFeature || [] };
       });
   }, [availableClasses]);
+
+  const classSpells = useMemo(() => {
+      if (!compendiumSpells || compendiumSpells.length === 0) {
+          return { cantrips: [], level1: [] };
+      }
+
+      const mappedClass = getMappedClass(selectedClassName);
+      
+      const spellLists: Record<string, { cantrips: string[], level1: string[] }> = {
+          'warlock': {
+              cantrips: ["blade ward", "chill touch", "eldritch blast", "friends", "mage hand", "minor illusion", "poison spray", "prestidigitation", "true strike", "rajada mística"],
+              level1: ["armor of agathys", "arms of hadar", "charm person", "comprehend languages", "expeditious retreat", "hellish rebuke", "hex", "illusory script", "protection from evil and good", "unseen servant", "witch bolt", "bruxaria", "armadura de agathys"]
+          },
+          'wizard': {
+              cantrips: ["acid splash", "blade ward", "chill touch", "dancing lights", "fire bolt", "friends", "light", "mage hand", "mending", "message", "minor illusion", "poison spray", "prestidigitation", "ray of frost", "shocking grasp", "true strike"],
+              level1: ["alarm", "burning hands", "charm person", "chromatic orb", "color spray", "comprehend languages", "detect magic", "disguise self", "expeditious retreat", "false life", "feather fall", "find familiar", "fog cloud", "grease", "hideous laughter", "identify", "illusory script", "jump", "longstrider", "mage armor", "magic missile", "protection from evil and good", "ray of sickness", "shield", "silent image", "sleep", "thunderwave", "unseen servant", "witch bolt"]
+          },
+          'sorcerer': {
+              cantrips: ["acid splash", "blade ward", "chill touch", "dancing lights", "fire bolt", "friends", "light", "mage hand", "mending", "message", "minor illusion", "poison spray", "prestidigitation", "ray of frost", "shocking grasp", "true strike"],
+              level1: ["burning hands", "charm person", "chromatic orb", "color spray", "comprehend languages", "detect magic", "disguise self", "expeditious retreat", "false life", "feather fall", "fog cloud", "jump", "mage armor", "magic missile", "ray of sickness", "shield", "silent image", "sleep", "thunderwave", "witch bolt"]
+          },
+          'cleric': {
+              cantrips: ["guidance", "light", "mending", "resistance", "sacred flame", "spare the dying", "thaumaturgy", "chama sagrada"],
+              level1: ["bane", "bless", "command", "create or destroy water", "cure wounds", "detect evil and good", "detect magic", "detect poison and disease", "guiding bolt", "healing word", "inflict wounds", "protection from evil and good", "purify food and drink", "sanctuary", "shield of faith", "curar ferimentos"]
+          },
+          'bard': {
+              cantrips: ["blade ward", "dancing lights", "friends", "light", "mage hand", "mending", "message", "minor illusion", "prestidigitation", "true strike", "vicious mockery"],
+              level1: ["animal friendship", "bane", "charm person", "color spray", "comprehend languages", "cure wounds", "detect magic", "disguise self", "dissonant whispers", "faerie fire", "feather fall", "healing word", "heroism", "hideous laughter", "identify", "illusory script", "longstrider", "silent image", "sleep", "speak with animals", "thunderwave", "unseen servant"]
+          },
+          'druid': {
+              cantrips: ["druidcraft", "guidance", "mending", "poison spray", "produce flame", "resistance", "shillelagh", "thorn whip"],
+              level1: ["animal friendship", "charm person", "create or destroy water", "cure wounds", "detect magic", "detect poison and disease", "entangle", "faerie fire", "fog cloud", "goodberry", "healing word", "jump", "longstrider", "purify food and drink", "speak with animals", "thunderwave"]
+          },
+          'paladin': {
+              cantrips: [],
+              level1: ["bless", "command", "compelled duel", "cure wounds", "detect evil and good", "detect magic", "detect poison and disease", "divine favor", "heroism", "protection from evil and good", "purify food and drink", "searing smite", "shield of faith", "thunderous smite", "wrathful smite"]
+          },
+          'ranger': {
+              cantrips: [],
+              level1: ["alarm", "animal friendship", "cure wounds", "detect magic", "detect poison and disease", "ensnaring strike", "fog cloud", "goodberry", "hail of thorns", "hunter's mark", "jump", "longstrider", "speak with animals"]
+          }
+      };
+
+      const allowed = spellLists[mappedClass];
+      const cantrips = [];
+      const level1 = [];
+
+      for (const s of compendiumSpells) {
+          if (!s) continue;
+          const lvl = String(s.level); 
+          const is0 = lvl === "0" || lvl.toLowerCase().includes("cantrip") || lvl.toLowerCase().includes("truque");
+          const is1 = lvl === "1";
+          const name = String(s.name || '').toLowerCase();
+          
+          if (is0 && allowed.cantrips.some(n => name.includes(n))) cantrips.push(s);
+          else if (is1 && allowed.level1.some(n => name.includes(n))) level1.push(s);
+      }
+
+      return { cantrips, level1 };
+  }, [compendiumSpells, selectedClassName]);
 
   useEffect(() => { if (dynamicRaces.length > 0 && !selectedRaceName) setSelectedRaceName(dynamicRaces[0].name); }, [dynamicRaces, selectedRaceName]);
   useEffect(() => { if (dynamicClasses.length > 0 && !selectedClassName) setSelectedClassName(dynamicClasses[0].name); }, [dynamicClasses, selectedClassName]);
 
   const handleSelectRace = (rName: string) => { 
-      setSelectedRaceName(rName); 
-      setTokenVariant(1); 
-      setCustomImageURL(''); 
-      setRacialChoices({}); // Limpa as opções flexíveis ao trocar de raça
+      setSelectedRaceName(rName); setTokenVariant(1); setCustomImageURL(''); setRacialChoices({}); 
   };
   
-  const handleSelectClass = (cName: string) => { setSelectedClassName(cName); setTokenVariant(1); setCustomImageURL(''); setSelectedSkills([]); };
+  const handleSelectClass = (cName: string) => { 
+      setSelectedClassName(cName); setTokenVariant(1); setCustomImageURL(''); setSelectedSkills([]); setSelectedSubclass(''); setSelectedSpells([]);
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -320,16 +437,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
   const currentRaceData = dynamicRaces.find(r => r.name === selectedRaceName);
   const currentClassData = dynamicClasses.find(c => c.name === selectedClassName);
 
-  // ============================================================================
-  // LÓGICA DE BÔNUS RACIAIS FLEXÍVEIS E FIXOS
-  // ============================================================================
   const { fixedBonuses, flexibleChoices } = useMemo(() => {
         if (!currentRaceData?.ability?.length) return { fixedBonuses: {}, flexibleChoices: [] };
-        
         const ab = currentRaceData.ability[0];
         const fixed: Record<string, number> = {};
         const flexible: { id: string, amount: number, options: string[] }[] = [];
-
         Object.entries(ab).forEach(([key, val]) => {
             if (key === 'choose') {
                 const choices = Array.isArray(val) ? val : [val];
@@ -337,37 +449,24 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                     const count = choice.count || 1;
                     const amount = choice.amount || 1;
                     const from = choice.from || ['str', 'dex', 'con', 'int', 'wis', 'cha'];
-                    for (let i = 0; i < count; i++) {
-                        flexible.push({ id: `choice_${index}_${i}`, amount, options: from });
-                    }
+                    for (let i = 0; i < count; i++) flexible.push({ id: `choice_${index}_${i}`, amount, options: from });
                 });
-            } else {
-                fixed[key] = val as number;
-            }
+            } else fixed[key] = val as number;
         });
         return { fixedBonuses: fixed, flexibleChoices: flexible };
   }, [currentRaceData]);
 
   const getAppliedRacialBonus = (stat: string) => {
         let total = fixedBonuses[stat] || 0;
-        flexibleChoices.forEach(choice => {
-            if (racialChoices[choice.id] === stat) {
-                total += choice.amount;
-            }
-        });
+        flexibleChoices.forEach(choice => { if (racialChoices[choice.id] === stat) total += choice.amount; });
         return total;
   };
 
   const calculateFinalData = () => {
     const classObj = currentClassData || dynamicClasses[0];
-    
     const finalStats = { 
-        str: stats.str + getAppliedRacialBonus('str'), 
-        dex: stats.dex + getAppliedRacialBonus('dex'), 
-        con: stats.con + getAppliedRacialBonus('con'), 
-        int: stats.int + getAppliedRacialBonus('int'), 
-        wis: stats.wis + getAppliedRacialBonus('wis'), 
-        cha: stats.cha + getAppliedRacialBonus('cha') 
+        str: stats.str + getAppliedRacialBonus('str'), dex: stats.dex + getAppliedRacialBonus('dex'), con: stats.con + getAppliedRacialBonus('con'), 
+        int: stats.int + getAppliedRacialBonus('int'), wis: stats.wis + getAppliedRacialBonus('wis'), cha: stats.cha + getAppliedRacialBonus('cha') 
     };
 
     const conMod = Math.floor((finalStats.con - 10) / 2);
@@ -376,7 +475,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
     return { 
         name: name || 'Herói Desconhecido', stats: finalStats, hp: hpMax, maxHp: hpMax, ac: classObj?.ac || 10, 
         image: customImageURL || getDynamicTokenImage(selectedRaceName, classObj?.fileKey || 'fighter', tokenGender, tokenVariant), 
-        race: selectedRaceName, classType: selectedClassName, xp: 0, level: 1, roomId: playerRoomId,
+        race: selectedRaceName, classType: selectedClassName, 
+        subclass: selectedSubclass, 
+        spells: selectedSpells,
+        xp: 0, level: 1, roomId: playerRoomId,
         proficiencies: selectedSkills.reduce((acc, skill) => ({ ...acc, [skill]: 1 }), {}),
         details: charDetails
     };
@@ -441,22 +543,25 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
   const availableSkillsList = skillChoicesData?.from || ['acrobatics', 'athletics', 'stealth', 'perception'];
   
   const level1Features = useMemo(() => {
-      if (!currentClassData || !currentClassData.classFeatures) return [];
-      return currentClassData.classFeatures.filter((f: any) => {
-          const str = typeof f === 'string' ? f : f.classFeature;
-          return str && str.endsWith('|1'); 
-      }).map((f: any) => {
-          const str = typeof f === 'string' ? f : f.classFeature;
-          const rawName = str.split('|')[0]; 
-          let description = "Descrição base no compêndio do livro correspondente.";
-          if (currentClassData.classFeature && Array.isArray(currentClassData.classFeature)) {
+      if (!currentClassData || !currentClassData.classFeature) return [];
+      
+      if (currentClassData.classFeatures) {
+          return currentClassData.classFeatures.filter((f: any) => {
+              const str = typeof f === 'string' ? f : f.classFeature;
+              return str && str.endsWith('|1'); 
+          }).map((f: any) => {
+              const str = typeof f === 'string' ? f : f.classFeature;
+              const rawName = str.split('|')[0]; 
+              let description = "Descrição base no compêndio do livro correspondente.";
+              
               const fullFeature = currentClassData.classFeature.find((cf: any) => cf.name === rawName && cf.level === 1);
               if (fullFeature && fullFeature.entries) {
-                  description = clean5eText(fullFeature.entries.join(" "));
+                  description = clean5eText(fullFeature.entries);
               }
-          }
-          return { name: translateTerm(rawName), rawName, description };
-      });
+              return { name: translateTerm(rawName), rawName, description };
+          });
+      }
+      return [];
   }, [currentClassData]);
 
   const handleToggleSkill = (skill: string) => {
@@ -597,9 +702,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
           { id: 1, title: 'ESPÉCIE', icon: <User size={16}/> },
           { id: 2, title: 'CLASSE', icon: <Swords size={16}/> },
           { id: 3, title: 'HABILIDADES', icon: <Star size={16}/> },
-          { id: 4, title: 'DESCRIÇÃO', icon: <BookOpen size={16}/> },
-          { id: 5, title: 'EQUIPAMENTO', icon: <Backpack size={16}/> },
-          { id: 6, title: 'IDENTIDADE', icon: <Fingerprint size={16}/> }
+          ...(currentClassData?.isCaster ? [{ id: 4, title: 'MAGIAS', icon: <Wand2 size={16}/> }] : []),
+          { id: 5, title: 'DESCRIÇÃO', icon: <BookOpen size={16}/> },
+          { id: 6, title: 'EQUIPAMENTO', icon: <Backpack size={16}/> },
+          { id: 7, title: 'IDENTIDADE', icon: <Fingerprint size={16}/> }
       ];
 
       return (
@@ -621,10 +727,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
 
                     <div className="flex justify-center border-t border-white/5 bg-[#111]">
                         <div className="flex w-full max-w-5xl justify-between overflow-x-auto custom-scrollbar">
-                            {BUILDER_STEPS.map((s) => (
+                            {BUILDER_STEPS.map((s, idx) => (
                                 <button key={s.id} onClick={() => setBuilderStep(s.id)} className={`flex flex-col items-center justify-center gap-2 py-3 px-4 md:px-8 border-b-4 transition-all min-w-[100px] ${builderStep === s.id ? 'border-amber-500 text-amber-400 bg-amber-900/10' : builderStep > s.id ? 'border-amber-900/50 text-gray-300 hover:text-white' : 'border-transparent text-gray-600 hover:text-gray-400'}`}>
                                     <div className="flex items-center gap-2 font-black tracking-widest uppercase text-[9px] md:text-[10px]">
-                                        <span className={`hidden sm:flex w-4 h-4 rounded-full items-center justify-center text-[9px] shadow-inner ${builderStep === s.id ? 'bg-amber-500 text-black shadow-amber-500/50' : 'bg-gray-800 text-white'}`}>{s.id}</span>
+                                        <span className={`hidden sm:flex w-4 h-4 rounded-full items-center justify-center text-[9px] shadow-inner ${builderStep === s.id ? 'bg-amber-500 text-black shadow-amber-500/50' : 'bg-gray-800 text-white'}`}>{idx + 1}</span>
                                         <span>{s.title}</span>
                                     </div>
                                 </button>
@@ -713,7 +819,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                         </div>
                     )}
 
-                    {/* ABA 2: CLASSE */}
+                    {/* ABA 2: CLASSE E SUBCLASSE */}
                     {builderStep === 2 && (
                         <div className="max-w-5xl mx-auto animate-in fade-in slide-in-from-right-8 duration-500">
                             <div className="mb-8 border-b border-white/10 pb-4 flex justify-between items-center">
@@ -730,9 +836,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                                     </button>
                                 ))}
                             </div>
+                            
                             {currentClassData && (
                                 <div className="mt-8 space-y-4 animate-in slide-in-from-bottom-4">
                                     <h3 className="text-amber-600 font-bold uppercase tracking-widest text-xs mb-4">Características de Classe: {selectedClassName}</h3>
+                                    
                                     <Accordion title={`Pontos de Vida`} defaultOpen={true}>
                                         <p><strong>Dado de Vida:</strong> 1d{currentClassData.hd?.faces || 8} por nível de {selectedClassName}.</p>
                                         <p><strong>Pontos de Vida no 1º Nível:</strong> {currentClassData.hd?.faces || 8} + seu modificador de Constituição.</p>
@@ -762,9 +870,46 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                                     )}
                                     {level1Features.map((feature: any, idx: number) => (
                                         <Accordion key={idx} title={`Habilidade Nv. 1: ${feature.name}`}>
-                                            {feature.description}
+                                            <div className="whitespace-pre-wrap font-serif text-gray-300 leading-relaxed text-sm">
+                                                {feature.description}
+                                            </div>
                                         </Accordion>
                                     ))}
+
+                                    {currentClassData.subclasses && currentClassData.subclasses.length > 0 && (
+                                        <div className={`mt-6 p-4 md:p-6 rounded-xl border ${currentClassData.subclassAt1 ? 'bg-amber-900/20 border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.15)]' : 'bg-black/40 border-white/10'}`}>
+                                            <h3 className="text-amber-400 font-black uppercase tracking-widest text-xs md:text-sm mb-2 flex items-center gap-2">
+                                                {currentClassData.subclassAt1 ? '⚠️ ESCOLHA SUA SUBCLASSE (Nível 1)' : '🛡️ PLANEJAMENTO DE SUBCLASSE (Futuro)'}
+                                            </h3>
+                                            <p className="text-xs text-gray-400 mb-4 font-serif">
+                                                {currentClassData.subclassAt1 
+                                                    ? 'A sua classe exige que você defina a origem dos seus poderes agora mesmo. Escolha com sabedoria.' 
+                                                    : 'Você não ganha essas habilidades no nível 1, mas já pode registrar seu destino para quando avançar de nível.'}
+                                            </p>
+                                            
+                                            <select 
+                                                className="w-full bg-black border border-white/20 text-white p-3 rounded outline-none focus:border-amber-500 font-bold"
+                                                value={selectedSubclass}
+                                                onChange={(e) => setSelectedSubclass(e.target.value)}
+                                            >
+                                                <option value="">-- Revelar Opções de Subclasse --</option>
+                                                {currentClassData.subclasses.map((sc: any, idx: number) => {
+                                                    if(sc.source && !['PHB', 'XGE', 'TCE'].includes(sc.source) && sc.source.length > 5) return null;
+                                                    return (
+                                                        <option key={idx} value={sc.name}>{translateTerm(sc.name)} ({sc.source})</option>
+                                                    );
+                                                })}
+                                            </select>
+                                            
+                                            {selectedSubclass && (
+                                                <div className="mt-4 p-3 bg-black/60 rounded border border-white/5 animate-in fade-in zoom-in-95 duration-300">
+                                                    <p className="text-xs text-amber-200">
+                                                        <span className="font-bold uppercase tracking-widest">Caminho Escolhido:</span> {translateTerm(selectedSubclass)}. Esta decisão está gravada no seu destino.
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -822,8 +967,119 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                         </div>
                     )}
 
-                    {/* ABA 4: DESCRIÇÃO E DETALHES */}
+                    {/* ABA 4: MAGIAS COM LIMITADOR DE CLASSE */}
                     {builderStep === 4 && (
+                        <div className="max-w-5xl mx-auto flex flex-col animate-in fade-in slide-in-from-right-8 duration-500">
+                            <h2 className="text-3xl font-serif text-blue-400 font-black tracking-wider mb-6 border-b border-blue-900/50 pb-4">
+                                Grimório de Preparação 
+                                <span className="text-xs text-gray-500 ml-4 font-mono font-bold uppercase">({compendiumSpells.length} feitiços)</span>
+                            </h2>
+                            <p className="text-gray-400 mb-8 font-serif">A sua classe limita a quantidade de feitiços que você conhece no Nível 1. Escolha sabiamente!</p>
+
+                            {compendiumSpells.length === 0 && (
+                                <p className="text-amber-500 font-bold animate-pulse text-center bg-black/40 p-4 border border-amber-900/50 rounded-xl">
+                                    Sincronizando as magias com o servidor arcano...
+                                </p>
+                            )}
+
+                            {(() => {
+                                const mClass = getMappedClass(selectedClassName);
+                                const limits = SPELL_LIMITS[mClass] || { cantrips: 2, level1: 2 };
+                                
+                                const countCantrips = classSpells.cantrips.filter((s:any) => selectedSpells.includes(s.name)).length;
+                                const countLevel1 = classSpells.level1.filter((s:any) => selectedSpells.includes(s.name)).length;
+
+                                return (
+                                    <div className="space-y-8">
+                                        {/* SEÇÃO TRUQUES */}
+                                        {limits.cantrips > 0 && (
+                                            <div>
+                                                <h3 className="text-blue-500 font-bold uppercase tracking-widest text-xs mb-4 flex items-center gap-2 border-b border-white/5 pb-2">
+                                                    <Sparkles size={14}/> Truques (Nível 0)
+                                                    <span className={`ml-auto text-[10px] px-2 py-1 rounded font-mono ${countCantrips >= limits.cantrips ? 'bg-green-900/50 text-green-300' : 'bg-blue-900/50 text-blue-300'}`}>
+                                                        ({countCantrips}/{limits.cantrips})
+                                                    </span>
+                                                </h3>
+                                                {classSpells.cantrips.length === 0 && compendiumSpells.length > 0 ? (
+                                                    <p className="text-gray-500 text-xs italic">Nenhum truque mapeado para esta classe.</p>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                        {classSpells.cantrips.map((spell: any) => {
+                                                            const isSelected = selectedSpells.includes(spell.name);
+                                                            const isDisabled = !isSelected && countCantrips >= limits.cantrips;
+                                                            const meta = getSpellMeta(spell);
+                                                            return (
+                                                                <div key={spell.name} className={`bg-black/40 border rounded-lg overflow-hidden flex flex-col transition-opacity duration-300 ${isDisabled ? 'opacity-30 grayscale border-white/5' : 'border-white/10'}`}>
+                                                                    <button 
+                                                                        disabled={isDisabled}
+                                                                        onClick={() => setSelectedSpells(prev => isSelected ? prev.filter(n => n !== spell.name) : [...prev, spell.name])}
+                                                                        className={`p-3 text-left w-full font-bold uppercase tracking-widest text-xs flex justify-between items-center transition-colors ${isSelected ? 'bg-blue-900/40 text-blue-300 border-b border-blue-500' : isDisabled ? 'cursor-not-allowed' : 'hover:bg-white/5 text-gray-300'}`}
+                                                                    >
+                                                                        {spell.name}
+                                                                        <span className="text-xl leading-none">{isSelected ? '☑' : '☐'}</span>
+                                                                    </button>
+                                                                    <div className="p-3 text-xs text-gray-400 font-serif h-24 overflow-y-auto custom-scrollbar leading-relaxed">
+                                                                        <div className="flex gap-2 mb-2 text-[10px] text-blue-400/70 uppercase">
+                                                                            <span>⏳ {meta.time}</span> | <span>🎯 {meta.range}</span> | <span>✨ {meta.comps}</span>
+                                                                        </div>
+                                                                        {meta.desc}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* SEÇÃO NÍVEL 1 */}
+                                        {limits.level1 > 0 && (
+                                            <div>
+                                                <h3 className="text-purple-500 font-bold uppercase tracking-widest text-xs mb-4 flex items-center gap-2 border-b border-white/5 pb-2">
+                                                    <BookOpen size={14}/> Magias de 1º Nível
+                                                    <span className={`ml-auto text-[10px] px-2 py-1 rounded font-mono ${countLevel1 >= limits.level1 ? 'bg-green-900/50 text-green-300' : 'bg-purple-900/50 text-purple-300'}`}>
+                                                        ({countLevel1}/{limits.level1})
+                                                    </span>
+                                                </h3>
+                                                {classSpells.level1.length === 0 && compendiumSpells.length > 0 ? (
+                                                    <p className="text-gray-500 text-xs italic">Nenhuma magia mapeada para esta classe.</p>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                        {classSpells.level1.map((spell: any) => {
+                                                            const isSelected = selectedSpells.includes(spell.name);
+                                                            const isDisabled = !isSelected && countLevel1 >= limits.level1;
+                                                            const meta = getSpellMeta(spell);
+                                                            return (
+                                                                <div key={spell.name} className={`bg-black/40 border rounded-lg overflow-hidden flex flex-col transition-opacity duration-300 ${isDisabled ? 'opacity-30 grayscale border-white/5' : 'border-white/10'}`}>
+                                                                    <button 
+                                                                        disabled={isDisabled}
+                                                                        onClick={() => setSelectedSpells(prev => isSelected ? prev.filter(n => n !== spell.name) : [...prev, spell.name])}
+                                                                        className={`p-3 text-left w-full font-bold uppercase tracking-widest text-xs flex justify-between items-center transition-colors ${isSelected ? 'bg-purple-900/40 text-purple-300 border-b border-purple-500' : isDisabled ? 'cursor-not-allowed' : 'hover:bg-white/5 text-gray-300'}`}
+                                                                    >
+                                                                        {spell.name}
+                                                                        <span className="text-xl leading-none">{isSelected ? '☑' : '☐'}</span>
+                                                                    </button>
+                                                                    <div className="p-3 text-xs text-gray-400 font-serif h-24 overflow-y-auto custom-scrollbar leading-relaxed">
+                                                                        <div className="flex gap-2 mb-2 text-[10px] text-purple-400/70 uppercase">
+                                                                            <span>⏳ {meta.time}</span> | <span>🎯 {meta.range}</span> | <span>✨ {meta.comps}</span>
+                                                                        </div>
+                                                                        {meta.desc}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    )}
+
+                    {/* ABA 5: DESCRIÇÃO E DETALHES */}
+                    {builderStep === 5 && (
                         <div className="max-w-5xl mx-auto animate-in fade-in slide-in-from-right-8 duration-500">
                             <h2 className="text-3xl font-serif text-amber-400 font-black tracking-wider mb-8 border-b border-white/10 pb-4">Descrição e Antecedentes</h2>
                             
@@ -895,8 +1151,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                         </div>
                     )}
 
-                    {/* ABA 5: EQUIPAMENTO */}
-                    {builderStep === 5 && (
+                    {/* ABA 6: EQUIPAMENTO */}
+                    {builderStep === 6 && (
                         <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-right-8 duration-500">
                             <h2 className="text-3xl font-serif text-amber-400 font-black tracking-wider mb-8 border-b border-white/10 pb-4 text-center">Equipamento Inicial</h2>
                             
@@ -932,8 +1188,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                         </div>
                     )}
 
-                    {/* ABA 6: IDENTIDADE FINAL E O QUE VEM A SEGUIR */}
-                    {builderStep === 6 && (
+                    {/* ABA 7: IDENTIDADE FINAL E O QUE VEM A SEGUIR */}
+                    {builderStep === 7 && (
                         <div className="max-w-3xl mx-auto flex flex-col items-center animate-in fade-in slide-in-from-right-8 duration-500">
                             <h2 className="text-3xl md:text-4xl font-serif text-amber-400 font-black tracking-wider mb-10 border-b border-white/10 pb-4 w-full text-center">O Que Vem a Seguir</h2>
                             <div className="w-full bg-black/40 p-6 md:p-10 rounded-3xl border border-white/10 shadow-2xl flex flex-col items-center gap-8 relative">
@@ -979,8 +1235,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
                             <ChevronLeft size={18} /> <span className="hidden sm:inline">Voltar</span>
                         </button>
                         <div className="flex items-center gap-2">
-                            {builderStep < 6 ? (
-                                <button onClick={() => setBuilderStep(b => b + 1)} className="flex items-center gap-2 px-8 md:px-12 py-3 md:py-4 bg-gradient-to-r from-amber-700 to-amber-600 hover:from-amber-600 hover:to-amber-500 text-white font-black text-xs md:text-sm uppercase tracking-widest rounded-lg shadow-[0_0_15px_rgba(245,158,11,0.4)] transition-transform active:scale-95 border border-amber-400/50">
+                            {builderStep < (currentClassData?.isCaster ? 7 : 6) ? ( 
+                                <button onClick={() => setBuilderStep(b => {
+                                    if (b === 3 && !currentClassData?.isCaster) return 5; 
+                                    return b + 1;
+                                })} className="flex items-center gap-2 px-8 md:px-12 py-3 md:py-4 bg-gradient-to-r from-amber-700 to-amber-600 hover:from-amber-600 hover:to-amber-500 text-white font-black text-xs md:text-sm uppercase tracking-widest rounded-lg shadow-[0_0_15px_rgba(245,158,11,0.4)] transition-transform active:scale-95 border border-amber-400/50">
                                     Avançar <ChevronRight size={18} />
                                 </button>
                             ) : (
@@ -1070,4 +1329,4 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
   return null;
 };
 
-export default LoginScreen; 
+export default LoginScreen;

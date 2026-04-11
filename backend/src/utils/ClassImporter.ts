@@ -5,8 +5,10 @@ export interface NexusClass { name: string; hitDice: number; saves: string[]; so
 
 export class ClassImporter {
   static loadClasses(): NexusClass[] {
-    const nexusClasses: NexusClass[] = [];
-    const classDir = path.join(process.cwd(), 'src', 'data', 'class'); // 👉 Com src
+    const allRawClasses: any[] = [];
+    const allRawSubclasses: any[] = [];
+    const allFeatures: any[] = []; // 👉 Agora ele puxa as habilidades!
+    const classDir = path.join(process.cwd(), 'src', 'data', 'class');
 
     if (!fs.existsSync(classDir)) return [];
 
@@ -16,24 +18,29 @@ export class ClassImporter {
         if (!fileName.endsWith('.json')) continue;
         try {
           const classData = JSON.parse(fs.readFileSync(path.join(classDir, fileName), 'utf-8'));
-          if (classData && classData.class && Array.isArray(classData.class)) {
-            for (const c of classData.class) {
-              if (!c.name) continue;
-              nexusClasses.push({
-                name: c.name,
-                hitDice: (c.hd && c.hd.faces) ? c.hd.faces : 8,
-                saves: c.proficiency ? c.proficiency : [],
-                source: c.source,
-                rawClassData: c 
-              });
-            }
+          if (classData) {
+              if (classData.class && Array.isArray(classData.class)) {
+                  allRawClasses.push(...classData.class);
+              }
+              if (classData.subclass && Array.isArray(classData.subclass)) {
+                  allRawSubclasses.push(...classData.subclass);
+              }
+              if (classData.classFeature && Array.isArray(classData.classFeature)) {
+                  allFeatures.push(...classData.classFeature);
+              }
           }
         } catch (e) {}
       }
     } catch (e) {}
 
-    const uniqueClasses = Array.from(new Map(nexusClasses.map(c => [c.name, c])).values());
-    console.log(`🧙‍♂️ Classes Fallback: ${uniqueClasses.length} prontas.`);
-    return uniqueClasses.map(c => c.rawClassData);
+    // 🪄 Magia de Fusão Total
+    allRawClasses.forEach(c => {
+        c.subclasses = allRawSubclasses.filter(sc => sc.className === c.name || sc.class === c.name);
+        c.classFeature = allFeatures.filter(f => f.className === c.name || f.class === c.name);
+    });
+
+    const uniqueClasses = Array.from(new Map(allRawClasses.map(c => [c.name, c])).values());
+    console.log(`🧙‍♂️ Classes Fallback: ${uniqueClasses.length} prontas com subclasses e habilidades fundidas.`);
+    return uniqueClasses;
   }
 }
