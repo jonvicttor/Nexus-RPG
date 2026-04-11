@@ -30,12 +30,62 @@ const ROWS = Math.ceil(MAP_LIMIT / GRID_SIZE);
 
 const createInitialFog = (): boolean[][] => Array(ROWS).fill(null).map(() => Array(COLS).fill(false));
 
-// 👉 CARREGA TODOS OS RECURSOS DO 5ETOOLS ASSIM QUE O SERVIDOR LIGA
-const FULL_CLASSES = ClassImporter.loadClasses();
-const FULL_BESTIARY = MonsterImporter.loadBestiary();
-const FULL_SPELLS = SpellImporter.loadSpells();
+// ============================================================================
+// 📚 LEITOR ARCANO DE PASTAS E ARQUIVOS JSON (5eTools)
+// ============================================================================
+const DATA_DIR = path.join(process.cwd(), 'data'); // Pasta onde ficam os JSONs
+
+function loadJsonSafely(subPath: string) {
+    const fullPath = path.join(DATA_DIR, subPath);
+    if (fs.existsSync(fullPath)) {
+        try {
+            return JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+        } catch (e) {
+            console.error(`❌ Erro ao ler o grimório ${subPath}:`, e);
+        }
+    }
+    return null;
+}
+
+function loadDirectory(dirName: string, targetKey: string) {
+    let combinedData: any[] = [];
+    const dirPath = path.join(DATA_DIR, dirName);
+    
+    if (fs.existsSync(dirPath)) {
+        const files = fs.readdirSync(dirPath);
+        files.forEach(file => {
+            if (file.endsWith('.json')) {
+                const data = loadJsonSafely(path.join(dirName, file));
+                if (data && data[targetKey]) {
+                    combinedData = combinedData.concat(data[targetKey]);
+                }
+            }
+        });
+    }
+    return combinedData;
+}
+
+// 👉 LENDO AS PASTAS NOVAS (Prioridade para as pastas, fallback para Importers)
+const RAW_CLASSES = loadDirectory('class', 'class');
+const FULL_CLASSES = RAW_CLASSES.length > 0 ? RAW_CLASSES : ClassImporter.loadClasses();
+
+const RAW_BESTIARY = loadDirectory('bestiary', 'monster');
+const FULL_BESTIARY = RAW_BESTIARY.length > 0 ? RAW_BESTIARY : MonsterImporter.loadBestiary();
+
+const RAW_SPELLS = loadDirectory('spells', 'spell');
+const FULL_SPELLS = RAW_SPELLS.length > 0 ? RAW_SPELLS : SpellImporter.loadSpells();
+
+const racesData = loadJsonSafely('races.json');
+const FULL_RACES = (racesData && racesData.race) ? racesData.race : RaceImporter.loadRaces();
+
+// 👉 NOVOS LIVROS PARA O BUILDER
+const bgData = loadJsonSafely('backgrounds.json');
+const FULL_BACKGROUNDS = bgData && bgData.background ? bgData.background : [];
+
+const featsData = loadJsonSafely('feats.json');
+const FULL_FEATS = featsData && featsData.feat ? featsData.feat : [];
+
 const FULL_ITEMS = ItemImporter.loadItems(); 
-const FULL_RACES = RaceImporter.loadRaces(); 
 
 // --- 2. ESTADO INICIAL ---
 interface GameState {
@@ -50,6 +100,8 @@ interface GameState {
   availableSpells: any[]; 
   availableItems: any[]; 
   availableRaces: any[]; 
+  availableBackgrounds: any[]; // NOVO
+  availableFeats: any[];       // NOVO
   globalBrightness: number; 
   weather: 'none' | 'rain' | 'snow';
   currentTrack: string | null; 
@@ -76,6 +128,8 @@ const getRoomState = (roomId: string): GameState => {
             availableSpells: FULL_SPELLS, 
             availableItems: FULL_ITEMS, 
             availableRaces: FULL_RACES, 
+            availableBackgrounds: FULL_BACKGROUNDS,
+            availableFeats: FULL_FEATS,
             globalBrightness: 1,
             weather: 'none',
             currentTrack: null
@@ -98,6 +152,8 @@ const getRoomState = (roomId: string): GameState => {
                     availableSpells: FULL_SPELLS, 
                     availableItems: FULL_ITEMS, 
                     availableRaces: FULL_RACES, 
+                    availableBackgrounds: FULL_BACKGROUNDS,
+                    availableFeats: FULL_FEATS,
                     weather: loadedData.weather || 'none',
                     currentTrack: loadedData.currentTrack || null
                 };
@@ -127,16 +183,20 @@ const autoSaveRoom = (roomId: string) => {
 io.on('connection', (socket) => {
   console.log('🔌 Nova conexão:', socket.id);
 
-  // 👉 Envia imediatamente ao conectar, mas também responde ao pedido explícito
+  // 👉 Envia os compêndios do Builder (agora com Antecedentes e Talentos)
   socket.emit('compendiumSync', { 
       availableClasses: FULL_CLASSES, 
-      availableRaces: FULL_RACES 
+      availableRaces: FULL_RACES,
+      availableBackgrounds: FULL_BACKGROUNDS,
+      availableFeats: FULL_FEATS
   });
 
   socket.on('requestCompendium', () => {
       socket.emit('compendiumSync', { 
           availableClasses: FULL_CLASSES, 
-          availableRaces: FULL_RACES 
+          availableRaces: FULL_RACES,
+          availableBackgrounds: FULL_BACKGROUNDS,
+          availableFeats: FULL_FEATS
       });
   });
 
@@ -229,7 +289,6 @@ io.on('connection', (socket) => {
     socket.to(data.roomId).emit('entityStatusUpdated', data);
   });
 
-  // 👉 ATUALIZADO: Auto-Save ao criar entidade
   socket.on('createEntity', (data: any) => {
     const roomState = getRoomState(data.roomId);
     const exists = roomState.entities.find((e: any) => e.id === data.entity.id);
@@ -240,7 +299,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 👉 ATUALIZADO: Auto-Save ao deletar entidade
   socket.on('deleteEntity', (data: any) => {
     const roomState = getRoomState(data.roomId);
     roomState.entities = roomState.entities.filter((e: any) => e.id !== data.entityId);

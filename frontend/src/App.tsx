@@ -46,7 +46,6 @@ export interface MapPing {
   id: string; x: number; y: number; color: string;
 }
 
-// 👉 NOVA INTERFACE DA FILA DE DADOS
 export interface QueuedRoll {
   title: string;
   subtitle: string;
@@ -54,6 +53,9 @@ export interface QueuedRoll {
   dc: number;
   entityId: number | null;
   targetName: string;
+  isDamage?: boolean;         
+  damageExpression?: string;  
+  isCustomNoDamage?: boolean; // 👉 NOVO: Sinaliza que a rolagem usa dados 3D genéricos mas NÃO TIRA VIDA
 }
 
 const InitiativeModal = ({ entity, onClose, onConfirm }: { entity: Entity, onClose: () => void, onConfirm: (val: number) => void }) => {
@@ -226,7 +228,6 @@ function App() {
 
   const [damageOverlayData, setDamageOverlayData] = useState<any>(null);
 
-  // 👉 ESTADOS DA FILA DE ROLAGEM
   const [rollQueue, setRollQueue] = useState<QueuedRoll[]>([]);
 
   const [diceContext, setDiceContext] = useState({
@@ -238,7 +239,10 @@ function App() {
       bonuses: [] as RollBonus[], 
       rollType: 'normal' as 'normal' | 'advantage' | 'disadvantage',
       entityId: null as number | null,
-      targetName: ''
+      targetName: '',
+      isDamage: false,
+      damageExpression: '1d20',
+      isCustomNoDamage: false
   });
 
   const [currentTrack, setCurrentTrack] = useState<string | null>(null);
@@ -251,7 +255,6 @@ function App() {
 
   const ignoreNextDiceSound = useRef(false);
 
-  // 👉 PROCESSADOR DA FILA (Abre a tela de dado se houver alguém na fila)
   useEffect(() => {
       if (rollQueue.length > 0 && !showBgDice) {
           const nextRoll = rollQueue[0];
@@ -264,7 +267,10 @@ function App() {
               bonuses: [],
               rollType: 'normal',
               entityId: nextRoll.entityId,
-              targetName: nextRoll.targetName
+              targetName: nextRoll.targetName,
+              isDamage: nextRoll.isDamage || false,
+              damageExpression: nextRoll.damageExpression || '1d20',
+              isCustomNoDamage: nextRoll.isCustomNoDamage || false // 👉 NOVO: Adicionado à context state
           });
           setShowBgDice(true);
       }
@@ -477,7 +483,6 @@ function App() {
     socket.on('mapStateUpdated', (data: any) => { if (role === 'PLAYER') { setMapOffset(data.offset); setMapScale(data.scale); } });
     socket.on('globalBrightnessUpdated', (data: any) => { setGlobalBrightness(data.brightness); });
 
-    // 👉 AVISO DE ROLAGEM EXIGIDA CAI NA FILA
     socket.on('dmRequestRoll', (data: any) => {
         if (role === 'PLAYER') {
             setEntities(currentEntities => {
@@ -494,10 +499,13 @@ function App() {
                         mod: data.mod,
                         dc: data.dc,
                         entityId: charId,
-                        targetName: charName
+                        targetName: charName,
+                        isDamage: data.isDamage || false,
+                        damageExpression: data.damageExpression || '1d20',
+                        isCustomNoDamage: data.isCustomNoDamage || false // 👉 NOVO: Transfere do Socket
                     }]);
                     playSound('notificacao');
-                    addLog({ text: `⚠️ O Mestre exigiu um teste de **${data.skillName}** de você!`, type: 'info', sender: 'Sistema' }, false);
+                    addLog({ text: `⚠️ O Mestre exigiu uma rolagem de **${data.skillName}** de você!`, type: 'info', sender: 'Sistema' }, false);
                 }
                 return currentEntities;
             });
@@ -549,7 +557,6 @@ function App() {
       socket.emit('dmRequestRoll', { roomId, targetId, skillName, mod, dc }); 
   };
 
-  // 👉 SOLICITADOR GERAL DE INICIATIVA (MESTRE USA ISSO)
   const handleRequestInitiative = (targetIds: number[]) => {
       const dmQueue: QueuedRoll[] = [];
       let playerPushed = false;
@@ -560,11 +567,9 @@ function App() {
           const dexMod = ent.stats ? Math.floor((ent.stats.dex - 10) / 2) : 0;
           
           if (ent.type === 'player') {
-              // Exige que o jogador role a iniciativa na própria tela
               socket.emit('dmRequestRoll', { roomId, targetId: id, skillName: 'Iniciativa', mod: dexMod, dc: 0 });
               playerPushed = true;
           } else {
-              // Adiciona os monstros na fila de rolagem do próprio Mestre
               dmQueue.push({
                   title: 'Iniciativa',
                   subtitle: `Teste para ${ent.name}`,
@@ -583,7 +588,45 @@ function App() {
       if (dmQueue.length > 0) {
           setRollQueue(prev => [...prev, ...dmQueue]);
       }
-      setTargetEntityIds([]); // Limpa a seleção para facilitar a vida do mestre
+      setTargetEntityIds([]);
+  };
+
+  // 👉 NOVO: Função que o DM chama para exigir rolagem customizada 3D
+  const handleRequestCustomRoll = (targetIds: number[], expression: string, title: string) => {
+      // Se não selecionar ninguém, o próprio Mestre rola o dado
+      if (targetIds.length === 0) {
+           setRollQueue(prev => [...prev, {
+               title: title, subtitle: 'Rolagem Customizada', dc: 0, mod: 0, entityId: null, targetName: 'Mestre', 
+               isDamage: true, damageExpression: expression, isCustomNoDamage: true 
+           }]);
+           return;
+      }
+      
+      let playerPushed = false;
+      const dmQueue: QueuedRoll[] = [];
+
+      targetIds.forEach(id => {
+           const ent = entities.find(e => e.id === id);
+           if (!ent) return;
+           if (ent.type === 'player') {
+               socket.emit('dmRequestRoll', { roomId, targetId: id, skillName: title, mod: 0, dc: 0, isDamage: true, damageExpression: expression, isCustomNoDamage: true });
+               playerPushed = true;
+           } else {
+               dmQueue.push({
+                   title: title, subtitle: `Rolagem para ${ent.name}`, dc: 0, mod: 0, entityId: id, targetName: ent.name, 
+                   isDamage: true, damageExpression: expression, isCustomNoDamage: true
+               });
+           }
+      });
+
+      if (playerPushed) {
+           addLog({ text: `⚔️ O Mestre exigiu uma rolagem de **${expression}** (${title})!`, type: 'info', sender: 'Sistema' });
+      }
+
+      if (dmQueue.length > 0) {
+          setRollQueue(prev => [...prev, ...dmQueue]);
+      }
+      setTargetEntityIds([]);
   };
   
   const handleAttributeRoll = (charName: string, attrName: string, mod: number) => { 
@@ -597,39 +640,65 @@ function App() {
         const rollMatch = damageExpression.match(/^(\d+)d(\d+)(\+(\d+))?$/i);
 
         if (rollMatch) {
-            const count = parseInt(rollMatch[1]); 
-            const sides = parseInt(rollMatch[2]); 
-            const mod = rollMatch[4] ? parseInt(rollMatch[4]) : 0;
-            let sum = 0; 
-            let rolls = [];
-            
-            for(let i=0; i<count; i++) { 
-                const val = Math.floor(Math.random() * sides) + 1; 
-                rolls.push(val); 
-                sum += val; 
-            }
-            
-            const totalDano = sum + mod; 
-            const rollString = `[${rolls.join(', ')}]${mod > 0 ? `+${mod}` : (mod < 0 ? mod : '')}`;
-
-            handleUpdateHP(targetId, -totalDano); 
-            addLog({ text: `⚔️ **DANO APLICADO:** Rolou ${damageExpression} ${rollString} = **${totalDano} de Dano** no ${target.name}!`, type: 'damage', sender: 'Sistema' });
-            
-            setDamageOverlayData({ rolls, sides, mod, total: totalDano, targetName: target.name });
-
+            setRollQueue(prev => [...prev, {
+                title: `Dano em ${target.name}`,
+                subtitle: damageExpression,
+                dc: 0,
+                mod: 0, 
+                entityId: targetId,
+                targetName: target.name,
+                isDamage: true,
+                damageExpression: damageExpression
+            }]);
         } else { 
             const totalDano = parseInt(damageExpression) || 0; 
             if (totalDano > 0) {
                 handleUpdateHP(targetId, -totalDano); 
                 addLog({ text: `⚔️ **DANO APLICADO:** ${totalDano} de Dano Fixo no ${target.name}!`, type: 'damage', sender: 'Sistema' });
-                
                 setDamageOverlayData({ rolls: null, mod: 0, total: totalDano, targetName: target.name });
             }
         }
   };
 
-  const handleDiceComplete = (total: number, isSuccess: boolean, isCritical: boolean, isSecret: boolean) => {
+  // 👉 LÓGICA ATUALIZADA: Suporte a Dados Customizados Sem Dano
+  const handleDiceComplete = (total: number, isSuccess: boolean, isCritical: boolean, isSecret: boolean, finalRolls?: number[], finalMod?: number) => {
       const senderName = role === 'DM' ? 'Mestre' : playerName;
+
+      // --- LÓGICA DE DADOS GENÉRICOS (isDamage ativa os dados coloridos/formatos diferentes) ---
+      if (diceContext.isDamage) {
+          const rollString = finalRolls ? `[${finalRolls.join(', ')}]` : '';
+          const modStr = finalMod ? (finalMod > 0 ? `+${finalMod}` : (finalMod < 0 ? finalMod : '')) : '';
+
+          if (!diceContext.isCustomNoDamage && diceContext.entityId) {
+              // É DANO REAL (Tira HP e mostra o Sangue)
+              handleUpdateHP(diceContext.entityId, -total);
+              addLog({ text: `⚔️ **DANO APLICADO:** Rolou ${diceContext.damageExpression} ${rollString}${modStr} = **${total} de Dano** no ${diceContext.targetName}!`, type: 'damage', sender: 'Sistema' });
+              
+              setDamageOverlayData({ rolls: null, sides: 1, mod: finalMod, total: total, targetName: diceContext.targetName });
+              setTimeout(() => {
+                  setShowBgDice(false);
+                  setRollQueue(prev => prev.slice(1));
+              }, 2000);
+          } else {
+              // É SÓ UMA ROLAGEM CUSTOMIZADA 3D (ex: 1d100, não tira vida, apenas posta no chat)
+              const publicText = `🎲 **${senderName}** rolou ${diceContext.title} (${diceContext.damageExpression}):\n🎯 Resultado: ${rollString}${modStr} = **${total}**`;
+              
+              if (isSecret) {
+                  addLog({ text: `👁️ (Secreto) ` + publicText, type: 'roll', sender: senderName, isSecret: true, secretContent: `👁️ (Secreto) ` + publicText } as any);
+              } else {
+                  addLog({ text: publicText, type: 'roll', sender: senderName } as any);
+                  socket.emit('rollDice', { sides: 20, result: total, roomId, user: senderName });
+              }
+              
+              setTimeout(() => {
+                  setShowBgDice(false);
+                  setRollQueue(prev => prev.slice(1));
+              }, 2000);
+          }
+          return;
+      }
+
+      // --- LÓGICA NORMAL (ATAQUES / TESTES / INICIATIVA) COM O D20 PADRÃO ---
       let resultMsg = isCritical ? (total >= 20 ? "CRÍTICO! ⚔️" : "FALHA CRÍTICA! 💀") : (isSuccess ? "SUCESSO! ✅" : "FALHA ❌");
       let isAttackHit = false; 
       let targetIdForDamage: number | null = null; 
@@ -654,18 +723,11 @@ function App() {
           }
 
           const dmgMatch = baseDmg.match(/^(\d+)d(\d+)/i);
-          let dmgTotal = 0; let dmgRolls = [];
           if (dmgMatch) {
               const count = parseInt(dmgMatch[1]);
               const sides = parseInt(dmgMatch[2]);
               const rollsCount = (isCritical && total >= 20) ? count * 2 : count;
               
-              for(let i=0; i<rollsCount; i++) {
-                  const val = Math.floor(Math.random() * sides) + 1;
-                  dmgRolls.push(val);
-                  dmgTotal += val;
-              }
-              dmgTotal += dmgMod;
               damageExpression = `${rollsCount}d${sides}${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''}`;
           }
 
@@ -676,7 +738,7 @@ function App() {
                       resultMsg = `**ACERTOU!** ⚔️`; 
                       isAttackHit = true; 
                       targetIdForDamage = target.id;
-                      targetInfoMsg = `\n🎯 *${target.name}* recebeu o golpe!\n🩸 Dano: [${dmgRolls.join(', ')}] ${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''} = **${Math.max(1, dmgTotal)}**`;
+                      targetInfoMsg = `\n🎯 *${target.name}* recebeu o golpe!`;
                       
                       socket.emit('triggerCombatAnimation', { roomId, attackerName: senderName, targetId: target.id, attackType: 'fisico' });
                       handlePlaySFX('sword', true);
@@ -688,12 +750,11 @@ function App() {
               }
           } else {
               resultMsg = `**Ataque Rolado** ⚔️`;
-              targetInfoMsg = `\n🩸 Dano Potencial: [${dmgRolls.join(', ')}] ${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''} = **${Math.max(1, dmgTotal)}**\n*(Nenhum alvo selecionado)*`;
+              targetInfoMsg = `\n*(Nenhum alvo selecionado)*`;
               handlePlaySFX('sword', true);
           }
       }
 
-      // 👉 SE FOR INICIATIVA, ADICIONA NA LISTA OFICIAL DE TURNOS AUTOMATICAMENTE
       if (diceContext.title === 'Iniciativa' && diceContext.entityId) {
           const entName = diceContext.targetName || senderName;
           const newItem = { id: diceContext.entityId, name: entName, value: total };
@@ -718,7 +779,6 @@ function App() {
           socket.emit('rollDice', { sides: 20, result: total, roomId, user: senderName });
       }
 
-      // 👉 REMOVE DA FILA PARA O PRÓXIMO DADO APARECER
       setTimeout(() => {
           setShowBgDice(false);
           setRollQueue(prev => prev.slice(1));
@@ -981,7 +1041,7 @@ function App() {
       
       setActiveTurnId(nextId); 
       setAttackerId(nextId);
-      setTargetEntityIds([]); // 👉 A MAGIA AQUI: Limpa os alvos do turno anterior automaticamente!
+      setTargetEntityIds([]); 
       
       socket.emit('updateInitiative', { list: initiativeList, activeTurnId: nextId, roomId }); 
       const nextEntity = initiativeList.find(i => i.id === nextId); 
@@ -1129,7 +1189,6 @@ function App() {
         </div>
       )}
 
-      {/* 👉 O NOVO OVERLAY DE DANO FICA AQUI */}
       {damageOverlayData && (
           <DamageOverlay data={damageOverlayData} onComplete={() => setDamageOverlayData(null)} />
       )}
@@ -1191,7 +1250,20 @@ function App() {
           />
       )}
       
-      <BaldursDiceRoller isOpen={showBgDice} onClose={() => setShowBgDice(false)} title={diceContext.title} subtitle={diceContext.subtitle} difficultyClass={diceContext.dc} baseModifier={diceContext.mod || 0} proficiency={diceContext.prof || 0} rollType={diceContext.rollType || 'normal'} extraBonuses={diceContext.bonuses} onComplete={handleDiceComplete} />
+      <BaldursDiceRoller 
+        isOpen={showBgDice} 
+        onClose={() => setShowBgDice(false)} 
+        title={diceContext.title} 
+        subtitle={diceContext.subtitle} 
+        difficultyClass={diceContext.dc} 
+        baseModifier={diceContext.mod || 0} 
+        proficiency={diceContext.prof || 0} 
+        rollType={diceContext.rollType || 'normal'} 
+        extraBonuses={diceContext.bonuses}
+        isDamage={diceContext.isDamage}
+        damageExpression={diceContext.damageExpression}
+        onComplete={handleDiceComplete} 
+      />
 
       {isMobilePlayer && myCharacter ? (
           <MobilePlayerSheet 
@@ -1339,6 +1411,7 @@ function App() {
                     availableConditions={availableConditions}
                     onOpenLootGenerator={() => setShowLootGenerator(true)}
                     onRequestInitiative={handleRequestInitiative}
+                    onRequestCustomRoll={handleRequestCustomRoll} // 👉 NOVO: Passado para a Sidebar
                     /> 
                 : <SidebarPlayer entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name === playerName)?.id || 0} initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} onSelectEntity={(entity) => { setFocusEntity(entity); setTimeout(() => setFocusEntity(null), 100); }} onApplyDamageFromChat={handleApplyDamageFromChat} />
                 }

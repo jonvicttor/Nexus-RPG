@@ -9,7 +9,8 @@ import SkillList from './SkillList';
 import ItemCreator from './ItemCreator';
 import Scratchpad from './Scratchpad'; 
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
-import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent, Gem } from 'lucide-react'; 
+import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent, Gem, Search } from 'lucide-react'; 
+import GoogleDiceRoller from './GoogleDiceRoller';
 
 export interface InitiativeItem { id: number; name: string; value: number; }
 
@@ -92,7 +93,8 @@ interface SidebarDMProps {
   availableItems?: any[]; 
   availableConditions?: any[]; 
   onOpenLootGenerator?: () => void; 
-  onRequestInitiative?: (targetIds: number[]) => void; // 👉 ADICIONADO AQUI
+  onRequestInitiative?: (targetIds: number[]) => void;
+  onRequestCustomRoll?: (targetIds: number[], expression: string, title: string) => void;
 }
 
 const AoEColorPicker = ({ selected, onSelect }: { selected: string, onSelect: (c: string) => void }) => {
@@ -302,7 +304,8 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   onOpenCreator, onAddXP, customMonsters, globalBrightness = 1, onSetGlobalBrightness, onRequestRoll, onToggleVisibility,
   currentTrack, onPlayMusic, onStopMusic, onPlaySFX, audioVolume, onSetAudioVolume,
   onResetView, onGiveItem, onApplyDamageFromChat,
-  onDMRoll, onLongRest, availableItems, availableConditions, onOpenLootGenerator, onRequestInitiative 
+  onDMRoll, onLongRest, availableItems, availableConditions, onOpenLootGenerator, onRequestInitiative,
+  onRequestCustomRoll 
 }) => {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>('combat');
@@ -310,6 +313,11 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const [pendingSkillRequest, setPendingSkillRequest] = useState<{ skillName: string, mod: number } | null>(null);
   const [dcInput, setDcInput] = useState<number>(10);
   
+  const [monsterSearch, setMonsterSearch] = useState('');
+  
+  const [customRollExpr, setCustomRollExpr] = useState('1d100');
+  const [customRollTitle, setCustomRollTitle] = useState('Rolagem Customizada');
+
   const [mapList, setMapList] = useState<{name: string, url: string}[]>(INITIAL_MAPS);
   const [customMapUrl, setCustomMapUrl] = useState('');
   const [previewMap, setPreviewMap] = useState<{url: string, name: string} | null>(null);
@@ -318,6 +326,11 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const [hoveredCondition, setHoveredCondition] = useState<string | null>(null);
 
   const FULL_MONSTER_LIST = [...MONSTER_LIST, ...(customMonsters || [])];
+  
+  const filteredMonsters = FULL_MONSTER_LIST.filter(m => 
+      m.name.toLowerCase().includes(monsterSearch.toLowerCase())
+  );
+
   const targetId = targetEntityIds[0];
   const targetEntity = entities.find(e => e.id === targetId);
   const handleConfirmRequest = () => { if (pendingSkillRequest && targetEntity) { onRequestRoll(targetEntity.id, pendingSkillRequest.skillName, pendingSkillRequest.mod, dcInput); setPendingSkillRequest(null); setDcInput(10); } };
@@ -448,6 +461,11 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                 <div className="flex-grow overflow-y-auto p-4 custom-scrollbar w-full">
                     {activeTab === 'tools' && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-6">
+                            
+                            <div className="w-full flex justify-center">
+                                <GoogleDiceRoller />
+                            </div>
+
                             <div className="bg-black/40 p-4 rounded-xl border border-white/5">
                                 <h3 className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-3">Teste de Perícia</h3>
                                 {targetEntity ? (
@@ -462,6 +480,36 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                     <p className="text-gray-500 text-sm italic text-center py-4 bg-white/5 rounded border border-dashed border-white/10">Selecione um token no mapa para rolar perícias.</p>
                                 )}
                             </div>
+
+                            {/* 👉 NOVO: Caixa para Forçar Rolagem 3D Customizada (D64, D100, etc) */}
+                            <div className="bg-black/40 p-4 rounded-xl border border-white/5 mt-6 shadow-inner">
+                                <h3 className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2">
+                                    <span className="text-lg animate-pulse">🎲</span> Exigir Rolagem 3D Customizada
+                                </h3>
+                                <div className="flex flex-col gap-2 mb-3">
+                                    <input 
+                                        type="text" 
+                                        value={customRollTitle} 
+                                        onChange={(e) => setCustomRollTitle(e.target.value)} 
+                                        placeholder="Motivo (ex: Tabela de Saque)" 
+                                        className="w-full bg-black/60 border border-white/10 rounded p-2 text-xs text-white outline-none focus:border-purple-500 transition-colors" 
+                                    />
+                                    <input 
+                                        type="text" 
+                                        value={customRollExpr} 
+                                        onChange={(e) => setCustomRollExpr(e.target.value)} 
+                                        placeholder="Dado (ex: 1d100, 2d64)" 
+                                        className="w-full bg-black/60 border border-white/10 rounded p-2 text-xs text-white outline-none focus:border-purple-500 font-mono transition-colors" 
+                                    />
+                                </div>
+                                <button 
+                                    onClick={() => onRequestCustomRoll && onRequestCustomRoll(targetEntityIds, customRollExpr, customRollTitle)} 
+                                    className="w-full py-3 bg-gradient-to-r from-purple-700 to-indigo-800 hover:from-purple-600 hover:to-indigo-700 text-white font-bold uppercase tracking-widest rounded shadow-lg transition-all active:scale-95 text-[10px] border border-purple-500/50"
+                                >
+                                    {targetEntityIds.length > 0 ? `Forçar em ${targetEntityIds.length} Alvo(s)` : 'Rolar para Mim (Mestre)'}
+                                </button>
+                            </div>
+
                             <ItemCreator 
                                 onCreateItem={(item) => targetEntity && onGiveItem(targetEntity.id, item)} 
                                 targetName={targetEntity?.name}
@@ -496,7 +544,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                             <CombatVsPanel attacker={attacker} targets={targets} onUpdateHP={onUpdateHP} onSendMessage={onSendMessage} onDMRoll={onDMRoll} />
                             
-                            {/* 👉 NOVO BOTÃO DE INICIATIVA GLOBAL */}
                             <section className="mb-4 flex gap-2">
                                 <button 
                                     onClick={() => onRequestInitiative && onRequestInitiative(targetEntityIds)} 
@@ -702,27 +749,46 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                     <span className="text-gray-500 text-[8px] normal-case">(Clique ou arraste)</span>
                                 </h3>
 
-                                <div className="grid grid-cols-2 gap-2">
-                                    {FULL_MONSTER_LIST.map((monster, idx) => (
-                                        <button 
-                                            key={`${monster.name}-${idx}`} 
-                                            draggable 
-                                            onDragStart={(e) => handleDragStart(e, 'enemy', monster)} 
-                                            onClick={() => handleSelectPreset(monster)} 
-                                            className="flex flex-col items-center bg-black/60 hover:bg-red-900/40 border border-white/5 hover:border-red-500/50 p-2 rounded-lg transition-all group cursor-grab active:cursor-grabbing"
-                                        >
-                                            <div className="w-10 h-10 rounded-full overflow-hidden mb-1.5 border border-white/20 group-hover:border-red-500 shadow-lg">
-                                                <img src={monster.tokenImage || monster.image} alt={monster.name} className="w-full h-full object-cover" />
-                                            </div>
-                                            <span className="text-[10px] font-bold text-gray-300 group-hover:text-white truncate w-full text-center leading-tight">
-                                                {monster.name}
-                                            </span>
-                                            <div className="flex gap-2 text-[9px] text-gray-500 font-mono mt-0.5">
-                                                <span className="text-red-400">❤️ {monster.hp}</span>
-                                                <span className="text-blue-400">🛡️ {monster.ac}</span>
-                                            </div>
-                                        </button>
-                                    ))}
+                                <div className="mb-3 relative">
+                                    <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                                        <Search size={14} className="text-gray-500" />
+                                    </div>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Pesquisar monstro..." 
+                                        value={monsterSearch}
+                                        onChange={(e) => setMonsterSearch(e.target.value)}
+                                        className="w-full bg-black/60 border border-red-900/50 rounded-lg py-2 pl-8 pr-2 text-xs text-white outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all placeholder-gray-600"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 max-h-96 overflow-y-auto custom-scrollbar pr-1">
+                                    {filteredMonsters.length > 0 ? (
+                                        filteredMonsters.map((monster, idx) => (
+                                            <button 
+                                                key={`${monster.name}-${idx}`} 
+                                                draggable 
+                                                onDragStart={(e) => handleDragStart(e, 'enemy', monster)} 
+                                                onClick={() => handleSelectPreset(monster)} 
+                                                className="flex flex-col items-center bg-black/60 hover:bg-red-900/40 border border-white/5 hover:border-red-500/50 p-2 rounded-lg transition-all group cursor-grab active:cursor-grabbing"
+                                            >
+                                                <div className="w-10 h-10 rounded-full overflow-hidden mb-1.5 border border-white/20 group-hover:border-red-500 shadow-lg">
+                                                    <img src={monster.tokenImage || monster.image} alt={monster.name} className="w-full h-full object-cover" />
+                                                </div>
+                                                <span className="text-[10px] font-bold text-gray-300 group-hover:text-white truncate w-full text-center leading-tight">
+                                                    {monster.name}
+                                                </span>
+                                                <div className="flex gap-2 text-[9px] text-gray-500 font-mono mt-0.5">
+                                                    <span className="text-red-400">❤️ {monster.hp}</span>
+                                                    <span className="text-blue-400">🛡️ {monster.ac}</span>
+                                                </div>
+                                            </button>
+                                        ))
+                                    ) : (
+                                        <div className="col-span-2 text-center py-4 text-gray-500 text-xs italic">
+                                            Nenhum monstro encontrado.
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
