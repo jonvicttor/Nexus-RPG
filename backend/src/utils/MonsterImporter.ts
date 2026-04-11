@@ -1,96 +1,43 @@
 import fs from 'fs';
 import path from 'path';
 
-export interface NexusMonster {
-  name: string;
-  hp: number;
-  ac: number;
-  image: string;      
-  tokenImage: string; 
-  size?: number; 
-}
+export interface NexusMonster { name: string; hp: number; ac: number; image: string; tokenImage: string; size?: number; rawMonsterData?: any; }
 
 export class MonsterImporter {
   static loadBestiary(): NexusMonster[] {
+    const nexusMonsters: NexusMonster[] = [];
+    const bestiaryDir = path.join(process.cwd(), 'src', 'data', 'bestiary'); // 👉 Com src
+
+    if (!fs.existsSync(bestiaryDir)) return [];
+
     try {
-      // 👉 MUDANÇA: Você pode adicionar outros arquivos aqui se baixar mais bestiários
-      const fileName = 'bestiary-mm.json';
-      const filePath = path.join(process.cwd(), 'src', 'data', fileName);
-      
-      if (!fs.existsSync(filePath)) {
-          console.warn(`⚠️ ${fileName} não encontrado na pasta src/data. O Bestiário oficial não será carregado.`);
-          return [];
+      const monsterFiles = fs.readdirSync(bestiaryDir);
+      for (const fileName of monsterFiles) {
+        if (!fileName.endsWith('.json')) continue;
+        try {
+          const bestiaryData = JSON.parse(fs.readFileSync(path.join(bestiaryDir, fileName), 'utf-8'));
+          if (bestiaryData && bestiaryData.monster && Array.isArray(bestiaryData.monster)) {
+            for (const m of bestiaryData.monster) {
+              if (!m.name || !m.source) continue;
+              const safeName = m.name.replace(/</g, '').replace(/>/g, '').replace(/"/g, '').replace(/\//g, '');
+              let hp = 10, ac = 10;
+              if (m.hp) { hp = typeof m.hp === 'number' ? m.hp : (m.hp.average || 10); }
+              if (m.ac && m.ac.length > 0) { const firstAc = m.ac[0]; ac = typeof firstAc === 'number' ? firstAc : (firstAc.ac || 10); }
+
+              nexusMonsters.push({
+                name: m.name, hp, ac,
+                image: `/img/bestiary/${m.source}/${safeName}.webp`,
+                tokenImage: `/img/bestiary/tokens/${m.source}/${safeName}.webp`,
+                size: m.size ? 1.0 : 1.0,
+                rawMonsterData: m 
+              });
+            }
+          }
+        } catch (e) {}
       }
-
-      const rawData = fs.readFileSync(filePath, 'utf-8');
-      const bestiaryData = JSON.parse(rawData);
-
-      const nexusMonsters: NexusMonster[] = [];
-
-      if (bestiaryData && bestiaryData.monster) {
-        for (const m of bestiaryData.monster) {
-          // Ignora entradas que não são monstros reais (como tabelas ou notas)
-          if (!m.name || !m.source) continue;
-
-          // 👉 O FILTRO RESTRITO FOI REMOVIDO! 
-          // Agora aceitamos monstros de qualquer fonte (MM, VGM, MTF, XPHB, etc.)
-
-          const name = m.name;
-          const safeName = name.replace(/</g, '').replace(/>/g, '').replace(/"/g, '').replace(/\//g, '');
-          
-          // Geração das URLs de imagem baseadas na estrutura do 5eTools
-          const tokenImagePath = `/img/bestiary/tokens/${m.source}/${safeName}.webp`; 
-          const fullImagePath = `/img/bestiary/${m.source}/${safeName}.webp`;        
-
-          let hp = 10;
-          if (m.hp) {
-            if (typeof m.hp === 'number') hp = m.hp;
-            else if (m.hp.average) hp = m.hp.average;
-            else if (m.hp.special) hp = parseInt(String(m.hp.special)) || 10;
-          }
-
-          let ac = 10;
-          if (m.ac && m.ac.length > 0) {
-            const firstAc = m.ac[0];
-            if (typeof firstAc === 'number') ac = firstAc;
-            else if (typeof firstAc === 'object' && firstAc.ac) ac = firstAc.ac;
-          }
-
-          // Lógica de Tamanho (Escala do Grid)
-          let size = 1.0; 
-          if (m.size) {
-              const sizeChar = Array.isArray(m.size) ? m.size[0] : m.size;
-              const sizeMap: Record<string, number> = {
-                  'T': 0.7, // Tiny
-                  'S': 0.8, // Small
-                  'M': 1.0, // Medium
-                  'L': 2.0, // Large
-                  'H': 3.0, // Huge
-                  'G': 4.0  // Gargantuan
-              };
-              size = sizeMap[sizeChar] || 1.0;
-          }
-
-          nexusMonsters.push({
-            name,
-            hp,
-            ac,
-            image: fullImagePath,
-            tokenImage: tokenImagePath,
-            size
-          });
-        }
-      }
-
-      // 👉 REMOÇÃO DE DUPLICATAS
       const uniqueMonsters = Array.from(new Map(nexusMonsters.map(m => [m.name, m])).values());
-
-      console.log(`🐉 Bestiário Carregado! ${uniqueMonsters.length} feras prontas para o combate.`);
-      return uniqueMonsters;
-
-    } catch (error) {
-      console.error('❌ Erro ao ler o Bestiário:', error);
-      return [];
-    }
+      console.log(`🐉 Bestiário Fallback: ${uniqueMonsters.length} feras.`);
+      return uniqueMonsters.map(m => m.rawMonsterData);
+    } catch (e) { return []; }
   }
 }

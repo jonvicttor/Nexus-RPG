@@ -37,7 +37,7 @@ const DATA_DIR = path.join(process.cwd(), 'data'); // Pasta onde ficam os JSONs
 
 function loadJsonSafely(subPath: string) {
     const fullPath = path.join(DATA_DIR, subPath);
-    if (fs.existsSync(fullPath)) {
+    if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
         try {
             return JSON.parse(fs.readFileSync(fullPath, 'utf8'));
         } catch (e) {
@@ -51,7 +51,8 @@ function loadDirectory(dirName: string, targetKey: string) {
     let combinedData: any[] = [];
     const dirPath = path.join(DATA_DIR, dirName);
     
-    if (fs.existsSync(dirPath)) {
+    // Varre todos os arquivos dentro da subpasta especificada
+    if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
         const files = fs.readdirSync(dirPath);
         files.forEach(file => {
             if (file.endsWith('.json')) {
@@ -65,7 +66,7 @@ function loadDirectory(dirName: string, targetKey: string) {
     return combinedData;
 }
 
-// 👉 LENDO AS PASTAS NOVAS (Prioridade para as pastas, fallback para Importers)
+// 👉 LENDO AS PASTAS NOVAS (Subpastas organizadas pelo Mestre)
 const RAW_CLASSES = loadDirectory('class', 'class');
 const FULL_CLASSES = RAW_CLASSES.length > 0 ? RAW_CLASSES : ClassImporter.loadClasses();
 
@@ -75,17 +76,31 @@ const FULL_BESTIARY = RAW_BESTIARY.length > 0 ? RAW_BESTIARY : MonsterImporter.l
 const RAW_SPELLS = loadDirectory('spells', 'spell');
 const FULL_SPELLS = RAW_SPELLS.length > 0 ? RAW_SPELLS : SpellImporter.loadSpells();
 
-const racesData = loadJsonSafely('races.json');
-const FULL_RACES = (racesData && racesData.race) ? racesData.race : RaceImporter.loadRaces();
+const RAW_ITEMS = loadDirectory('items', 'item');
+const FULL_ITEMS = RAW_ITEMS.length > 0 ? RAW_ITEMS : ItemImporter.loadItems();
 
-// 👉 NOVOS LIVROS PARA O BUILDER
-const bgData = loadJsonSafely('backgrounds.json');
-const FULL_BACKGROUNDS = bgData && bgData.background ? bgData.background : [];
+// 👉 RAÇAS, ANTECEDENTES E TALENTOS (Tenta na pasta primeiro, depois tenta arquivo solto na raiz /data)
+let RAW_RACES = loadDirectory('races', 'race');
+if (RAW_RACES.length === 0) {
+    const rData = loadJsonSafely('races.json');
+    if (rData && rData.race) RAW_RACES = rData.race;
+}
+const FULL_RACES = RAW_RACES.length > 0 ? RAW_RACES : RaceImporter.loadRaces();
 
-const featsData = loadJsonSafely('feats.json');
-const FULL_FEATS = featsData && featsData.feat ? featsData.feat : [];
+let RAW_BACKGROUNDS = loadDirectory('backgrounds', 'background');
+if (RAW_BACKGROUNDS.length === 0) {
+    const bgData = loadJsonSafely('backgrounds.json');
+    if (bgData && bgData.background) RAW_BACKGROUNDS = bgData.background;
+}
+const FULL_BACKGROUNDS = RAW_BACKGROUNDS;
 
-const FULL_ITEMS = ItemImporter.loadItems(); 
+let RAW_FEATS = loadDirectory('feats', 'feat');
+if (RAW_FEATS.length === 0) {
+    const featsData = loadJsonSafely('feats.json');
+    if (featsData && featsData.feat) RAW_FEATS = featsData.feat;
+}
+const FULL_FEATS = RAW_FEATS;
+
 
 // --- 2. ESTADO INICIAL ---
 interface GameState {
@@ -100,8 +115,8 @@ interface GameState {
   availableSpells: any[]; 
   availableItems: any[]; 
   availableRaces: any[]; 
-  availableBackgrounds: any[]; // NOVO
-  availableFeats: any[];       // NOVO
+  availableBackgrounds: any[]; 
+  availableFeats: any[];       
   globalBrightness: number; 
   weather: 'none' | 'rain' | 'snow';
   currentTrack: string | null; 
@@ -183,7 +198,7 @@ const autoSaveRoom = (roomId: string) => {
 io.on('connection', (socket) => {
   console.log('🔌 Nova conexão:', socket.id);
 
-  // 👉 Envia os compêndios do Builder (agora com Antecedentes e Talentos)
+  // 👉 Envia os compêndios do Builder 
   socket.emit('compendiumSync', { 
       availableClasses: FULL_CLASSES, 
       availableRaces: FULL_RACES,

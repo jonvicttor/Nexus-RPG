@@ -1,70 +1,39 @@
 import fs from 'fs';
 import path from 'path';
 
-export interface NexusClass {
-  name: string;
-  hitDice: number;
-  saves: string[];
-  source?: string; // 👉 Guardamos a fonte para facilitar buscas
-}
+export interface NexusClass { name: string; hitDice: number; saves: string[]; source?: string; rawClassData?: any; }
 
 export class ClassImporter {
   static loadClasses(): NexusClass[] {
     const nexusClasses: NexusClass[] = [];
-    
-    const classFiles = [
-      'class-barbarian.json', 'class-bard.json', 'class-cleric.json', 
-      'class-druid.json', 'class-fighter.json', 'class-monk.json', 
-      'class-paladin.json', 'class-ranger.json', 'class-rogue.json', 
-      'class-sorcerer.json', 'class-warlock.json', 'class-wizard.json',
-      'class-artificer.json' // 👉 Adicionei o Artífice na lista
-    ];
+    const classDir = path.join(process.cwd(), 'src', 'data', 'class'); // 👉 Com src
 
-    for (const fileName of classFiles) {
-      try {
-        // 👉 CAMINHO BLINDADO PARA A NUVEM
-        const filePath = path.join(process.cwd(), 'src', 'data', fileName);
-        
-        if (!fs.existsSync(filePath)) {
-            continue;
-        }
+    if (!fs.existsSync(classDir)) return [];
 
-        const rawData = fs.readFileSync(filePath, 'utf-8');
-        const classData = JSON.parse(rawData);
-
-        if (classData && classData.class) {
-          for (const c of classData.class) {
-            // 👉 REMOVIDO: Agora aceita qualquer source (PHB, XPHB, Tasha, etc)
-            if (!c.name) continue;
-
-            const name = c.name;
-            let hitDice = 8; 
-            if (c.hd && c.hd.faces) {
-              hitDice = c.hd.faces;
+    try {
+      const classFiles = fs.readdirSync(classDir);
+      for (const fileName of classFiles) {
+        if (!fileName.endsWith('.json')) continue;
+        try {
+          const classData = JSON.parse(fs.readFileSync(path.join(classDir, fileName), 'utf-8'));
+          if (classData && classData.class && Array.isArray(classData.class)) {
+            for (const c of classData.class) {
+              if (!c.name) continue;
+              nexusClasses.push({
+                name: c.name,
+                hitDice: (c.hd && c.hd.faces) ? c.hd.faces : 8,
+                saves: c.proficiency ? c.proficiency : [],
+                source: c.source,
+                rawClassData: c 
+              });
             }
-
-            let saves: string[] = [];
-            if (c.proficiency) {
-              saves = c.proficiency;
-            }
-
-            nexusClasses.push({
-              name,
-              hitDice,
-              saves,
-              source: c.source
-            });
           }
-        }
-      } catch (error) {
-        console.error(`❌ Erro ao ler classe ${fileName}:`, error);
+        } catch (e) {}
       }
-    }
+    } catch (e) {}
 
-    // Remove duplicatas (caso a mesma classe apareça em dois arquivos)
     const uniqueClasses = Array.from(new Map(nexusClasses.map(c => [c.name, c])).values());
-
-    console.log(`🧙‍♂️ Classes Restauradas! ${uniqueClasses.length} caminhos de poder carregados.`);
-    return uniqueClasses;
+    console.log(`🧙‍♂️ Classes Fallback: ${uniqueClasses.length} prontas.`);
+    return uniqueClasses.map(c => c.rawClassData);
   }
 }
