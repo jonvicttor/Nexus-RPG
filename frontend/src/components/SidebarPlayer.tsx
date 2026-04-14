@@ -6,25 +6,32 @@ import { getLevelFromXP, getProficiencyBonus, calculateHPGain, XP_TABLE } from '
 import Inventory from './Inventory';
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
 import { 
-  Shield, Zap, Skull, Heart, Scroll, Coins, Scale, Sword, BookOpen, Sparkles, Plus, Minus, Target, ShieldAlert, Edit, Trash2, Fingerprint, ChevronRight, ChevronLeft, Flame, Star
+  Shield, Zap, Skull, Heart, Scroll, Coins, Scale, Sword, BookOpen, Sparkles, Plus, Target, ShieldAlert, Edit, Trash2, Fingerprint, ChevronRight, ChevronLeft, Flame, Star, CheckCircle, Info
 } from 'lucide-react';
 
 export interface InitiativeItem { id: number; name: string; value: number; }
 
-const CLASS_ABILITIES: Record<string, { name: string; max: number; icon: string; desc: string; color: string; unlockLevel: number }[]> = {
+const EMPTY_ARRAY: any[] = [];
+
+const CLASS_ABILITIES: Record<string, { name: string; max: number; icon: string; desc: string; color: string; unlockLevel: number, type: string }[]> = {
   'BARBARO': [
-    { name: 'Fúria', max: 2, icon: '😡', desc: 'Vantagem em FOR, Resistência a dano.', color: 'text-red-500', unlockLevel: 1 },
-    { name: 'Ataque Imprudente', max: 99, icon: '⚠️', desc: 'Vantagem no ataque, inimigos têm vantagem.', color: 'text-orange-500', unlockLevel: 2 }
+    { name: 'Fúria', max: 2, icon: '😡', desc: 'Vantagem em FOR, Resistência a dano.', color: 'text-red-500', unlockLevel: 1, type: 'bonus action' },
+    { name: 'Ataque Imprudente', max: 99, icon: '⚠️', desc: 'Vantagem no ataque, inimigos têm vantagem.', color: 'text-orange-500', unlockLevel: 2, type: 'action' }
   ],
   'GUERREIRO': [
-    { name: 'Retomar o Fôlego', max: 1, icon: '🩹', desc: 'Recupera 1d10 + Nível de PV.', color: 'text-green-400', unlockLevel: 1 },
-    { name: 'Surto de Ação', max: 1, icon: '⚡', desc: 'Ganha uma ação extra.', color: 'text-yellow-500', unlockLevel: 2 }
+    { name: 'Retomar o Fôlego', max: 1, icon: '🩹', desc: 'Recupera 1d10 + Nível de PV.', color: 'text-green-400', unlockLevel: 1, type: 'bonus action' },
+    { name: 'Surto de Ação', max: 1, icon: '⚡', desc: 'Ganha uma ação extra.', color: 'text-yellow-500', unlockLevel: 2, type: 'action' }
   ],
   'CLERIGO': [
-    { name: 'Curar Ferimentos', max: 2, icon: '✨', desc: 'Rola 1d8 + Sabedoria de cura.', color: 'text-blue-400', unlockLevel: 1 },
-    { name: 'Canalizar Divindade', max: 1, icon: '🙏', desc: 'Efeito especial do domínio.', color: 'text-yellow-400', unlockLevel: 2 }
+    { name: 'Curar Ferimentos', max: 2, icon: '✨', desc: 'Rola 1d8 + Sabedoria de cura.', color: 'text-blue-400', unlockLevel: 1, type: 'action' },
+    { name: 'Canalizar Divindade', max: 1, icon: '🙏', desc: 'Efeito especial do domínio.', color: 'text-yellow-400', unlockLevel: 2, type: 'action' }
   ],
 };
+
+const GENERIC_RULES = {
+    "saving throws": "Uma jogada de salvaguarda (também chamada de salvamento) representa uma tentativa de resistir a um feitiço, uma armadilha, um veneno, uma doença ou uma ameaça semelhante. Normalmente, você não decide fazer uma jogada de salvaguarda; você é forçado a fazer uma porque seu personagem ou monstro está em risco de sofrer dano.\n\nA dificuldade de uma salvaguarda é determinada pelo efeito que a causa. Para magias, a CD é calculada pela habilidade conjuradora de quem lançou o feitiço.",
+    "proficiencias e treinamento": "As proficiências cobrem o treinamento com armaduras, armas, ferramentas e habilidades. A proficiência representa o seu conhecimento especializado num tópico específico, seja ele a luta com espadas ou o conhecimento da história antiga.\n\nSeu Bônus de Proficiência é adicionado a testes, ataques ou salvaguardas envolvendo ferramentas ou habilidades nas quais você tem treinamento."
+}
 
 const formatSpellName = (name: string) => {
     if (!name) return "Magia Desconhecida";
@@ -45,7 +52,8 @@ const PT_BR_DICT: Record<string, string> = {
     "thunder": "Trovejante", "poison": "Venenoso", "necrotic": "Necrótico", 
     "radiant": "Radiante", "force": "Energia", "psychic": "Psíquico", 
     "bludgeoning": "Contundente", "piercing": "Perfurante", "slashing": "Cortante",
-    "heal": "Cura", "healing": "Cura"
+    "heal": "Cura", "healing": "Cura", "all": "TUDO", "attack": "ATAQUE", "action": "AÇÃO", "bonus action": "AÇÃO BÔNUS", "reaction": "REAÇÃO", "other": "OUTRO",
+    "saving throws": "Salvaguardas", "proficiencias e treinamento": "Proficiências e Treinamento"
 };
 
 const SKILL_MAP: Record<string, string> = {
@@ -59,23 +67,6 @@ const SKILL_MAP: Record<string, string> = {
 const translateTerm = (term: string) => {
     if (!term) return "";
     return PT_BR_DICT[term] || PT_BR_DICT[term.toLowerCase()] || term;
-};
-
-const clean5eText = (text: any): string => {
-    if (!text) return "";
-    if (Array.isArray(text)) return text.map(t => clean5eText(t)).filter(Boolean).join('\n\n');
-    if (typeof text === 'object') {
-        if (text.type === 'list' && text.items) return text.items.map((i:any) => `• ${clean5eText(i)}`).join('\n');
-        if (text.entries) return clean5eText(text.entries);
-        return ""; 
-    }
-    if (typeof text !== 'string') return "";
-    let cleaned = text.replace(/\{@[a-z]+\s([^}]+)\}/gi, (match, contents) => {
-        const parts = contents.split('|');
-        return parts.length > 2 && parts[2] ? parts[2] : parts[0];
-    });
-    cleaned = cleaned.replace(/\{@[ib] ([^}]+)\}/gi, '$1');
-    return cleaned;
 };
 
 const getSpellMeta = (spell: any) => {
@@ -98,8 +89,7 @@ const getSpellMeta = (spell: any) => {
         if (c.length > 0) comps = c.join(", ");
     } else if (typeof spell.components === 'string') comps = spell.components;
     
-    const desc = spell.description || clean5eText(spell.entries) || "Descrição não encontrada.";
-    return { time, range, comps, desc };
+    return { time, range, comps };
 };
 
 const IdentityCard = ({ title, content }: { title: string, content: string | undefined }) => {
@@ -111,6 +101,31 @@ const IdentityCard = ({ title, content }: { title: string, content: string | und
         </div>
     );
 };
+
+interface DescriptionPanelProps {
+    title: string;
+    description: string;
+    onClose: () => void;
+}
+
+const DescriptionPanel: React.FC<DescriptionPanelProps> = ({ title, description, onClose }) => {
+    return (
+        <div className="absolute top-0 right-0 h-full w-[340px] bg-[#f8f8f8] border-l border-gray-300 z-[210] flex flex-col transform transition-transform animate-in slide-in-from-right duration-300 shadow-[-10px_0_20px_rgba(0,0,0,0.1)]">
+            <div className="bg-white p-4 shrink-0 flex items-center justify-between border-b border-gray-200 shadow-sm">
+                <h3 className="text-lg font-black text-gray-900 truncate flex items-center gap-2"><Info size={16} className="text-red-700"/> {title}</h3>
+                <button onClick={onClose} className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors"><ChevronRight size={20}/></button>
+            </div>
+            <div className="p-5 flex-1 overflow-y-auto custom-scrollbar">
+                <div className="space-y-4 font-serif leading-relaxed text-sm text-gray-700">
+                    {description ? description.split('\n\n').map((para, i) => <p key={i} className="whitespace-pre-wrap">{para}</p>) : "Nenhuma descrição disponível."}
+                </div>
+            </div>
+            <div className="bg-gray-100 p-3 text-center border-t border-gray-200 shrink-0 shadow-inner">
+                <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Nexus VTT Codex</span>
+            </div>
+        </div>
+    )
+}
 
 interface SidebarPlayerProps {
   entities: Entity[];
@@ -131,14 +146,16 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   entities, myCharacterName, myCharacterId, initiativeList, activeTurnId, chatMessages, onSendMessage, onRollAttribute, onUpdateCharacter, onSelectEntity, onApplyDamageFromChat, availableSpells
 }) => {
   const [activeTab, setActiveTab] = useState<'actions' | 'inventory' | 'features' | 'background' | 'notes' | 'chat'>('actions');
-  const [actionSubTab, setActionSubTab] = useState<'attacks' | 'spells' | 'macros'>('attacks');
+  const [actionFilter, setActionFilter] = useState<'all' | 'attack' | 'action' | 'bonus action' | 'reaction' | 'other'>('all');
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showLevelUpModal, setShowLevelUpModal] = useState(false);
   const [pendingLevelData, setPendingLevelData] = useState<{ newLevel: number, hpGain: number } | null>(null);
 
+  const [descriptionPanel, setDescriptionPanel] = useState<{ title: string, content: string } | null>(null);
+  const [hpInput, setHpInput] = useState<string>('');
+
   const [abilityUsage, setAbilityUsage] = useState<Record<string, number>>({});
   const [deathSaves, setDeathSaves] = useState({ successes: 0, failures: 0 });
-  const [expandedSpells, setExpandedSpells] = useState<Record<string, boolean>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const [isEditingAction, setIsEditingAction] = useState(false);
@@ -147,7 +164,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   });
 
   const myCharacter = entities.find(e => e.id === myCharacterId) || entities.find(e => e.type === 'player' && e.name === myCharacterName); 
-  const customActions = (myCharacter as any)?.customActions || []; 
+  const customActions = useMemo(() => (myCharacter as any)?.customActions || EMPTY_ARRAY, [myCharacter]); 
   const charDetails = (myCharacter as any)?.details; 
   
   const currentXP = myCharacter?.xp || 0;
@@ -233,29 +250,48 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
 
           const isAttack = rawText.includes('spell attack') || rawText.includes('ataque com magia') || rawText.includes('{@hit');
           const isSave = rawText.includes('saving throw') || rawText.includes('teste de resistência') || !!compendiumData?.savingThrow;
-          const isHeal = rawText.includes('heal') || rawText.includes('cura');
 
           return { 
               ...(compendiumData || {}), id: spId, name: cleanName, level: finalLevel, 
-              parsedDamage, parsedType: parsedType || "Mágico", isAttack, isSave, isHeal, cleanDescription: desc
+              parsedDamage, parsedType: parsedType || "Mágico", isAttack, isSave, cleanDescription: desc, type: 'action'
           };
       }).sort((a, b) => a.name.localeCompare(b.name));
   }, [myCharacter?.spells, availableSpells]);
 
-  const toggleSpellExpansion = (spellId: string) => { setExpandedSpells(prev => ({ ...prev, [spellId]: !prev[spellId] })); };
+  const allFilteredActions = useMemo(() => {
+    let list: any[] = [];
 
-  const getSchoolColor = (school: string) => {
-      const s = school?.toLowerCase() || '';
-      if (s.includes('evoc')) return 'text-red-800 border-red-200 bg-red-50';
-      if (s.includes('abjur')) return 'text-blue-800 border-blue-200 bg-blue-50';
-      if (s.includes('necro')) return 'text-purple-800 border-purple-200 bg-purple-50';
-      if (s.includes('ilu')) return 'text-pink-800 border-pink-200 bg-pink-50';
-      if (s.includes('encant')) return 'text-fuchsia-800 border-fuchsia-200 bg-fuchsia-50';
-      if (s.includes('transmut')) return 'text-amber-800 border-amber-200 bg-amber-50';
-      if (s.includes('adivinh')) return 'text-cyan-800 border-cyan-200 bg-cyan-50';
-      if (s.includes('conjur')) return 'text-emerald-800 border-emerald-200 bg-emerald-50';
-      return 'text-gray-800 border-gray-300 bg-gray-100';
-  };
+    equippedWeapons.forEach(weapon => {
+        const isFinesseOrRanged = weapon.stats?.properties?.some(p => p.toLowerCase().includes('finesse') || p.toLowerCase().includes('distância')) || weapon.name.toLowerCase().includes('arco');
+        const totalHitMod = (isFinesseOrRanged ? dexMod : strMod) + proficiencyBonus;
+        const translatedWpnType = translateTerm(['cortante', 'perfurante', 'contundente'].find(t => (weapon.stats?.properties?.join(' ').toLowerCase() || '').includes(t)) || 'Físico');
+
+        list.push({ 
+            id: weapon.id, name: weapon.name, attackMod: isFinesseOrRanged ? 'dex' : 'str', 
+            damageExpr: weapon.stats?.damage || '1d4', damageType: translatedWpnType, hitMod: totalHitMod,
+            category: 'attack', type: 'weapon', typeDetail: 'Ataque de Arma', range: isFinesseOrRanged ? 'Distância' : '5 ft.',
+            desc: `Ataque corpo-a-corpo ou à distância com ${weapon.name}.`
+        });
+    });
+
+    list.push(...knownSpells.map(s => {
+        const meta = getSpellMeta(s);
+        const metaText = `⏳ Tempo: ${meta.time} | 🎯 Alcance: ${meta.range} | 🗣️ Componentes: ${meta.comps}`;
+        return {
+            ...s, category: s.isAttack ? 'attack' : 'action', type: 'spell', typeDetail: `Magia Círculo ${s.level}`, range: meta.range,
+            desc: `${metaText}\n\n${s.cleanDescription}`
+        }
+    }));
+    
+    customActions.forEach((action: any) => {
+        list.push({ ...action, category: action.attackMod !== 'none' ? 'attack' : (action.type === 'bonus action' ? 'bonus action' : 'action'), type: 'macro', typeDetail: 'Macro Personalizado', range: '--', desc: "Ação customizada criada pelo jogador." });
+    });
+
+    list.push(...(CLASS_ABILITIES[myCharacter?.classType?.toUpperCase() || ''] || []).map(a => ({...a, category: a.type, type: 'feature', typeDetail: 'Habilidade de Classe', range: '--'})));
+
+    if (actionFilter === 'all') return list.sort((a,b) => a.category.localeCompare(b.category));
+    return list.filter(a => a.category === actionFilter).sort((a,b) => a.name.localeCompare(b.name));
+  }, [equippedWeapons, knownSpells, customActions, myCharacter?.classType, strMod, dexMod, proficiencyBonus, actionFilter]);
 
   const handleCoinChange = (coinType: 'cp' | 'sp' | 'ep' | 'gp' | 'pp', amount: number) => {
       if (!myCharacter || !onUpdateCharacter) return;
@@ -287,6 +323,24 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
           setShowLevelUpModal(true);
       }
   }, [calculatedLevel, savedLevel, myCharacter]);
+
+  const handleHeal = () => {
+      const val = parseInt(hpInput);
+      if (!isNaN(val) && val > 0 && myCharacter && onUpdateCharacter) {
+          onUpdateCharacter(myCharacter.id, { hp: Math.min((myCharacter.maxHp || 10), (myCharacter.hp || 0) + val) });
+          setHpInput('');
+          onSendMessage(`💚 **${myCharacter.name}** curou **${val} PV**.`);
+      }
+  };
+
+  const handleTakeDamage = () => {
+      const val = parseInt(hpInput);
+      if (!isNaN(val) && val > 0 && myCharacter && onUpdateCharacter) {
+          onUpdateCharacter(myCharacter.id, { hp: Math.max(0, (myCharacter.hp || 0) - val) });
+          setHpInput('');
+          onSendMessage(`🩸 **${myCharacter.name}** sofreu **${val} de dano**.`);
+      }
+  };
 
   const handleUseAbility = (abilityName: string, max: number, desc: string) => {
     if (!myCharacter) return;
@@ -383,14 +437,6 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
       onSendMessage(`✨ **${myCharacter.name}** conjurou **${spell.name}**${level > 0 ? ` (Círculo ${level})` : ''}!`);
   };
 
-  const handleOpenActionBuilder = (name: string, defaultAtk: string, defaultDmg: string, defaultType: string, defaultSave: string = 'none') => {
-      setActionForm({ name, attackMod: defaultAtk, damageExpr: defaultDmg, damageType: defaultType, saveAttr: defaultSave });
-      setIsEditingAction(true);
-      if(isCollapsed) setIsCollapsed(false);
-      setActiveTab('actions');
-      setActionSubTab('macros');
-  };
-
   const handleAutoFill = (val: string) => {
       if (!val) return;
       const [type, id] = val.split('|');
@@ -449,11 +495,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   };
 
   const executeActionAttack = (action: any) => {
-      let finalMod = 0;
-      if (action.attackMod === 'str') finalMod = strMod + proficiencyBonus;
-      else if (action.attackMod === 'dex') finalMod = dexMod + proficiencyBonus;
-      else if (action.attackMod === 'spell') finalMod = spellAttackBonus;
-      onRollAttribute(myCharacterName, `Ataque: ${action.name}`, finalMod, action.damageExpr, action.damageType);
+      onRollAttribute(myCharacterName, `Ataque: ${action.name}`, action.hitMod || 0, action.damageExpr, action.damageType);
   };
 
   const executeActionDamage = (action: any) => {
@@ -464,9 +506,24 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
       onRollAttribute(myCharacterName, `Resistência (${action.saveAttr}) contra ${action.name}`, 0);
   };
 
+  const openDescription = (termKey: string, actualName?: string) => {
+    let content = "";
+    if (GENERIC_RULES[termKey as keyof typeof GENERIC_RULES]) content = GENERIC_RULES[termKey as keyof typeof GENERIC_RULES];
+    else if (SKILL_MAP[termKey]) content = `Habilidade genérica de ${translateTerm(SKILL_MAP[termKey])} para ${actualName || translateTerm(termKey)}. Seu bônus nesta habilidade representa seu treino.`;
+    else if ((charDetails as any)?.background && termKey.toLowerCase() === (charDetails as any).background.toLowerCase()) content = (charDetails as any)?.backgroundDesc || "Descrição do background não disponível.";
+    else if (attributes[termKey as keyof typeof attributes]) content = `Pontuação genérica de atributo para ${PT_BR_DICT[termKey.toLowerCase()]}. Define os seus modificadores base.`;
+    
+    const actionFound = allFilteredActions.find(a => a.id === termKey || a.name === actualName);
+    if (actionFound && actionFound.desc) content = actionFound.desc;
+
+    if (!content) content = `Sem descrição detalhada disponível para ${actualName || translateTerm(termKey)}.`;
+    
+    setDescriptionPanel({ title: actualName || translateTerm(termKey), content: content });
+  }
+
   if (!myCharacter) {
       return (
-          <div className={`relative h-full transition-all duration-300 bg-[#1a1510] z-50 ${isCollapsed ? 'w-0' : 'w-[90vw] md:w-[1200px]'}`}>
+          <div className={`relative h-full transition-all duration-300 bg-[#1a1510] z-50 ${isCollapsed ? 'w-0' : 'w-[100vw] xl:w-[1200px]'}`}>
               <div className="flex flex-col items-center justify-center h-full text-gray-500"><Scroll size={40} className="mb-2 opacity-20" /><p className="text-xs">Personagem não encontrado.</p></div>
           </div>
       );
@@ -478,7 +535,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
             <LevelUpModal newLevel={pendingLevelData.newLevel} hpGain={pendingLevelData.hpGain} charClass={myCharacter.classType || 'GUERREIRO'} oldStats={myCharacter.stats || {str:10,dex:10,con:10,int:10,wis:10,cha:10}} onConfirm={(u) => { if(onUpdateCharacter && myCharacter) { onUpdateCharacter(myCharacter.id, {...u, level: pendingLevelData.newLevel, hp: Math.min((myCharacter.hp||0)+pendingLevelData.hpGain, (myCharacter.maxHp||0)+pendingLevelData.hpGain), maxHp: (myCharacter.maxHp||0)+pendingLevelData.hpGain}); setShowLevelUpModal(false);}}} />
         )}
 
-        <div className={`relative h-full transition-all duration-300 ease-in-out flex-shrink-0 z-50 shadow-2xl ${isCollapsed ? 'w-0' : 'w-[90vw] md:w-[1200px]'}`}>
+        <div className={`relative h-full transition-all duration-300 ease-in-out flex-shrink-0 z-50 shadow-2xl ${isCollapsed ? 'w-0' : 'w-[100vw] xl:w-[1200px]'}`}>
             
             <button
                 onClick={() => setIsCollapsed(!isCollapsed)}
@@ -487,88 +544,174 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                 {isCollapsed ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
             </button>
 
-            <div className="w-full box-border flex flex-col h-full bg-[#f4f1ea] text-[#1a1a1a] overflow-hidden font-sans border-l border-red-800 shadow-[inset_0_0_100px_rgba(0,0,0,0.05)]">
+            <div className="w-full box-border flex flex-col h-full bg-[#f4f1ea] text-[#1a1a1a] overflow-hidden font-sans border-l border-red-800 shadow-[inset_0_0_100px_rgba(0,0,0,0.05)] relative">
                 
-                <div className="bg-[#242527] text-white p-4 shrink-0 flex items-center gap-4 relative overflow-hidden shadow-lg border-b-4 border-red-800 z-20">
+                {/* ABA DE DESCRIÇÃO (SLIDE-OUT) */}
+                {descriptionPanel && <DescriptionPanel title={descriptionPanel.title} description={descriptionPanel.content} onClose={() => setDescriptionPanel(null)} />}
+
+                {/* HEADER D&D BEYOND */}
+                <div className="bg-[#242527] text-white p-3 shrink-0 flex items-center gap-4 relative overflow-hidden shadow-lg border-b-4 border-red-800 z-20">
                     <div className="absolute top-0 right-0 w-64 h-full bg-gradient-to-bl from-red-500/20 to-transparent mix-blend-overlay"></div>
                     
-                    <div className="w-16 h-16 bg-white border border-gray-600 rounded cursor-pointer shrink-0 relative z-10" onClick={() => onSelectEntity && onSelectEntity(myCharacter)}>
+                    <div className="w-14 h-14 bg-white border border-gray-600 rounded cursor-pointer shrink-0 relative z-10" onClick={() => onSelectEntity && onSelectEntity(myCharacter)}>
                         <img src={myCharacter.image || '/tokens/aliado.png'} alt="Token" className="w-full h-full object-cover rounded-sm" />
                     </div>
                     
-                    <div className="flex-1 min-w-0 z-10">
+                    <div className="flex-1 min-w-0 z-10 pr-4">
                         <div className="flex items-center gap-2 mb-1">
-                            <h2 className="text-xl font-black text-white truncate font-serif">{myCharacter.name}</h2>
+                            <h2 className="text-lg font-black text-white truncate font-serif">{myCharacter.name}</h2>
                             <span className="text-[9px] uppercase font-bold bg-white/10 px-2 py-0.5 rounded border border-white/20 text-gray-300 tracking-wider hidden sm:block">Manejar</span>
                         </div>
-                        <div className="flex text-xs text-gray-400 gap-2 font-mono">
+                        <div className="flex text-[10px] text-gray-400 gap-2 font-mono">
                             <span>{myCharacter.race}</span>
                             <span>•</span>
                             <span className="text-red-400">{myCharacter.classType?.split(' (')[0]} {savedLevel}</span>
                         </div>
-                        <div className="mt-2 w-full max-w-sm h-1.5 bg-black rounded overflow-hidden border border-gray-700">
+                        <div className="mt-1.5 w-full max-w-sm h-1.5 bg-black rounded overflow-hidden border border-gray-700">
                             <div className="h-full bg-cyan-500" style={{ width: `${xpPercent}%` }}></div>
                         </div>
                         <div className="text-[8px] text-gray-400 mt-1 uppercase font-black tracking-widest">{xpVisivel} / {xpNecessarioNoNivel} XP</div>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-2 z-10">
-                        <button onClick={handleShortRest} className="flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-wider bg-transparent border border-red-600 text-red-500 hover:bg-red-900/30 px-3 py-1.5 rounded transition-colors"><Flame size={12}/> Short Rest</button>
-                        <button onClick={handleLongRest} className="flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-wider bg-transparent border border-red-600 text-red-500 hover:bg-red-900/30 px-3 py-1.5 rounded transition-colors"><Heart size={12}/> Long Rest</button>
+                    <div className="flex flex-col sm:flex-row gap-2 z-10 shrink-0">
+                        <button onClick={handleShortRest} className="flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wider bg-transparent border border-red-600 text-red-500 hover:bg-red-900/30 px-3 py-1.5 rounded transition-colors"><Flame size={12}/> Short Rest</button>
+                        <button onClick={handleLongRest} className="flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wider bg-transparent border border-red-600 text-red-500 hover:bg-red-900/30 px-3 py-1.5 rounded transition-colors"><Heart size={12}/> Long Rest</button>
+                        <button className="flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wider bg-white border border-gray-600 text-black hover:bg-gray-100 px-3 py-1.5 rounded transition-colors ml-2"><CheckCircle size={12}/> Inspiração</button>
+                    </div>
+                </div>
+
+                {/* ROW DE STATUS / ATRIBUTOS NO TOPO */}
+                <div className="bg-white border-b border-gray-300 p-2 lg:p-4 shrink-0 flex flex-wrap xl:flex-nowrap gap-2 lg:gap-4 shadow-sm items-start justify-between z-10">
+                    <div className="flex gap-2">
+                        {['FOR', 'DES', 'CON', 'INT', 'SAB', 'CAR'].map((attr) => {
+                            const val = attributes[attr as keyof typeof attributes] || 10;
+                            const mod = Math.floor((val - 10) / 2);
+                            return (
+                                <div key={attr} onClick={() => onRollAttribute(myCharacter.name, attr, mod)} className="flex flex-col items-center group relative cursor-pointer">
+                                    <div className="w-12 lg:w-14 h-14 lg:h-16 bg-white border-2 border-gray-300 rounded flex flex-col items-center justify-center shadow-sm group-hover:border-red-600 transition-colors z-10">
+                                        <span className="text-[8px] font-black uppercase text-gray-500 group-hover:text-red-700">{attr}</span>
+                                        <span className="text-xl font-black text-black leading-none">{mod >= 0 ? `+${mod}` : mod}</span>
+                                    </div>
+                                    <div className="bg-white border-2 border-gray-300 rounded-full px-2 py-0.5 text-[9px] font-bold -mt-2 z-20 group-hover:border-red-600 transition-colors">
+                                        {val}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    
+                    <div className="flex gap-2">
+                        <div className="bg-white border-2 border-gray-300 rounded-lg flex flex-col items-center justify-center p-1 w-14 shadow-sm">
+                            <span className="text-[8px] font-black uppercase text-gray-500">Profic.</span>
+                            <span className="text-lg font-black text-black leading-none mt-1">+{proficiencyBonus}</span>
+                            <span className="text-[8px] font-black uppercase text-gray-400 mt-1">Bonus</span>
+                        </div>
+                        <div className="bg-white border-2 border-gray-300 rounded-lg flex flex-col items-center justify-center p-1 w-14 shadow-sm">
+                            <span className="text-[8px] font-black uppercase text-gray-500">Walking</span>
+                            <span className="text-lg font-black text-black leading-none mt-1">30<span className="text-[9px]">ft</span></span>
+                            <span className="text-[8px] font-black uppercase text-gray-400 mt-1">Speed</span>
+                        </div>
+                        <div className="flex flex-col items-center ml-2">
+                            <span className="text-[8px] font-black uppercase text-gray-500">Initiative</span>
+                            <div className="bg-white border-2 border-blue-300 rounded-lg w-12 h-10 flex items-center justify-center text-base font-black text-blue-900 mt-0.5 shadow-sm gap-1">
+                                {dexMod >= 0 ? `+${dexMod}` : dexMod}
+                            </div>
+                        </div>
+                        <div className="flex flex-col items-center">
+                            <div className="bg-black border-2 border-gray-800 rounded-t-xl rounded-b w-10 h-12 flex flex-col items-center justify-center shadow-sm relative overflow-hidden mt-1 text-white">
+                                <Shield size={30} className="absolute text-gray-600 -z-10" />
+                                <span className="text-[7px] font-black uppercase text-gray-400 mb-0.5">Armor</span>
+                                <span className="text-lg font-black text-white leading-none">{currentAC}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* CAIXA DE HP INTERATIVA */}
+                    <div className="border-2 border-red-800 rounded-lg bg-white overflow-hidden flex flex-col shadow-sm w-72 shrink-0 relative">
+                        {myCharacter.hp <= 0 && (
+                            <div className="absolute inset-0 bg-red-900/95 backdrop-blur-sm z-20 flex flex-col items-center justify-center text-white p-2 rounded-lg">
+                                <span className="text-[10px] text-red-200 uppercase font-black flex items-center gap-1.5 mb-2"><Skull size={14}/> Death Saves</span>
+                                <div className="flex gap-4">
+                                    <div className="flex gap-1.5 items-center"><span className="text-[9px] text-green-300 font-bold hidden lg:block">SUC</span>{[1,2,3].map(i => (<div key={i} onClick={() => handleDeathSave('success')} className={`w-3 h-3 rounded-full border border-green-900 cursor-pointer shadow-inner ${i <= deathSaves.successes ? 'bg-green-500' : 'bg-black/50'}`}></div>))}</div>
+                                    <div className="flex gap-1.5 items-center"><span className="text-[9px] text-red-300 font-bold hidden lg:block">FAL</span>{[1,2,3].map(i => (<div key={i} onClick={() => handleDeathSave('failure')} className={`w-3 h-3 rounded-full border border-red-900 cursor-pointer shadow-inner ${i <= deathSaves.failures ? 'bg-red-500' : 'bg-black/50'}`}></div>))}</div>
+                                </div>
+                            </div>
+                        )}
+                        <div className="flex justify-between items-center px-2 py-1 border-b border-gray-200 bg-gray-50">
+                            <div className="flex gap-1">
+                                <input type="number" value={hpInput} onChange={e=>setHpInput(e.target.value)} className="w-10 text-center border border-gray-300 rounded text-xs outline-none focus:border-red-500" placeholder="0" />
+                                <button onClick={handleHeal} className="text-[9px] font-bold text-green-700 bg-green-100 border border-green-300 rounded px-1.5 hover:bg-green-200 transition-colors">CURAR</button>
+                                <button onClick={handleTakeDamage} className="text-[9px] font-bold text-red-700 bg-red-100 border border-red-300 rounded px-1.5 hover:bg-red-200 transition-colors">DANO</button>
+                            </div>
+                            <div className="flex gap-3 text-[8px] font-black text-gray-500 uppercase tracking-widest text-right">
+                                <span>Current</span><span>Max</span>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-3 px-4 py-1.5 relative">
+                            <div className="absolute bottom-0 left-0 h-1 bg-gray-200 w-full">
+                                <div className="h-full bg-red-600 transition-all duration-500" style={{ width: `${hpPercent}%` }}></div>
+                            </div>
+                            <span className="text-3xl font-black text-red-900 z-10">{myCharacter.hp}</span>
+                            <span className="text-xl text-gray-300 font-bold z-10">/</span>
+                            <span className="text-2xl font-black text-gray-600 z-10">{myCharacter.maxHp}</span>
+                        </div>
                     </div>
                 </div>
 
                 <div className="flex flex-1 min-h-0 relative z-10 bg-white">
                     
-                    {/* COLUNA ESQUERDA */}
-                    <div className="w-[240px] lg:w-[280px] bg-[#f8f8f8] border-r border-gray-300 flex flex-col h-full overflow-y-auto custom-scrollbar p-2 lg:p-4 shrink-0 shadow-inner">
+                    {/* COLUNA ESQUERDA - SALVES, SENSES, PROFS */}
+                    <div className="w-[200px] lg:w-[220px] bg-[#f8f8f8] border-r border-gray-300 flex flex-col h-full overflow-y-auto custom-scrollbar p-2 lg:p-3 shrink-0 shadow-inner">
                         
-                        <div className="grid grid-cols-3 gap-2 mb-6">
-                            {['FOR', 'DES', 'CON', 'INT', 'SAB', 'CAR'].map((attr) => {
-                                const val = attributes[attr as keyof typeof attributes] || 10;
-                                const mod = Math.floor((val - 10) / 2);
-                                return (
-                                    <div key={attr} onClick={() => onRollAttribute(myCharacter.name, attr, mod)} className="flex flex-col items-center cursor-pointer group relative">
-                                        <div className="w-14 lg:w-16 h-16 lg:h-20 bg-white border-2 border-gray-300 rounded-lg rounded-b-xl flex flex-col items-center justify-start pt-1 pb-2 shadow-sm group-hover:border-red-600 transition-colors z-10">
-                                            <span className="text-[8px] font-black uppercase text-gray-500">{attr}</span>
-                                            <span className="text-xl lg:text-2xl font-black text-black mt-1 leading-none">{mod >= 0 ? `+${mod}` : mod}</span>
-                                        </div>
-                                        <div className="bg-white border-2 border-gray-300 rounded-full px-2 lg:px-3 py-0.5 text-[10px] lg:text-xs font-bold -mt-2 lg:-mt-3 z-20 group-hover:border-red-600 transition-colors">
-                                            {val}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        <div className="border-2 border-red-800 rounded-xl bg-white mb-6 shadow-sm">
-                            <div className="p-2 lg:p-3 border-b border-red-100 flex items-center justify-between">
-                                <h4 className="text-[10px] font-black uppercase tracking-widest text-red-800">Saving Throws</h4>
+                        <div className="border-2 border-red-800 rounded-xl bg-white mb-4 shadow-sm relative group cursor-pointer" onClick={() => openDescription('saving throws')}>
+                            <div className="absolute top-1 right-2 p-1 text-cyan-600 opacity-60 group-hover:opacity-100 group-hover:text-red-600 transition-opacity"><Zap size={10} /></div>
+                            <div className="p-2 border-b border-gray-100 flex items-center justify-between bg-white text-black rounded-t-lg">
+                                <h4 className="text-[10px] font-black uppercase tracking-widest text-black">Saving Throws</h4>
+                                <Edit size={12} className="opacity-50 text-black"/>
                             </div>
-                            <div className="grid grid-cols-2 gap-y-1 p-2 bg-[#fcfcfc]">
+                            <div className="flex flex-col bg-[#fcfcfc] p-1.5 space-y-0.5">
                                 {['str', 'dex', 'con', 'int', 'wis', 'cha'].map(attr => {
                                     const isProf = proficiencies[`saving_${attr}`];
                                     const rawMod = mods[attr as keyof typeof mods];
                                     const finalMod = rawMod + (isProf ? proficiencyBonus : 0);
                                     return (
-                                        <div key={attr} className="flex items-center gap-2 p-1 hover:bg-gray-100 cursor-pointer rounded transition-colors" onClick={() => onRollAttribute(myCharacter.name, `Teste de Resistência (${translateTerm(attr)})`, finalMod)}>
-                                            <div className={`w-2.5 h-2.5 rounded-full border border-black ${isProf ? 'bg-black' : 'bg-white'}`}></div>
-                                            <span className="text-[10px] font-black uppercase w-6 lg:w-8">{translateTerm(attr)}</span>
-                                            <span className="text-[10px] lg:text-xs font-bold w-6 text-right">{finalMod >= 0 ? `+${finalMod}` : finalMod}</span>
+                                        <div key={attr} className="flex items-center gap-2.5 p-1 hover:bg-gray-100 cursor-pointer rounded transition-colors group-inner" onClick={(e) => {e.stopPropagation(); onRollAttribute(myCharacter.name, `Teste de Resistência (${translateTerm(attr)})`, finalMod)}}>
+                                            <div className={`w-3 h-3 rounded-full border border-black ${isProf ? 'bg-black' : 'bg-white'}`}></div>
+                                            <span className="text-[10px] font-bold uppercase w-8 group-inner-hover:text-red-700">{translateTerm(attr)}</span>
+                                            <span className="text-[10px] font-black w-6 text-right bg-gray-200 rounded px-1 group-inner-hover:bg-red-100 group-inner-hover:text-red-800">{finalMod >= 0 ? `+${finalMod}` : finalMod}</span>
                                         </div>
                                     )
                                 })}
                             </div>
                         </div>
 
-                        <div className="border-2 border-red-800 rounded-xl bg-white mb-6 shadow-sm">
-                            <div className="p-2 border-b border-red-100 flex items-center justify-between bg-red-800 text-white rounded-t-lg">
-                                <span className="text-[8px] font-black uppercase hidden lg:block">Prof</span>
-                                <span className="text-[8px] font-black uppercase">Mod</span>
-                                <span className="text-[8px] font-black uppercase flex-1 ml-2">Skill</span>
-                                <span className="text-[8px] font-black uppercase text-right">Bonus</span>
+                        <div className="border border-gray-200 rounded-lg bg-white mb-4 shadow-inner space-y-1 p-2">
+                            <div className="flex justify-between items-center bg-gray-50 border border-gray-100 px-2 py-1.5 rounded-sm"><span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Percepção Passiva</span><span className="text-sm font-black text-blue-900 bg-blue-100 px-1.5 rounded-sm">{10+wisMod}</span></div>
+                            <div className="flex justify-between items-center bg-gray-50 border border-gray-100 px-2 py-1.5 rounded-sm"><span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Investig. Passiva</span><span className="text-sm font-black text-blue-900 bg-blue-100 px-1.5 rounded-sm">{10+intMod}</span></div>
+                            <div className="flex justify-between items-center bg-gray-50 border border-gray-100 px-2 py-1.5 rounded-sm"><span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Intuição Passiva</span><span className="text-sm font-black text-blue-900 bg-blue-100 px-1.5 rounded-sm">{10+wisMod}</span></div>
+                        </div>
+
+                        <div className="border border-gray-200 rounded-lg bg-white mb-4 shadow-inner p-2 cursor-pointer group" onClick={() => openDescription('proficiencias e treinamento')}>
+                            <div className="border-b border-gray-100 pb-1 mb-1.5 flex justify-between items-center">
+                                <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Proficiências & Treino</span>
                             </div>
-                            <div className="flex flex-col bg-[#fcfcfc] p-1">
+                            <div className="space-y-2">
+                                <div><span className="text-[9px] uppercase font-bold block text-gray-400">Armaduras</span><span className="text-[10px] text-gray-800 font-serif leading-tight">Leve, Média, Escudo</span></div>
+                                <div><span className="text-[9px] uppercase font-bold block text-gray-400">Armas</span><span className="text-[10px] text-gray-800 font-serif leading-tight">Simples, Marciais</span></div>
+                                <div><span className="text-[9px] uppercase font-bold block text-gray-400">Ferramentas</span><span className="text-[10px] text-gray-800 font-serif leading-tight">Kit de Ladrão</span></div>
+                                <div><span className="text-[9px] uppercase font-bold block text-gray-400">Idiomas</span><span className="text-[10px] text-gray-800 font-serif leading-tight">Comum, Élfico</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* COLUNA ESQUERDA - SKILLS */}
+                    <div className="w-[200px] lg:w-[240px] bg-[#fcfcfc] border-r border-gray-300 flex flex-col h-full p-2 shrink-0">
+                        <div className="border-2 border-red-800 rounded-xl bg-white shadow-sm flex flex-col flex-1 overflow-hidden">
+                            <div className="p-2 border-b border-gray-100 flex items-center justify-between bg-white rounded-t-lg shrink-0">
+                                <span className="text-[8px] font-black uppercase tracking-widest text-black flex-1">Perícias</span>
+                                <Edit size={12} className="opacity-50 text-black"/>
+                            </div>
+                            <div className="flex flex-col bg-[#fcfcfc] p-1 flex-1 overflow-y-auto custom-scrollbar">
                                 {Object.keys(SKILL_MAP).sort().map(skill => {
                                     const attr = SKILL_MAP[skill];
                                     const isProf = proficiencies[skill];
@@ -576,83 +719,22 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                     const finalMod = rawMod + (isProf ? proficiencyBonus : 0);
                                     
                                     return (
-                                        <div key={skill} onClick={() => onRollAttribute(myCharacter.name, translateTerm(skill), finalMod)} className="flex items-center p-1 lg:p-1.5 hover:bg-gray-200 cursor-pointer rounded transition-colors border-b border-gray-100 last:border-0 group">
-                                            <div className="w-4 lg:w-6 hidden lg:flex justify-center">
+                                        <div key={skill} onClick={(e) => {e.stopPropagation(); onRollAttribute(myCharacter.name, translateTerm(skill), finalMod)}} className="flex items-center py-1.5 px-1.5 lg:py-[7px] hover:bg-gray-200 cursor-pointer rounded transition-colors border-b border-gray-100 last:border-0 group-inner">
+                                            <div className="w-4 lg:w-5 flex justify-center">
                                                 <div className={`w-2 h-2 rounded-full border border-black ${isProf ? 'bg-black' : 'bg-white'}`}></div>
                                             </div>
-                                            <span className="text-[8px] font-bold text-gray-400 uppercase w-6 text-center">{translateTerm(attr)}</span>
-                                            <span className="text-[10px] lg:text-xs font-bold text-gray-800 flex-1 ml-2 capitalize group-hover:text-red-700 truncate">{translateTerm(skill)}</span>
-                                            <span className="text-[10px] lg:text-xs font-black text-black w-6 lg:w-8 text-right bg-gray-200 rounded px-1 group-hover:bg-red-100 group-hover:text-red-800">{finalMod >= 0 ? `+${finalMod}` : finalMod}</span>
+                                            <span className="text-[8px] lg:text-[9px] font-bold text-gray-400 uppercase w-6 text-center">{translateTerm(attr)}</span>
+                                            <span className="text-[10px] lg:text-xs font-bold text-gray-800 flex-1 ml-1 capitalize group-inner-hover:text-red-700 truncate">{translateTerm(skill)}</span>
+                                            <span className="text-[10px] lg:text-xs font-black text-black w-6 lg:w-8 text-right bg-gray-200 rounded px-1 py-0.5 group-inner-hover:bg-red-100 group-inner-hover:text-red-800">{finalMod >= 0 ? `+${finalMod}` : finalMod}</span>
                                         </div>
                                     )
                                 })}
                             </div>
-                            <div className="p-2 border-t border-red-100 text-center bg-gray-50 rounded-b-lg">
-                                <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">Skills</span>
-                            </div>
                         </div>
                     </div>
 
-                    <div className="flex-1 flex flex-col h-full relative">
+                    <div className="flex-1 flex flex-col h-full relative bg-white">
                         
-                        <div className="flex justify-between items-stretch bg-gray-100 border-b border-gray-300 p-2 lg:p-4 gap-2 lg:gap-4 shrink-0">
-                            <div className="flex gap-2">
-                                <div className="bg-white border-2 border-gray-300 rounded-lg flex flex-col items-center justify-center p-1 lg:p-2 w-14 lg:w-16 shadow-sm">
-                                    <span className="text-[8px] font-black uppercase text-gray-500">Profic.</span>
-                                    <span className="text-lg lg:text-xl font-black text-black leading-none mt-1">+{proficiencyBonus}</span>
-                                    <span className="text-[8px] font-black uppercase text-gray-400 mt-1">Bonus</span>
-                                </div>
-                                <div className="bg-white border-2 border-gray-300 rounded-lg flex flex-col items-center justify-center p-1 lg:p-2 w-14 lg:w-16 shadow-sm">
-                                    <span className="text-[8px] font-black uppercase text-gray-500">Walking</span>
-                                    <span className="text-lg lg:text-xl font-black text-black leading-none mt-1">30<span className="text-[10px]">ft</span></span>
-                                    <span className="text-[8px] font-black uppercase text-gray-400 mt-1">Speed</span>
-                                </div>
-                            </div>
-
-                            <div className="flex-1 flex items-center justify-center gap-2 lg:gap-4">
-                                <div className="flex flex-col items-center">
-                                    <span className="text-[8px] font-black uppercase text-gray-500">Initiative</span>
-                                    <div className="bg-white border-2 border-blue-300 rounded-lg w-12 lg:w-14 h-10 lg:h-12 flex items-center justify-center text-base lg:text-lg font-black text-blue-900 mt-1 shadow-sm gap-1">
-                                        <Zap size={10} className="text-blue-400 opacity-60 hidden lg:block"/> {dexMod >= 0 ? `+${dexMod}` : dexMod}
-                                    </div>
-                                </div>
-                                <div className="flex flex-col items-center">
-                                    <div className="bg-white border-2 border-gray-800 rounded-t-xl rounded-b w-10 lg:w-12 h-12 lg:h-14 flex flex-col items-center justify-center shadow-sm relative overflow-hidden mt-1">
-                                        <Shield size={36} className="absolute text-gray-100 -z-10" />
-                                        <span className="text-[8px] font-black uppercase text-gray-500 mb-0.5">Armor</span>
-                                        <span className="text-lg lg:text-xl font-black text-black leading-none">{currentAC}</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="w-40 lg:w-64 border-2 border-red-800 rounded-lg bg-white overflow-hidden flex flex-col shadow-sm relative">
-                                {myCharacter.hp <= 0 && (
-                                    <div className="absolute inset-0 bg-red-900/95 backdrop-blur-sm z-20 flex flex-col items-center justify-center text-white p-2 rounded-lg">
-                                        <span className="text-[10px] text-red-200 uppercase font-black flex items-center gap-1.5 mb-2"><Skull size={14}/> Death Saves</span>
-                                        <div className="flex gap-4">
-                                            <div className="flex gap-1.5 items-center"><span className="text-[9px] text-green-300 font-bold hidden lg:block">SUC</span>{[1,2,3].map(i => (<div key={i} onClick={() => handleDeathSave('success')} className={`w-3 h-3 rounded-full border border-green-900 cursor-pointer shadow-inner ${i <= deathSaves.successes ? 'bg-green-500' : 'bg-black/50'}`}></div>))}</div>
-                                            <div className="flex gap-1.5 items-center"><span className="text-[9px] text-red-300 font-bold hidden lg:block">FAL</span>{[1,2,3].map(i => (<div key={i} onClick={() => handleDeathSave('failure')} className={`w-3 h-3 rounded-full border border-red-900 cursor-pointer shadow-inner ${i <= deathSaves.failures ? 'bg-red-500' : 'bg-black/50'}`}></div>))}</div>
-                                        </div>
-                                    </div>
-                                )}
-                                <div className="flex justify-between items-center px-2 lg:px-4 py-1 border-b border-gray-200 bg-gray-50">
-                                    <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest">Current</span>
-                                    <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest">Max</span>
-                                </div>
-                                <div className="flex flex-1 items-center justify-center gap-2 lg:gap-4 px-2 lg:px-4 py-2 relative">
-                                    <div className="absolute bottom-0 left-0 h-1 bg-gray-200 w-full">
-                                        <div className="h-full bg-red-600 transition-all duration-500" style={{ width: `${hpPercent}%` }}></div>
-                                    </div>
-                                    <span className="text-2xl lg:text-3xl font-black text-black z-10">{myCharacter.hp}</span>
-                                    <span className="text-lg lg:text-xl text-gray-400 font-bold z-10">/</span>
-                                    <span className="text-xl lg:text-2xl font-black text-gray-600 z-10">{myCharacter.maxHp}</span>
-                                </div>
-                                <div className="bg-red-800 text-white text-center py-1">
-                                    <span className="text-[10px] font-black uppercase tracking-widest">Hit Points</span>
-                                </div>
-                            </div>
-                        </div>
-
                         <div className="flex overflow-x-auto custom-scrollbar border-b-2 border-red-800 bg-gray-50 px-2 shrink-0">
                             {[
                                 { id: 'actions', label: 'ACTIONS' },
@@ -677,242 +759,148 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                             
                             {activeTab === 'actions' && (
                                 <div className="flex flex-col h-full animate-in fade-in duration-300">
-                                    
-                                    <div className="flex gap-4 mb-4 border-b border-gray-200 px-1 shrink-0">
-                                        <button onClick={() => setActionSubTab('attacks')} className={`pb-2 text-[10px] font-black tracking-widest uppercase transition-colors ${actionSubTab === 'attacks' ? 'text-red-700 border-b-2 border-red-700' : 'text-gray-500 hover:text-gray-800'}`}>Ataques</button>
-                                        <button onClick={() => setActionSubTab('spells')} className={`pb-2 text-[10px] font-black tracking-widest uppercase transition-colors ${actionSubTab === 'spells' ? 'text-red-700 border-b-2 border-red-700' : 'text-gray-500 hover:text-gray-800'}`}>Magias</button>
-                                        <button onClick={() => setActionSubTab('macros')} className={`pb-2 text-[10px] font-black tracking-widest uppercase transition-colors ${actionSubTab === 'macros' ? 'text-red-700 border-b-2 border-red-700' : 'text-gray-500 hover:text-gray-800'}`}>Macros</button>
+                                    <div className="flex gap-2.5 mb-4 border-b border-gray-200 px-1 shrink-0 bg-white items-center">
+                                        {[ { id: 'all', label: 'TUDO' }, { id: 'attack', label: 'ATAQUE' }, { id: 'action', label: 'AÇÃO' }, { id: 'bonus action', label: 'AÇÃO BÔNUS' }, { id: 'reaction', label: 'REAÇÃO' }, { id: 'other', label: 'OUTRO' } ].map(f => (
+                                            <button key={f.id} onClick={() => setActionFilter(f.id as any)} className={`pb-2 text-[10px] font-black tracking-widest uppercase transition-colors ${actionFilter === f.id ? 'text-red-700 border-b-2 border-red-700' : 'text-gray-500 hover:text-gray-800'}`}>{f.label}</button>
+                                        ))}
+                                        <button onClick={() => { setActionForm({ name: '', attackMod: 'none', damageExpr: '', damageType: 'Físico', saveAttr: 'none' }); setIsEditingAction(!isEditingAction); }} className="pb-2 text-[10px] font-black tracking-widest uppercase transition-colors text-blue-600 hover:text-blue-800 ml-auto flex items-center gap-1"><Plus size={12}/> Macro</button>
                                     </div>
 
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-3">
-                                        
-                                        {actionSubTab === 'attacks' && (
-                                            <>
-                                                <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 border-b border-gray-200 pb-1 flex items-center gap-2"><Sword size={12}/> Armas Equipadas</h4>
-                                                {equippedWeapons.length === 0 ? (
-                                                    <p className="text-xs text-gray-500 italic text-center py-6 border border-dashed border-gray-300 rounded bg-gray-50">Nenhuma arma equipada no inventário.</p>
-                                                ) : (
-                                                    equippedWeapons.map(weapon => {
-                                                        const isFinesseOrRanged = weapon.stats?.properties?.some(p => p.toLowerCase().includes('finesse') || p.toLowerCase().includes('distância')) || weapon.name.toLowerCase().includes('arco');
-                                                        const modType = isFinesseOrRanged ? 'dex' : 'str';
-                                                        const hitMod = isFinesseOrRanged ? dexMod : strMod;
-                                                        const totalHitMod = hitMod + proficiencyBonus;
-                                                        const translatedWpnType = translateTerm(['cortante', 'perfurante', 'contundente'].find(t => (weapon.stats?.properties?.join(' ').toLowerCase() || '').includes(t)) || 'Físico');
+                                    {/* HEADER PARA MAGIAS E MACROS */}
+                                    {(actionFilter === 'all' || actionFilter === 'action' || actionFilter === 'bonus action' || actionFilter === 'reaction') && knownSpells.length > 0 && (
+                                        <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-4 shadow-sm flex flex-col items-center justify-center shrink-0">
+                                            <div className="flex gap-6 items-center justify-center w-full mb-3 border-b border-blue-200 pb-2">
+                                                <span className="text-xs font-bold text-blue-900">Ataque Mágico: {spellAttackBonus >= 0 ? `+${spellAttackBonus}` : spellAttackBonus}</span>
+                                                <span className="text-xs font-bold text-red-800">CD Magia: {spellDC}</span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2 justify-center">
+                                                {[1,2,3,4,5,6,7,8,9].map(level => {
+                                                    const slots = myCharacter?.spellSlots?.[level];
+                                                    if (!slots || slots.max === 0) return null;
+                                                    return (
+                                                        <div key={level} className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-blue-200">
+                                                            <span className="text-[9px] font-bold uppercase text-gray-500 mr-1">Nv {level}</span>
+                                                            {[...Array(slots.max)].map((_, i) => (
+                                                                <div key={i} onClick={() => handleSpellSlotChange(level, 'toggle_used', i)} className={`w-3 h-3 rounded-full border border-blue-500 cursor-pointer ${i < slots.used ? 'bg-white' : 'bg-blue-500'}`} />
+                                                            ))}
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
 
-                                                        return (
-                                                            <div key={weapon.id} className="bg-white border-2 border-gray-200 rounded-lg p-3 flex flex-col xl:flex-row justify-between xl:items-center transition-colors hover:border-gray-300 shadow-sm gap-3">
-                                                                <div>
-                                                                    <div className="font-bold text-red-800 text-sm flex items-center gap-2"><Sword size={14}/> {weapon.name}</div>
-                                                                    <div className="text-[10px] text-gray-500 uppercase font-bold mt-1">{weapon.stats?.damage || '1d4'} {translatedWpnType} • {isFinesseOrRanged ? 'DES' : 'FOR'}</div>
-                                                                </div>
-                                                                <div className="flex gap-2 items-center">
-                                                                    <button onClick={() => handleOpenActionBuilder(weapon.name, modType, weapon.stats?.damage || '1d4', translatedWpnType, 'none')} className="bg-gray-100 border border-gray-300 hover:bg-blue-50 hover:border-blue-300 text-blue-600 font-black text-[9px] py-1.5 px-2 rounded flex flex-col items-center leading-none transition-colors shadow-sm mr-2" title="Criar Macro desta Arma">
-                                                                        <Target size={10} className="mb-0.5"/>
-                                                                        MACRO
-                                                                    </button>
-
-                                                                    <button onClick={() => onRollAttribute(myCharacter.name, `Ataque: ${weapon.name}`, totalHitMod, weapon.stats?.damage || '1d4', translatedWpnType)} className="bg-white border-2 border-gray-300 hover:border-red-600 text-black font-black text-xs py-1.5 w-14 rounded flex flex-col items-center leading-none transition-colors shadow-sm">
-                                                                        <span>{totalHitMod >= 0 ? `+${totalHitMod}` : totalHitMod}</span>
-                                                                        <span className="text-[7px] text-gray-400 mt-1 uppercase">Hit/DC</span>
-                                                                    </button>
-                                                                    <button onClick={() => onRollAttribute(myCharacter.name, `Dano: ${weapon.name}`, 0, weapon.stats?.damage || '1d4', translatedWpnType)} className="bg-white border-2 border-gray-300 hover:border-red-600 text-black font-black text-xs py-1.5 w-14 rounded flex flex-col items-center leading-none transition-colors shadow-sm">
-                                                                        <span>{weapon.stats?.damage || '1d4'}</span>
-                                                                        <span className="text-[7px] text-gray-400 mt-1 uppercase">Damage</span>
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })
-                                                )}
-                                            </>
-                                        )}
-
-                                        {actionSubTab === 'spells' && (
-                                            <>
-                                                <div className="bg-white border-2 border-blue-200 rounded-xl p-3 mb-4 text-center shadow-sm">
-                                                    <div className="flex justify-center gap-8 text-xs">
-                                                        <div><span className="text-[9px] text-gray-500 uppercase font-bold block mb-1">Ataque Mágico</span><span className="text-blue-700 font-black text-lg">{spellAttackBonus >= 0 ? `+${spellAttackBonus}` : spellAttackBonus}</span></div>
-                                                        <div className="w-px bg-gray-200"></div>
-                                                        <div><span className="text-[9px] text-gray-500 uppercase font-bold block mb-1">CD Magia</span><span className="text-red-700 font-black text-lg">{spellDC}</span></div>
+                                    {isEditingAction && (
+                                        <div className="bg-white border-2 border-red-800 rounded-xl p-5 shadow-sm mb-4 animate-in slide-in-from-top-4">
+                                            <h4 className="text-xs text-red-800 font-bold uppercase tracking-widest border-b border-gray-200 pb-2 mb-4">{actionForm.id ? 'Editar Macro' : 'Criar Novo Macro'}</h4>
+                                            
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Nome do Macro</label>
+                                                    <input type="text" value={actionForm.name} onChange={e => setActionForm({...actionForm, name: e.target.value})} placeholder="Ex: Fúria, Golpe Especial..." className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600" />
+                                                </div>
+                                                <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                                                    <label className="text-[9px] text-blue-700 uppercase font-bold mb-1 flex items-center gap-1"><Sparkles size={10}/> Importar (Opcional)</label>
+                                                    <select onChange={(e) => handleAutoFill(e.target.value)} value="" className="w-full bg-white border border-blue-300 rounded p-1.5 text-blue-900 text-xs outline-none focus:border-blue-600 cursor-pointer">
+                                                        <option value="" disabled>Escolha Arma ou Magia...</option>
+                                                        {equippedWeapons.length > 0 && <optgroup label="🗡️ Armas Equipadas">{equippedWeapons.map(w => <option key={`w-${w.id}`} value={`weapon|${w.id}`}>{w.name}</option>)}</optgroup>}
+                                                        {knownSpells.length > 0 && <optgroup label="✨ Magias Memorizadas">{knownSpells.map(s => <option key={`s-${s.id}`} value={`spell|${s.id}`}>{s.name}</option>)}</optgroup>}
+                                                    </select>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Fórmula de Dano</label>
+                                                        <input type="text" value={actionForm.damageExpr} onChange={e => setActionForm({...actionForm, damageExpr: e.target.value})} placeholder="Ex: 8d6" className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600 font-mono" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Tipo de Dano</label>
+                                                        <select value={actionForm.damageType} onChange={e => setActionForm({...actionForm, damageType: e.target.value})} className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600">
+                                                            <option value="Físico">Físico</option><option value="Cura">Cura</option>
+                                                            {Object.keys(PT_BR_DICT).filter(k => PT_BR_DICT[k] !== k && k.length > 3).map(k => <option key={k} value={PT_BR_DICT[k]}>{PT_BR_DICT[k]}</option>)}
+                                                        </select>
                                                     </div>
                                                 </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Rolar Ataque?</label>
+                                                        <select value={actionForm.attackMod} onChange={e => setActionForm({...actionForm, attackMod: e.target.value})} className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600">
+                                                            <option value="none">Não</option><option value="str">Sim (FOR)</option><option value="dex">Sim (DES)</option><option value="spell">Sim (Magia)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Resistência?</label>
+                                                        <select value={actionForm.saveAttr} onChange={e => setActionForm({...actionForm, saveAttr: e.target.value})} className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600">
+                                                            <option value="none">Não</option><option value="FOR">FOR</option><option value="DES">DES</option><option value="CON">CON</option><option value="INT">INT</option><option value="SAB">SAB</option><option value="CAR">CAR</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2 pt-4 border-t border-gray-200">
+                                                    <button onClick={() => setIsEditingAction(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 border border-gray-300 text-gray-700 text-xs font-bold py-2.5 rounded transition-colors">Cancelar</button>
+                                                    <button onClick={handleSaveCustomAction} disabled={!actionForm.name.trim()} className="flex-1 bg-red-700 hover:bg-red-800 disabled:bg-gray-400 text-white text-xs font-bold py-2.5 rounded transition-colors shadow-sm">Salvar Macro</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
 
-                                                {knownSpells.length === 0 ? (
-                                                    <p className="text-xs text-gray-500 italic text-center py-6 border border-dashed border-gray-300 rounded bg-gray-50">Nenhuma magia memorizada.</p>
-                                                ) : (
-                                                    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(level => {
-                                                        const levelSpells = knownSpells.filter(s => s.level === level);
-                                                        if (levelSpells.length === 0) return null;
-                                                        const slots = myCharacter.spellSlots?.[level] || { max: 0, used: 0 };
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4">
+                                        {allFilteredActions.length === 0 ? (
+                                            <p className="text-xs text-gray-500 italic text-center py-6 border border-dashed border-gray-300 rounded bg-gray-50">Nenhuma ação encontrada para este filtro.</p>
+                                        ) : (
+                                            <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+                                                <div className="grid grid-cols-12 gap-2 p-2 bg-gray-100 border-b border-gray-200 text-[9px] font-black text-gray-500 uppercase tracking-widest items-center">
+                                                    <div className="col-span-5">Ação</div>
+                                                    <div className="col-span-2 text-center">Alcance</div>
+                                                    <div className="col-span-2 text-center">Acerto/CD</div>
+                                                    <div className="col-span-3 text-center">Dano / Efeito</div>
+                                                </div>
+                                                <div className="flex flex-col divide-y divide-gray-100">
+                                                    {allFilteredActions.map((action: any, idx) => {
+                                                        const showHeader = actionFilter === 'all' && (idx === 0 || allFilteredActions[idx-1].typeDetail !== action.typeDetail);
                                                         
                                                         return (
-                                                            <div key={`spell-lvl-${level}`} className="mb-6">
-                                                                <div className="flex items-center justify-between border-b-2 border-gray-200 pb-1 mb-3">
-                                                                    <span className="text-xs font-black text-gray-700 uppercase tracking-widest">{level === 0 ? 'Truques (Cantrips)' : `Círculo ${level}`}</span>
-                                                                    {level > 0 && slots.max > 0 && (
-                                                                        <div className="flex gap-1.5 items-center bg-gray-100 px-2 py-1 rounded">
-                                                                            <span className="text-[9px] text-gray-500 font-bold uppercase mr-1">Slots</span>
-                                                                            {[...Array(Math.max(1, slots.max))].map((_, i) => (
-                                                                                <div key={`bubble-${level}-${i}`} onClick={() => handleSpellSlotChange(level, 'toggle_used', i)} className="cursor-pointer">
-                                                                                    {i < slots.used ? <div className="w-3 h-3 rounded-full bg-white border border-gray-400 shadow-inner"></div> : <div className="w-3 h-3 rounded-full bg-blue-500 shadow-sm border border-blue-700"></div>}
-                                                                                </div>
-                                                                            ))}
+                                                            <React.Fragment key={action.id || action.name}>
+                                                                {showHeader && (
+                                                                    <div className="bg-red-50/50 px-3 py-1.5 border-b border-gray-200 flex items-center gap-2">
+                                                                        {action.type === 'weapon' ? <Sword size={12} className="text-red-800"/> : <CheckCircle size={12} className="text-red-800"/>}
+                                                                        <span className="text-[10px] font-bold text-red-800 uppercase tracking-widest">{action.typeDetail}</span>
+                                                                    </div>
+                                                                )}
+                                                                <div className="grid grid-cols-12 gap-2 p-2 items-center hover:bg-gray-50 transition-colors group">
+                                                                    <div className="col-span-5 flex items-center gap-2 cursor-pointer" onClick={() => openDescription(action.id || action.name, action.name)}>
+                                                                        {action.type === 'spell' && <BookOpen size={14} className="text-blue-600 shrink-0"/>}
+                                                                        {action.icon && action.icon}
+                                                                        <div className="flex flex-col min-w-0">
+                                                                            <span className="text-xs font-bold text-black group-hover:text-red-800 truncate">{action.name}</span>
+                                                                            <span className="text-[8px] uppercase text-gray-500 truncate">{translateTerm(action.category)}</span>
                                                                         </div>
-                                                                    )}
+                                                                    </div>
+                                                                    <div className="col-span-2 text-center text-[10px] text-gray-600 font-mono truncate">
+                                                                        {action.range || '--'}
+                                                                    </div>
+                                                                    <div className="col-span-2 flex justify-center gap-1">
+                                                                        {action.attackMod && action.attackMod !== 'none' && <button onClick={() => executeActionAttack(action)} className="border border-gray-300 hover:border-red-600 bg-white text-black font-black text-[10px] py-1 px-2 rounded flex items-center gap-1 shadow-sm"><Target size={10}/> {action.hitMod >= 0 ? `+${action.hitMod}` : action.hitMod}</button>}
+                                                                        {action.saveAttr && action.saveAttr !== 'none' && <button onClick={() => executeActionSave(action)} className="border border-gray-300 hover:border-amber-600 bg-white text-black font-black text-[10px] py-1 px-2 rounded flex items-center gap-1 shadow-sm"><ShieldAlert size={10}/> {action.saveAttr}</button>}
+                                                                    </div>
+                                                                    <div className="col-span-3 flex justify-center items-center gap-1">
+                                                                        {action.damageExpr ? (
+                                                                            <button onClick={() => executeActionDamage(action)} className="border border-gray-300 hover:border-red-600 bg-white text-black font-black text-[10px] py-1 px-2 rounded flex items-center gap-1 shadow-sm w-full justify-center"><Flame size={10}/> {action.damageExpr}</button>
+                                                                        ) : (
+                                                                            <span className="text-[9px] text-gray-400 italic">Efeito Especial</span>
+                                                                        )}
+                                                                        {action.type === 'spell' && <button onClick={() => onCastSpellRP(action)} className="border border-indigo-300 hover:bg-indigo-600 hover:text-white bg-indigo-50 text-indigo-700 p-1 rounded shadow-sm transition-colors" title="Conjurar no Chat"><Sparkles size={10}/></button>}
+                                                                        {action.type === 'macro' && <button onClick={() => handleDeleteCustomAction(action.id)} className="text-red-400 hover:text-red-700 p-1"><Trash2 size={10}/></button>}
+                                                                    </div>
                                                                 </div>
-
-                                                                <div className="space-y-2">
-                                                                    {levelSpells.map((spell, idx) => {
-                                                                        const isExpanded = expandedSpells[spell.id || spell.name];
-                                                                        const canCast = level === 0 || (slots.max > 0 && slots.used < slots.max);
-                                                                        
-                                                                        return (
-                                                                            <div key={spell.id + idx} className="bg-white border-2 border-gray-200 rounded-lg overflow-hidden transition-all shadow-sm hover:border-gray-300">
-                                                                                <div onClick={() => toggleSpellExpansion(spell.id || spell.name)} className="flex justify-between items-center p-3 cursor-pointer group">
-                                                                                    <div className="flex flex-col pr-2">
-                                                                                        <span className="text-sm font-bold text-red-800 transition-colors flex items-center gap-1.5"><BookOpen size={12} className="shrink-0"/> <span className="truncate">{spell.name}</span></span>
-                                                                                        <span className="text-[10px] text-gray-500 uppercase font-mono mt-1">{spell.parsedDamage ? `${spell.parsedDamage} ${spell.parsedType}` : 'Efeito / Cura'}</span>
-                                                                                    </div>
-                                                                                    <div className="flex items-center gap-3 shrink-0">
-                                                                                        {(spell.isAttack || spell.parsedDamage) && (
-                                                                                            <button 
-                                                                                                onClick={(e) => { 
-                                                                                                    e.stopPropagation(); 
-                                                                                                    if(spell.isAttack) onRollAttribute(myCharacter.name, `Ataque: ${spell.name}`, spellAttackBonus, spell.parsedDamage, spell.parsedType);
-                                                                                                    else onRollAttribute(myCharacter.name, `Magia: ${spell.name}`, 0, spell.parsedDamage, spell.parsedType);
-                                                                                                }}
-                                                                                                disabled={!canCast}
-                                                                                                className="bg-white border-2 border-gray-300 hover:border-blue-600 text-black font-black text-[10px] uppercase tracking-widest py-1.5 px-3 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-sm"
-                                                                                            >
-                                                                                                ROLAR
-                                                                                            </button>
-                                                                                        )}
-                                                                                        <span className="text-gray-400">{isExpanded ? <Minus size={14}/> : <Plus size={14}/>}</span>
-                                                                                    </div>
-                                                                                </div>
-
-                                                                                {isExpanded && (
-                                                                                    <div className="px-4 pb-4 pt-2 border-t border-gray-100 bg-gray-50">
-                                                                                        <div className="flex flex-wrap gap-3 mb-3 text-[10px] text-gray-500 uppercase font-bold">
-                                                                                            <span>⏳ {getSpellMeta(spell).time}</span>
-                                                                                            <span>🎯 {getSpellMeta(spell).range}</span>
-                                                                                            {spell.school && <span className={`px-1.5 py-0.5 rounded border ${getSchoolColor(spell.school)}`}>{spell.school}</span>}
-                                                                                        </div>
-                                                                                        {spell.cleanDescription && <p className="text-[11px] text-gray-700 leading-relaxed font-serif border-l-2 border-gray-300 pl-3 max-h-40 overflow-y-auto custom-scrollbar whitespace-pre-wrap">{spell.cleanDescription}</p>}
-                                                                                        <div className="mt-4 flex justify-end gap-2">
-                                                                                            <button onClick={(e) => { e.stopPropagation(); handleOpenActionBuilder(spell.name, spell.isAttack ? 'spell' : 'none', spell.parsedDamage || '', spell.parsedType, spell.isSave ? 'DES' : 'none'); }} className="flex items-center gap-1.5 text-[10px] uppercase font-bold bg-gray-200 text-gray-700 px-3 py-2 rounded transition-all hover:bg-gray-300 shadow-sm">
-                                                                                                <Target size={12}/> Criar Macro
-                                                                                            </button>
-
-                                                                                            <button onClick={(e) => { e.stopPropagation(); onCastSpellRP(spell); }} disabled={!canCast} className="flex items-center gap-1.5 text-[10px] uppercase font-bold bg-white border-2 border-gray-300 text-black px-4 py-2 rounded transition-all hover:border-indigo-600 hover:text-indigo-700 disabled:opacity-30 shadow-sm">
-                                                                                                <Sparkles size={12}/> Conjurar (Chat)
-                                                                                            </button>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            </div>
+                                                            </React.Fragment>
                                                         );
-                                                    })
-                                                )}
-                                            </>
-                                        )}
-
-                                        {actionSubTab === 'macros' && (
-                                            <>
-                                                {isEditingAction ? (
-                                                    <div className="bg-white border-2 border-red-800 rounded-xl p-5 shadow-sm animate-in zoom-in-95">
-                                                        <h4 className="text-xs text-red-800 font-bold uppercase tracking-widest border-b border-gray-200 pb-2 mb-4">{actionForm.id ? 'Editar Macro' : 'Criar Novo Macro'}</h4>
-                                                        
-                                                        <div className="space-y-4">
-                                                            <div>
-                                                                <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Nome do Macro</label>
-                                                                <input type="text" value={actionForm.name} onChange={e => setActionForm({...actionForm, name: e.target.value})} placeholder="Ex: Fúria, Golpe Especial..." className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600" />
-                                                            </div>
-                                                            <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                                                                <label className="text-[9px] text-blue-700 uppercase font-bold mb-1 flex items-center gap-1"><Sparkles size={10}/> Importar (Opcional)</label>
-                                                                <select onChange={(e) => handleAutoFill(e.target.value)} value="" className="w-full bg-white border border-blue-300 rounded p-1.5 text-blue-900 text-xs outline-none focus:border-blue-600 cursor-pointer">
-                                                                    <option value="" disabled>Escolha Arma ou Magia...</option>
-                                                                    {equippedWeapons.length > 0 && <optgroup label="🗡️ Armas Equipadas">{equippedWeapons.map(w => <option key={`w-${w.id}`} value={`weapon|${w.id}`}>{w.name}</option>)}</optgroup>}
-                                                                    {knownSpells.length > 0 && <optgroup label="✨ Magias Memorizadas">{knownSpells.map(s => <option key={`s-${s.id}`} value={`spell|${s.id}`}>{s.name}</option>)}</optgroup>}
-                                                                </select>
-                                                            </div>
-                                                            <div className="grid grid-cols-2 gap-3">
-                                                                <div>
-                                                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Fórmula de Dano</label>
-                                                                    <input type="text" value={actionForm.damageExpr} onChange={e => setActionForm({...actionForm, damageExpr: e.target.value})} placeholder="Ex: 8d6" className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600 font-mono" />
-                                                                </div>
-                                                                <div>
-                                                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Tipo de Dano</label>
-                                                                    <select value={actionForm.damageType} onChange={e => setActionForm({...actionForm, damageType: e.target.value})} className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600">
-                                                                        <option value="Físico">Físico</option><option value="Cura">Cura</option>
-                                                                        {Object.keys(PT_BR_DICT).filter(k => PT_BR_DICT[k] !== k && k.length > 3).map(k => <option key={k} value={PT_BR_DICT[k]}>{PT_BR_DICT[k]}</option>)}
-                                                                    </select>
-                                                                </div>
-                                                            </div>
-                                                            <div className="grid grid-cols-2 gap-3">
-                                                                <div>
-                                                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Rolar Ataque?</label>
-                                                                    <select value={actionForm.attackMod} onChange={e => setActionForm({...actionForm, attackMod: e.target.value})} className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600">
-                                                                        <option value="none">Não</option><option value="str">Sim (FOR)</option><option value="dex">Sim (DES)</option><option value="spell">Sim (Magia)</option>
-                                                                    </select>
-                                                                </div>
-                                                                <div>
-                                                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Resistência?</label>
-                                                                    <select value={actionForm.saveAttr} onChange={e => setActionForm({...actionForm, saveAttr: e.target.value})} className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600">
-                                                                        <option value="none">Não</option><option value="FOR">FOR</option><option value="DES">DES</option><option value="CON">CON</option><option value="INT">INT</option><option value="SAB">SAB</option><option value="CAR">CAR</option>
-                                                                    </select>
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex gap-2 pt-4 border-t border-gray-200">
-                                                                <button onClick={() => setIsEditingAction(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 border border-gray-300 text-gray-700 text-xs font-bold py-2.5 rounded transition-colors">Cancelar</button>
-                                                                <button onClick={handleSaveCustomAction} disabled={!actionForm.name.trim()} className="flex-1 bg-red-700 hover:bg-red-800 disabled:bg-gray-400 text-white text-xs font-bold py-2.5 rounded transition-colors shadow-sm">Salvar Macro</button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <>
-                                                        <button onClick={() => { setActionForm({ name: '', attackMod: 'none', damageExpr: '', damageType: 'Físico', saveAttr: 'none' }); setIsEditingAction(true); }} className="w-full bg-gray-50 border-2 border-dashed border-gray-300 hover:border-red-500 hover:text-red-700 hover:bg-white text-gray-500 text-[10px] uppercase font-bold py-4 rounded-xl flex justify-center items-center gap-2 transition-colors mb-6">
-                                                            <Plus size={16} /> Adicionar Novo Macro
-                                                        </button>
-                                                        
-                                                        {customActions.length === 0 ? (
-                                                            <p className="text-xs text-gray-500 italic text-center py-6 border border-dashed border-gray-300 rounded bg-gray-50">Nenhum macro criado.</p>
-                                                        ) : (
-                                                            customActions.map((action: any) => (
-                                                                <div key={action.id} className="bg-white border-2 border-gray-200 hover:border-red-800 rounded-lg overflow-hidden transition-colors group mb-3 shadow-sm">
-                                                                    <div className="bg-gray-50 p-3 flex justify-between items-center border-b border-gray-200">
-                                                                        <div className="flex flex-col">
-                                                                            <span className="text-sm font-bold text-red-800">{action.name}</span>
-                                                                            <span className="text-[9px] text-gray-500 uppercase tracking-widest font-mono mt-0.5">
-                                                                                {action.damageExpr ? `${action.damageExpr} ${action.damageType}` : 'Ação de Combate'}
-                                                                            </span>
-                                                                        </div>
-                                                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                            <button onClick={() => { setActionForm(action); setIsEditingAction(true); }} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded" title="Editar"><Edit size={14}/></button>
-                                                                            <button onClick={() => handleDeleteCustomAction(action.id)} className="p-1.5 text-red-600 hover:bg-red-100 rounded" title="Apagar"><Trash2 size={14}/></button>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="p-3 flex flex-wrap gap-2 bg-white">
-                                                                        {action.attackMod !== 'none' && <button onClick={() => executeActionAttack(action)} className="flex-1 text-[10px] uppercase font-bold bg-white border-2 border-gray-300 hover:border-red-600 text-black py-2 rounded shadow-sm flex items-center justify-center gap-1.5"><Target size={12}/> ATK</button>}
-                                                                        {action.saveAttr !== 'none' && <button onClick={() => executeActionSave(action)} className="flex-1 text-[10px] uppercase font-bold bg-white border-2 border-gray-300 hover:border-red-600 text-black py-2 rounded shadow-sm flex items-center justify-center gap-1.5"><ShieldAlert size={12}/> RES: {action.saveAttr}</button>}
-                                                                        {action.damageExpr && <button onClick={() => executeActionDamage(action)} className="flex-1 text-[10px] uppercase font-bold bg-white border-2 border-gray-300 hover:border-red-600 text-black py-2 rounded shadow-sm flex items-center justify-center gap-1.5"><Flame size={12}/> DANO</button>}
-                                                                    </div>
-                                                                </div>
-                                                            ))
-                                                        )}
-                                                    </>
-                                                )}
-                                            </>
+                                                    })}
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
                                 </div>
                             )}
 
-                            {/* 👉 ABA INVENTORY */}
                             {activeTab === 'inventory' && (
                                 <div className="space-y-6 animate-in fade-in duration-300">
                                     <div className="bg-white border-2 border-gray-200 rounded-xl p-4 shadow-sm">
@@ -942,7 +930,6 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                 </div>
                             )}
 
-                            {/* 👉 ABA FEATURES E TRAITS */}
                             {activeTab === 'features' && (
                                 <div className="space-y-6 animate-in fade-in duration-300">
                                     <div className="mb-6">
@@ -979,7 +966,6 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                 </div>
                             )}
 
-                            {/* 👉 ABA BACKGROUND E ROLEPLAY */}
                             {activeTab === 'background' && (
                                 <div className="animate-in fade-in duration-300 space-y-6">
                                     {charDetails ? (
@@ -987,36 +973,36 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                             <div className="bg-white border-2 border-gray-200 rounded-xl p-5 shadow-sm">
                                                 <h3 className="text-xs text-red-800 font-black uppercase tracking-widest border-b border-gray-200 pb-2 mb-4">Characteristics</h3>
                                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                    <div><span className="text-[9px] text-gray-500 uppercase font-bold tracking-widest block mb-1">Background</span><span className="text-sm font-black text-gray-900">{charDetails.background || 'Unknown'}</span></div>
-                                                    <div><span className="text-[9px] text-gray-500 uppercase font-bold tracking-widest block mb-1">Alignment</span><span className="text-sm font-black text-gray-900">{charDetails.alignment || 'Neutral'}</span></div>
-                                                    <div><span className="text-[9px] text-gray-500 uppercase font-bold tracking-widest block mb-1">Faith</span><span className="text-sm font-black text-gray-900">{charDetails.faith || 'None'}</span></div>
-                                                    <div><span className="text-[9px] text-gray-500 uppercase font-bold tracking-widest block mb-1">Lifestyle</span><span className="text-sm font-black text-gray-900">{charDetails.lifestyle || 'Modest'}</span></div>
+                                                    <div><span className="text-[9px] text-gray-500 uppercase font-bold tracking-widest block mb-1">Background</span><span className="text-sm font-black text-gray-900">{(charDetails as any).background || 'Unknown'}</span></div>
+                                                    <div><span className="text-[9px] text-gray-500 uppercase font-bold tracking-widest block mb-1">Alignment</span><span className="text-sm font-black text-gray-900">{(charDetails as any).alignment || 'Neutral'}</span></div>
+                                                    <div><span className="text-[9px] text-gray-500 uppercase font-bold tracking-widest block mb-1">Faith</span><span className="text-sm font-black text-gray-900">{(charDetails as any).faith || 'None'}</span></div>
+                                                    <div><span className="text-[9px] text-gray-500 uppercase font-bold tracking-widest block mb-1">Lifestyle</span><span className="text-sm font-black text-gray-900">{(charDetails as any).lifestyle || 'Modest'}</span></div>
                                                 </div>
                                             </div>
 
                                             <div className="bg-white border-2 border-gray-200 rounded-xl p-5 shadow-sm space-y-4">
                                                 <h4 className="text-xs text-red-800 uppercase tracking-widest font-black border-b border-gray-200 pb-2 mb-2">Personality</h4>
-                                                <IdentityCard title="Personality Traits" content={charDetails.personalityTraits} />
-                                                <IdentityCard title="Ideals" content={charDetails.ideals} />
-                                                <IdentityCard title="Bonds" content={charDetails.bonds} />
-                                                <IdentityCard title="Flaws" content={charDetails.flaws} />
+                                                <IdentityCard title="Personality Traits" content={(charDetails as any).personalityTraits} />
+                                                <IdentityCard title="Ideals" content={(charDetails as any).ideals} />
+                                                <IdentityCard title="Bonds" content={(charDetails as any).bonds} />
+                                                <IdentityCard title="Flaws" content={(charDetails as any).flaws} />
                                                 
-                                                {(!charDetails.personalityTraits && !charDetails.ideals && !charDetails.bonds && !charDetails.flaws) && (
+                                                {(!(charDetails as any).personalityTraits && !(charDetails as any).ideals && !(charDetails as any).bonds && !(charDetails as any).flaws) && (
                                                     <p className="text-xs text-gray-500 text-center italic border border-dashed border-gray-300 rounded p-4 bg-gray-50">No personality details found.</p>
                                                 )}
                                             </div>
 
-                                            {charDetails.physical && Object.keys(charDetails.physical).some(k => charDetails.physical[k]) && (
+                                            {(charDetails as any).physical && Object.keys((charDetails as any).physical).some(k => (charDetails as any).physical[k]) && (
                                                 <div className="bg-white border-2 border-gray-200 rounded-xl p-5 shadow-sm">
                                                     <h4 className="text-xs text-red-800 uppercase tracking-widest font-black border-b border-gray-200 pb-2 mb-4">Appearance</h4>
                                                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                                                        {charDetails.physical.age && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Age</span><span className="text-sm text-gray-900 font-serif">{charDetails.physical.age}</span></div>}
-                                                        {charDetails.physical.gender && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Gender</span><span className="text-sm text-gray-900 font-serif">{charDetails.physical.gender}</span></div>}
-                                                        {charDetails.physical.height && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Height</span><span className="text-sm text-gray-900 font-serif">{charDetails.physical.height}</span></div>}
-                                                        {charDetails.physical.weight && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Weight</span><span className="text-sm text-gray-900 font-serif">{charDetails.physical.weight}</span></div>}
-                                                        {charDetails.physical.eyes && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Eyes</span><span className="text-sm text-gray-900 font-serif">{charDetails.physical.eyes}</span></div>}
-                                                        {charDetails.physical.skin && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Skin</span><span className="text-sm text-gray-900 font-serif">{charDetails.physical.skin}</span></div>}
-                                                        {charDetails.physical.hair && <div className="col-span-2 md:col-span-3"><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Hair</span><span className="text-sm text-gray-900 font-serif">{charDetails.physical.hair}</span></div>}
+                                                        {(charDetails as any).physical.age && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Age</span><span className="text-sm text-gray-900 font-serif">{(charDetails as any).physical.age}</span></div>}
+                                                        {(charDetails as any).physical.gender && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Gender</span><span className="text-sm text-gray-900 font-serif">{(charDetails as any).physical.gender}</span></div>}
+                                                        {(charDetails as any).physical.height && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Height</span><span className="text-sm text-gray-900 font-serif">{(charDetails as any).physical.height}</span></div>}
+                                                        {(charDetails as any).physical.weight && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Weight</span><span className="text-sm text-gray-900 font-serif">{(charDetails as any).physical.weight}</span></div>}
+                                                        {(charDetails as any).physical.eyes && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Eyes</span><span className="text-sm text-gray-900 font-serif">{(charDetails as any).physical.eyes}</span></div>}
+                                                        {(charDetails as any).physical.skin && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Skin</span><span className="text-sm text-gray-900 font-serif">{(charDetails as any).physical.skin}</span></div>}
+                                                        {(charDetails as any).physical.hair && <div className="col-span-2 md:col-span-3"><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Hair</span><span className="text-sm text-gray-900 font-serif">{(charDetails as any).physical.hair}</span></div>}
                                                     </div>
                                                 </div>
                                             )}

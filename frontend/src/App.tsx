@@ -39,6 +39,27 @@ export interface Entity {
   immunities?: string[];
   dmNotes?: string;
   customActions?: any[]; 
+  details?: {
+    background?: string;
+    alignment?: string;
+    faith?: string;
+    lifestyle?: string;
+    personalityTraits?: string;
+    ideals?: string;
+    bonds?: string;
+    flaws?: string;
+    backgroundDesc?: string;
+    physical?: {
+      age?: string;
+      gender?: string;
+      height?: string;
+      weight?: string;
+      eyes?: string;
+      skin?: string;
+      hair?: string;
+    };
+    [key: string]: any;
+  };
 }
 
 export interface MonsterPreset {
@@ -390,7 +411,7 @@ function App() {
           deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, inspiration: customStats?.inspiration || false, 
           spellSlots: customStats?.spellSlots || {}, spells: customStats?.spells || [], coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
           resistances: customStats?.resistances || [], vulnerabilities: customStats?.vulnerabilities || [], immunities: customStats?.immunities || [],
-          dmNotes: customStats?.dmNotes || ''
+          dmNotes: customStats?.dmNotes || '', details: customStats?.details || {}
       }; 
       setEntities(prev => [...prev, newEntity]); 
       socket.emit('createEntity', { entity: newEntity, roomId }); 
@@ -1116,7 +1137,7 @@ function App() {
                   const existing = prev.find(e => e.name.toLowerCase() === name.toLowerCase() && e.type === 'player');
                   
                   if (!existing) { 
-                      const newEntity: Entity = { id: charData.id || Date.now(), name, hp: charData.hp, maxHp: charData.maxHp, ac: charData.ac, x: 8, y: 6, rotation: charData.rotation || 0, mirrored: charData.mirrored || false, conditions: charData.conditions || [], color: '#3b82f6', type: 'player', image: charData.image, tokenImage: charData.tokenImage || charData.image, stats: charData.stats, classType: charData.classType, visionRadius: charData.visionRadius || 9, size: charData.size || 2, xp: charData.xp || 0, level: charData.level || 1, inventory: charData.inventory || [], race: charData.race || 'Humano', visible: charData.visible !== false, proficiencies: charData.proficiencies || {}, deathSaves: charData.deathSaves || { successes: 0, failures: 0 }, inspiration: charData.inspiration || false, spellSlots: charData.spellSlots || {}, spells: charData.spells || [], coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }; 
+                      const newEntity: Entity = { id: charData.id || Date.now(), name, hp: charData.hp, maxHp: charData.maxHp, ac: charData.ac, x: 8, y: 6, rotation: charData.rotation || 0, mirrored: charData.mirrored || false, conditions: charData.conditions || [], color: '#3b82f6', type: 'player', image: charData.image, tokenImage: charData.tokenImage || charData.image, stats: charData.stats, classType: charData.classType, visionRadius: charData.visionRadius || 9, size: charData.size || 2, xp: charData.xp || 0, level: charData.level || 1, inventory: charData.inventory || [], race: charData.race || 'Humano', visible: charData.visible !== false, proficiencies: charData.proficiencies || {}, deathSaves: charData.deathSaves || { successes: 0, failures: 0 }, inspiration: charData.inspiration || false, spellSlots: charData.spellSlots || {}, spells: charData.spells || [], coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 }, details: charData.details || {} }; 
                       socket.emit('createEntity', { entity: newEntity, roomId: sessionRoomId }); 
                       return [...prev, newEntity]; 
                   } else {
