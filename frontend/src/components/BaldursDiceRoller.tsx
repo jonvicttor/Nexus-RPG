@@ -23,7 +23,6 @@ const faceRotations: Record<number, [number, number, number]> = {
   2:  [2.00, 0.98, 0.25], 1:  [4.49, -6.27, -6.34], 
 };
 
-// --- DADO D20 CINEMÁTICO ORIGINAL ---
 const SpinningDiceCinematic = ({ isRolling, finalResult, showImpactVFX }: { isRolling: boolean, finalResult: number | null, showImpactVFX: boolean }) => {
   const diceRef = useRef<THREE.Group>(null);
   const startTime = useRef<number | null>(null);
@@ -81,16 +80,7 @@ const SpinningDiceCinematic = ({ isRolling, finalResult, showImpactVFX }: { isRo
             <DiceModel /> 
         </group>
         {showImpactVFX && (
-            <Sparkles 
-                count={100}
-                scale={4}
-                size={4}
-                speed={2}
-                noise={0.2}
-                color={finalResult === 20 ? "#22c55e" : finalResult === 1 ? "#ef4444" : "#fbbf24"}
-                opacity={1}
-                position={[0, 0.8, 0]}
-            />
+            <Sparkles count={100} scale={4} size={4} speed={2} noise={0.2} color={finalResult === 20 ? "#22c55e" : finalResult === 1 ? "#ef4444" : "#fbbf24"} opacity={1} position={[0, 0.8, 0]} />
         )}
     </group>
   );
@@ -101,8 +91,8 @@ const SpinningGenericDie = ({ sides, isRolling, finalResult, index, totalCount }
   const meshGroupRef = useRef<THREE.Group>(null);
   const startTime = useRef<number | null>(null);
 
-  // Espaçamento horizontal
-  const spacing = 2.2;
+  // Espaçamento dinâmico (mais dados = mais juntos)
+  const spacing = totalCount > 4 ? 1.5 : 2.2;
   const startX = (index - (totalCount - 1) / 2) * spacing;
 
   let restHeight = 0.5; 
@@ -131,7 +121,6 @@ const SpinningGenericDie = ({ sides, isRolling, finalResult, index, totalCount }
             meshGroupRef.current.rotation.x += (20 + index * 2) * delta;
             meshGroupRef.current.rotation.y += (25 + index * 2) * delta;
             meshGroupRef.current.rotation.z += 10 * delta;
-            // 👉 Pulo suave para não cortar o dado na câmera
             meshGroupRef.current.position.y = Math.abs(Math.sin(elapsed * 8 + index)) * 0.7 + restHeight;
         } else {
             meshGroupRef.current.position.y = THREE.MathUtils.lerp(meshGroupRef.current.position.y, restHeight, delta * 10);
@@ -147,7 +136,6 @@ const SpinningGenericDie = ({ sides, isRolling, finalResult, index, totalCount }
         case 8: return <octahedronGeometry args={[1.2]} />;
         case 10: return <icosahedronGeometry args={[1.2, 0]} />;
         case 12: return <dodecahedronGeometry args={[1.2]} />;
-        // 👉 O D100 e D64 agora usam a geometria facetada perfeita
         case 100: return <icosahedronGeometry args={[1.2, 1]} />; 
         default: return <icosahedronGeometry args={[1.2, 1]} />; 
     }
@@ -165,8 +153,6 @@ const SpinningGenericDie = ({ sides, isRolling, finalResult, index, totalCount }
                 <meshBasicMaterial color="#ef4444" wireframe={true} transparent opacity={0.4} />
             </mesh>
         </group>
-        
-        {/* 👉 TEXTO ISOLADO NO SUSPENSE: A fonte carrega sem fazer o dado sumir! */}
         <Suspense fallback={null}>
             <Text
                 position={[0, restHeight, 1.6]} 
@@ -208,7 +194,7 @@ interface BaldursDiceRollerProps {
 
 const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({ 
   isOpen, onClose, title, subtitle, difficultyClass, baseModifier, proficiency, 
-  isDamage = false, damageExpression = '1d20',
+  isDamage = false, damageExpression = '',
   onComplete 
 }) => {
   const [isRolling, setIsRolling] = useState(false);
@@ -216,16 +202,24 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
   const [showTotal, setShowTotal] = useState(false);
   const [isSecret, setIsSecret] = useState(false);
 
+  // 👉 A INTELIGÊNCIA ARCANA: Força o modo de dano se a palavra "Dano" ou "Cura" estiver no título!
+  const localIsDamage = isDamage || title.toLowerCase().includes('dano') || title.toLowerCase().includes('cura');
   const isTargetDCHidden = subtitle.toLowerCase().includes('exigido pelo mestre') || subtitle.toLowerCase().includes('ataque');
 
-  const match = damageExpression.match(/^(\d+)d(\d+)(?:\+(\d+)|-(\d+))?/i);
-  const diceCount = isDamage && match ? Math.min(parseInt(match[1]), 5) : 1; 
-  const diceSides = isDamage && match ? parseInt(match[2]) : 20;
+  // 👉 O PARSER MÁGICO TOLERANTE (Aceita "3d6", "1d10 + 3", etc)
+  const exprToParse = (damageExpression && damageExpression.trim() !== '') ? damageExpression : '1d20';
+  const match = exprToParse.match(/(\d+)?d(\d+)/i);
   
-  let dmgMod = isDamage ? 0 : baseModifier + proficiency;
-  if (isDamage && match) {
-      if (match[3]) dmgMod = parseInt(match[3]);
-      if (match[4]) dmgMod = -parseInt(match[4]);
+  const diceCount = localIsDamage && match ? Math.min(parseInt(match[1] || '1'), 15) : 1; 
+  const diceSides = localIsDamage && match ? parseInt(match[2]) : 20;
+  
+  // Extrai bônus fixos da fórmula (ex: "+ 3" ou "- 1")
+  let dmgMod = localIsDamage ? 0 : baseModifier + proficiency;
+  if (localIsDamage) {
+      const bonusMatch = exprToParse.match(/([+-])\s*(\d+)/);
+      if (bonusMatch) {
+          dmgMod = parseInt(bonusMatch[2]) * (bonusMatch[1] === '-' ? -1 : 1);
+      }
   }
 
   useEffect(() => {
@@ -262,7 +256,7 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
     setTimeout(() => {
         impactSound.play(); 
         
-        if (!isDamage) {
+        if (!localIsDamage) {
             const total = newRolls[0] + dmgMod;
             const isCrit = newRolls[0] === 20;
             const isSuccess = total >= difficultyClass;
@@ -282,9 +276,9 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
   const sumRolls = results.reduce((a, b) => a + b, 0);
   const totalFinal = sumRolls + dmgMod;
   
-  const isSuccessFinal = isDamage ? true : totalFinal >= difficultyClass;
-  const isCritFinal = !isDamage && results[0] === 20;
-  const isCritFail = !isDamage && results[0] === 1;
+  const isSuccessFinal = localIsDamage ? true : totalFinal >= difficultyClass;
+  const isCritFinal = !localIsDamage && results[0] === 20;
+  const isCritFail = !localIsDamage && results[0] === 1;
 
   return (
     <div className="fixed inset-0 z-[999] flex items-center justify-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0e] to-black animate-in fade-in duration-500">
@@ -312,13 +306,13 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
           
           <div className="mt-2 bg-black/40 px-4 py-1 rounded-full border border-white/5 backdrop-blur-sm">
              <p className="text-gray-400/80 text-[10px] md:text-xs font-mono font-bold tracking-widest uppercase truncate max-w-[300px]">
-               {isDamage ? `⚔️ ${damageExpression}` : subtitle.replace('Alvo(s):', '🎯 ALVO:')}
+               {localIsDamage ? `⚔️ ${exprToParse}` : subtitle.replace('Alvo(s):', '🎯 ALVO:')}
              </p>
           </div>
         </div>
 
-        {/* --- DIFICULDADE (CD) --- */}
-        {!isDamage && (
+        {/* --- DIFICULDADE (CD) - ESCONDIDO SE FOR DANO --- */}
+        {!localIsDamage && (
             <div className="absolute top-24 right-10 z-20 flex flex-col items-center group bg-black/40 p-2 rounded-2xl border border-white/5 backdrop-blur-md">
                 <span className="text-red-400/80 text-[10px] font-black uppercase tracking-[0.2em] mb-1">CD</span>
                 <div className="relative flex items-center justify-center w-14 h-14">
@@ -335,25 +329,27 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
 
         {/* PALCO 3D */}
         <div className="w-full h-[550px] relative cursor-pointer group mt-10" onClick={!isRolling && !showTotal ? handleRoll : undefined}>
-            <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none transition-all duration-1000 ${isRolling ? (isDamage ? 'bg-red-600/30' : 'bg-yellow-500/30') : 'bg-blue-500/10'} scale-110 group-hover:bg-yellow-500/20`}></div>
+            <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none transition-all duration-1000 ${isRolling ? (localIsDamage ? 'bg-red-600/30' : 'bg-yellow-500/30') : 'bg-blue-500/10'} scale-110 group-hover:bg-yellow-500/20`}></div>
 
-            {/* 👉 CORREÇÃO: Câmera mais alta e FOV aberto para caber os dados grandes e os pulos duplos */}
             <Canvas camera={{ position: [0, 2.5, 10], fov: 45 }}> 
                 <ambientLight intensity={0.4} />
                 <spotLight position={[5, 8, 5]} angle={0.3} penumbra={1} intensity={2} castShadow color="#fffaed" />
-                <spotLight position={[-5, -2, 0]} angle={0.5} penumbra={1} intensity={isDamage ? 2.5 : 1.5} color={isDamage ? "#ef4444" : "#eab308"} />
+                <spotLight position={[-5, -2, 0]} angle={0.5} penumbra={1} intensity={localIsDamage ? 2.5 : 1.5} color={localIsDamage ? "#ef4444" : "#eab308"} />
                 <pointLight position={[0, 2, 3]} intensity={1} color="#ffffff" />
                 <Environment preset="city" />
                 <Stars radius={100} depth={50} count={3000} factor={4} saturation={0} fade speed={1.5} />
-                <Sparkles count={80} scale={8} size={2} speed={isRolling ? 2 : 0.4} opacity={0.6} color={isRolling ? (isDamage ? "#ef4444" : "#fbbf24") : "#ffffff"} />
+                <Sparkles count={80} scale={8} size={2} speed={isRolling ? 2 : 0.4} opacity={0.6} color={isRolling ? (localIsDamage ? "#ef4444" : "#fbbf24") : "#ffffff"} />
 
                 <Suspense fallback={null}>
-                    {!isDamage || diceSides === 20 ? (
-                        <SpinningDiceCinematic isRolling={isRolling} finalResult={results.length > 0 ? results[0] : null} showImpactVFX={showTotal && !isDamage} />
+                    {/* 👉 MAGIA AQUI: Se não for dano, Rola D20. Se for dano, invoca a legião de dados! */}
+                    {!localIsDamage ? (
+                        <SpinningDiceCinematic isRolling={isRolling} finalResult={results.length > 0 ? results[0] : null} showImpactVFX={showTotal} />
                     ) : (
-                        Array.from({ length: diceCount }).map((_, idx) => (
-                            <SpinningGenericDie key={idx} sides={diceSides} isRolling={isRolling} finalResult={results.length > 0 ? results[idx] : null} index={idx} totalCount={diceCount} />
-                        ))
+                        <group scale={diceCount > 5 ? 0.7 : 1}>
+                            {Array.from({ length: diceCount }).map((_, idx) => (
+                                <SpinningGenericDie key={idx} sides={diceSides} isRolling={isRolling} finalResult={results.length > 0 ? results[idx] : null} index={idx} totalCount={diceCount} />
+                            ))}
+                        </group>
                     )}
                     <ContactShadows position={[0, 0, 0]} opacity={0.7} scale={15} blur={3} far={4} color="#0a0a0a" />
                 </Suspense>
@@ -365,7 +361,7 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
                 <div className="absolute top-[80%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center z-10 pointer-events-none w-full">
                   <p className="text-amber-100/60 text-[10px] md:text-xs uppercase tracking-[0.5em] font-serif mb-2 animate-pulse">Clique para</p>
                   <h2 className="text-3xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-amber-300 to-amber-600 drop-shadow-[0_0_15px_rgba(245,158,11,0.8)] uppercase tracking-[0.15em] transition-all duration-300" style={{ fontFamily: '"Cinzel Decorative", serif' }}>
-                      {isDamage ? 'ROLAR OS DADOS' : 'Lançar os Dados'}
+                      {localIsDamage ? 'ROLAR O DANO' : 'Lançar os Dados'}
                   </h2>
                 </div>
             )}
@@ -374,27 +370,27 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
         {/* --- PAINEL DE RESULTADO (HUD) --- */}
         {showTotal && (
              <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-30 w-full max-w-md flex justify-center animate-in slide-in-from-bottom-10 fade-in duration-700">
-                 <div className={`relative w-full bg-gradient-to-b from-black/90 via-[#0F0F13]/95 to-black px-8 py-6 flex flex-col items-center gap-2 border-t-2 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl rounded-3xl ${isDamage ? 'border-red-500/50' : 'border-yellow-500/50'}`}>
+                 <div className={`relative w-full bg-gradient-to-b from-black/90 via-[#0F0F13]/95 to-black px-8 py-6 flex flex-col items-center gap-2 border-t-2 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] backdrop-blur-xl rounded-3xl ${localIsDamage ? 'border-red-500/50' : 'border-yellow-500/50'}`}>
                     
-                    <div className={`absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 z-50 ${isDamage ? 'bg-red-500 shadow-[0_0_15px_#ef4444]' : 'bg-yellow-400 shadow-[0_0_15px_#facc15]'}`}></div>
+                    <div className={`absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 z-50 ${localIsDamage ? 'bg-red-500 shadow-[0_0_15px_#ef4444]' : 'bg-yellow-400 shadow-[0_0_15px_#facc15]'}`}></div>
                     
-                    <span className={`${isDamage ? 'text-red-500/80' : 'text-yellow-500/50'} text-[9px] uppercase tracking-[0.4em] font-bold block mb-1`}>
-                        {isDamage ? 'RESULTADO' : 'TOTAL OBTIDO'}
+                    <span className={`${localIsDamage ? 'text-red-500/80' : 'text-yellow-500/50'} text-[9px] uppercase tracking-[0.4em] font-bold block mb-1`}>
+                        {localIsDamage ? 'DANO TOTAL' : 'TOTAL OBTIDO'}
                     </span>
 
                     {/* NÚMERO GIGANTE */}
                     <div className="flex items-center justify-center mb-2 relative">
-                        <span className={`text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] ${isDamage ? 'from-white via-red-300 to-red-700' : 'from-white via-yellow-100 to-yellow-600'}`} style={{ fontFamily: '"Cinzel Decorative", serif' }}>
+                        <span className={`text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] ${localIsDamage ? 'from-white via-red-300 to-red-700' : 'from-white via-yellow-100 to-yellow-600'}`} style={{ fontFamily: '"Cinzel Decorative", serif' }}>
                             {totalFinal}
                         </span>
-                        <div className={`absolute inset-0 blur-[20px] rounded-full -z-10 ${isDamage ? 'bg-red-500/20' : 'bg-yellow-500/10'}`}></div>
+                        <div className={`absolute inset-0 blur-[20px] rounded-full -z-10 ${localIsDamage ? 'bg-red-500/20' : 'bg-yellow-500/10'}`}></div>
                     </div>
 
                     {/* --- BREAKDOWN DOS DADOS --- */}
                     <div className="flex items-center justify-center gap-2 w-full bg-black/40 rounded-xl p-3 border border-white/5 flex-wrap">
                         {results.map((r, i) => (
                             <div key={i} className="flex flex-col items-center">
-                                <div className={`w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-lg shadow-lg mb-1 font-black ${isDamage ? 'text-red-400' : (isCritFinal ? 'text-green-400' : isCritFail ? 'text-red-500' : 'text-white')}`}>
+                                <div className={`w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-lg shadow-lg mb-1 font-black ${localIsDamage ? 'text-red-400' : (isCritFinal ? 'text-green-400' : isCritFail ? 'text-red-500' : 'text-white')}`}>
                                     {r}
                                 </div>
                                 <span className="text-[8px] text-gray-500 uppercase tracking-widest">D{diceSides}</span>
@@ -403,10 +399,10 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
                         
                         {dmgMod !== 0 && (
                             <>
-                                <span className="text-gray-600 text-xl font-thin mx-2">+</span>
+                                <span className="text-gray-600 text-xl font-thin mx-2">{dmgMod > 0 ? '+' : '-'}</span>
                                 <div className="flex flex-col items-center">
                                     <div className="w-10 h-10 rounded-xl bg-blue-900/20 border border-blue-500/20 flex items-center justify-center text-lg font-bold shadow-lg text-blue-400 mb-1">
-                                        {dmgMod}
+                                        {Math.abs(dmgMod)}
                                     </div>
                                     <span className="text-[8px] text-gray-500 uppercase tracking-widest">Bônus</span>
                                 </div>
@@ -423,14 +419,14 @@ const BaldursDiceRoller: React.FC<BaldursDiceRollerProps> = ({
                       <button 
                         onClick={() => onComplete(totalFinal, isSuccessFinal, isCritFinal, isSecret, results, dmgMod)} 
                         className={`flex-1 py-3 text-white font-black text-sm uppercase tracking-[0.2em] rounded-lg shadow-lg active:scale-95 transition-all ${
-                          isDamage ? 'bg-gradient-to-r from-red-700 to-red-900 border-2 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.4)]' :
+                          localIsDamage ? 'bg-gradient-to-r from-red-700 to-red-900 border-2 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.4)]' :
                           isCritFinal ? 'bg-gradient-to-r from-green-600 to-emerald-800 border-2 border-green-400 shadow-[0_0_20px_rgba(34,197,94,0.4)]' :
                           isCritFail ? 'bg-gradient-to-r from-red-700 to-red-900 border-2 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.4)]' :
                           isSuccessFinal ? 'bg-gradient-to-r from-green-700 to-green-900 border-2 border-green-500/50' : 
                           'bg-gradient-to-r from-gray-700 to-gray-900 border-2 border-gray-500/50'
                         }`}
                       >
-                        {isDamage ? 'CONFIRMAR' : (isCritFinal ? 'ACERTO CRÍTICO!' : isCritFail ? 'FALHA CRÍTICA!' : isSuccessFinal ? 'ACERTO!' : 'FALHOU!')} ❯
+                        {localIsDamage ? 'CONFIRMAR DANO' : (isCritFinal ? 'ACERTO CRÍTICO!' : isCritFail ? 'FALHA CRÍTICA!' : isSuccessFinal ? 'ACERTO!' : 'FALHOU!')} ❯
                       </button>
                     </div>
 

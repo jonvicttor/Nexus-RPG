@@ -48,6 +48,9 @@ interface GameMapProps {
   onContextMenu?: (e: React.MouseEvent, entity: Entity) => void;
   pings?: MapPing[];
   onPing?: (x: number, y: number) => void;
+  
+  // 👉 O CADEADO CHEGOU NO MAPA!
+  myCharacterId?: number;
 }
 
 const GameMap: React.FC<GameMapProps> = (props) => {
@@ -59,7 +62,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         onSetTarget, onSetAttacker, onFlipToken, activeAoE, onAoEComplete,
         aoeColor, onSelectEntity, externalOffset, externalScale, onMapChange,
         focusEntity, globalBrightness, onDropItem, onGiveItemToToken,
-        onContextMenu, pings = [], onPing 
+        onContextMenu, pings = [], onPing, myCharacterId // 👉 PEGAMOS ELE AQUI
     } = props;
 
     const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -80,7 +83,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
 
     const isPanning = useRef(false);
     const panStartPos = useRef({ x: 0, y: 0 });
-    const offsetOnPanStart = useRef({ x: 0, y: 0 });
     
     const isMapMouseDown = useRef(false);
     const mapMouseDownPos = useRef({ x: 0, y: 0 });
@@ -161,10 +163,12 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             if (key === 'm' && !isMeasuringMode.current) { 
                 isMeasuringMode.current = 'free'; 
                 setIsRulerKeyHeld(true);
+                isPanning.current = false;
             }
             if (key === 'n' && !isMeasuringMode.current) { 
                 isMeasuringMode.current = 'movement'; 
                 setIsRulerKeyHeld(true);
+                isPanning.current = false; 
             }
             
             if (e.key === 'Escape') {
@@ -301,11 +305,13 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     const handleMouseDown = (e: React.MouseEvent) => {
         const isToolActive = isFogMode || activeAoE || isMeasuringMode.current !== null || e.altKey;
 
-        if (e.button === 1 || e.button === 2 || (e.button === 0 && !isToolActive)) {
+        if (e.button === 0 || e.button === 1 || e.button === 2) {
             e.preventDefault();
+        }
+
+        if (e.button === 1 || e.button === 2 || (e.button === 0 && !isToolActive)) {
             isPanning.current = true;
             panStartPos.current = { x: e.clientX, y: e.clientY };
-            offsetOnPanStart.current = { ...offset };
             if (containerRef.current) containerRef.current.style.cursor = 'grabbing';
             return;
         }
@@ -321,9 +327,14 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
             
+            const worldX = (mouseX - offset.x) / scale;
+            const worldY = (mouseY - offset.y) / scale;
+            const gridCenterPixelX = (Math.floor(worldX / gridSize) * gridSize + (gridSize / 2)) * scale + offset.x;
+            const gridCenterPixelY = (Math.floor(worldY / gridSize) * gridSize + (gridSize / 2)) * scale + offset.y;
+
             setIsMeasuring(true);
-            setRulerStart({ x: mouseX, y: mouseY });
-            setRulerEnd({ x: mouseX, y: mouseY, distance: 0, isCapped: false });
+            setRulerStart({ x: gridCenterPixelX, y: gridCenterPixelY });
+            setRulerEnd({ x: gridCenterPixelX, y: gridCenterPixelY, distance: 0, isCapped: false });
         }
     };
 
@@ -332,13 +343,16 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             const dx = e.clientX - panStartPos.current.x;
             const dy = e.clientY - panStartPos.current.y;
             
-            const newOffset = {
-                x: offsetOnPanStart.current.x + dx,
-                y: offsetOnPanStart.current.y + dy
-            };
+            panStartPos.current = { x: e.clientX, y: e.clientY };
 
-            setOffset(newOffset);
-            if (role === 'DM' && onMapChange) onMapChange(newOffset, scale);
+            setOffset(prev => {
+                const newOffset = {
+                    x: prev.x + dx,
+                    y: prev.y + dy
+                };
+                if (role === 'DM' && onMapChange) onMapChange(newOffset, scaleRef.current);
+                return newOffset;
+            });
             return;
         }
 
@@ -472,10 +486,37 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         }
     };
 
+    const renderRulerIntervals = () => {
+        if (!rulerStart || !rulerEnd) return null;
+        
+        const dx = rulerEnd.x - rulerStart.x;
+        const dy = rulerEnd.y - rulerStart.y;
+        const distPx = Math.hypot(dx, dy);
+        
+        const intervalPx = gridSize * scale;
+        const numIntervals = Math.floor(distPx / intervalPx);
+        
+        const nodes = [];
+        for (let i = 1; i <= numIntervals; i++) {
+            const ratio = (i * intervalPx) / distPx;
+            const nodeX = rulerStart.x + (dx * ratio);
+            const nodeY = rulerStart.y + (dy * ratio);
+            
+            nodes.push(
+                <circle 
+                    key={i} cx={nodeX} cy={nodeY} r="3" 
+                    fill={rulerEnd.isCapped ? "#ef4444" : "#eab308"} 
+                    stroke="black" strokeWidth="1"
+                />
+            );
+        }
+        return nodes;
+    };
+
     return (
         <div 
             ref={containerRef}
-            className={`w-full h-full bg-[#1a1a1a] overflow-hidden relative transition-colors ${activeAoE ? 'cursor-crosshair' : (isFogMode ? 'cursor-cell' : 'cursor-grab')}`}
+            className={`w-full h-full bg-[#1a1a1a] overflow-hidden select-none overscroll-none relative transition-colors ${activeAoE ? 'cursor-crosshair' : (isFogMode ? 'cursor-cell' : 'cursor-grab')}`}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             onMouseDown={handleMouseDown}
@@ -522,7 +563,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 const tokenScreenX = (targetEnt.x * gridSize * scale) + offset.x;
                 const tokenScreenY = (targetEnt.y * gridSize * scale) + offset.y;
 
-                const isMagic = combatAnimation.attackType.toLowerCase().includes('conjurou');
+                const isMagic = combatAnimation.attackType.toLowerCase().includes('magia');
                 
                 return (
                     <div 
@@ -553,25 +594,56 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 );
             })()}
 
-            {isMeasuring && rulerStart && rulerEnd && (
-                <svg className="absolute inset-0 w-full h-full pointer-events-none z-[150]">
-                    <line 
-                        x1={rulerStart.x} y1={rulerStart.y} 
-                        x2={rulerEnd.x} y2={rulerEnd.y} 
-                        stroke={rulerEnd.isCapped ? "red" : "yellow"} 
-                        strokeWidth="3" 
-                        strokeDasharray="6,4" 
-                        className="drop-shadow-[0_0_2px_black] transition-colors"
-                    />
-                    <text 
-                        x={rulerEnd.x + 15} y={rulerEnd.y + 20} 
-                        fill={rulerEnd.isCapped ? "red" : "yellow"} 
-                        fontSize="16" fontWeight="900"
-                        className="drop-shadow-[0_0_4px_black] font-mono transition-colors"
+            {entities.map(ent => {
+                if (!ent.size || ent.size <= 1 || ent.visible === false) return null;
+                const sizePx = ent.size * gridSize * scale;
+                const tokenScreenX = (ent.x * gridSize * scale) + offset.x;
+                const tokenScreenY = (ent.y * gridSize * scale) + offset.y;
+                const centerX = tokenScreenX + (sizePx / 2);
+                const centerY = tokenScreenY + (sizePx / 2);
+
+                return (
+                    <div 
+                        key={`center-${ent.id}`}
+                        className="absolute pointer-events-none z-[120] transform -translate-x-1/2 -translate-y-1/2 opacity-40"
+                        style={{ left: centerX, top: centerY }}
                     >
-                        {rulerEnd.distance.toFixed(1)}m
-                    </text>
-                </svg>
+                        <div className="relative w-4 h-4">
+                            <div className="absolute top-1/2 left-0 w-full h-px bg-white drop-shadow-[0_0_2px_black]"></div>
+                            <div className="absolute left-1/2 top-0 h-full w-px bg-white drop-shadow-[0_0_2px_black]"></div>
+                        </div>
+                    </div>
+                );
+            })}
+
+            {isMeasuring && rulerStart && rulerEnd && (
+                <>
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none z-[150]">
+                        <line 
+                            x1={rulerStart.x} y1={rulerStart.y} 
+                            x2={rulerEnd.x} y2={rulerEnd.y} 
+                            stroke={rulerEnd.isCapped ? "#ef4444" : "#eab308"} 
+                            strokeWidth="3" 
+                            strokeDasharray="8,4" 
+                            className="drop-shadow-[0_0_3px_black] transition-colors"
+                        />
+                        <circle cx={rulerStart.x} cy={rulerStart.y} r="5" fill={rulerEnd.isCapped ? "#ef4444" : "#eab308"} stroke="black" strokeWidth="2"/>
+                        <circle cx={rulerEnd.x} cy={rulerEnd.y} r="6" fill={rulerEnd.isCapped ? "#ef4444" : "#eab308"} stroke="black" strokeWidth="2"/>
+                        {renderRulerIntervals()}
+                    </svg>
+                    <div 
+                        className="absolute z-[160] transform -translate-x-1/2 -translate-y-[150%] pointer-events-none transition-all"
+                        style={{ left: rulerEnd.x, top: rulerEnd.y }}
+                    >
+                        <div className={`px-3 py-1 rounded shadow-lg font-mono font-black text-sm border ${rulerEnd.isCapped ? 'bg-red-950/90 text-red-400 border-red-500' : 'bg-black/90 text-yellow-400 border-yellow-500/50'}`}>
+                            {rulerEnd.distance.toFixed(1)}m
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {isRulerKeyHeld && (
+                <div className="absolute inset-0 z-[145]" />
             )}
 
             {isRulerKeyHeld && (
@@ -593,6 +665,9 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                     attackerId={attackerId}
                     targetEntityIds={targetEntityIds}
                     onMoveToken={onMoveToken}
+                    
+                    // 👉 O CADEADO É PASSADO AQUI!
+                    myCharacterId={myCharacterId}
                     
                     onSelectToken={(entity: Entity, multi?: boolean) => {
                         if (!entity) return; 

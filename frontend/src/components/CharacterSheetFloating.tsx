@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Sword, Shield, Backpack, Sparkles, BookOpen, GripHorizontal, X, Package, Weight } from 'lucide-react';
+import { Sword, Shield, Backpack, Sparkles, BookOpen, GripHorizontal, X, Package, Weight, Flame, Plus, Minus, Target, ShieldAlert } from 'lucide-react';
 import { Entity, Item } from '../App';
 
 interface CharacterSheetFloatingProps {
     character: Entity;
     onClose: () => void;
-    onRollAttribute: (charName: string, attrName: string, mod: number) => void;
+    // 👉 CORREÇÃO: Agora aceita a expressão de dano!
+    onRollAttribute: (charName: string, attrName: string, mod: number, damageExpr?: string, damageType?: string) => void;
     onUpdateHP: (id: number, change: number) => void;
     onUpdateCharacter: (id: number, updates: Partial<Entity>) => void;
     onDropItem: (itemId: string) => void;
-    onCastSpell?: (spell: { id: string, name: string, level: number }) => void;
+    onCastSpell?: (spell: { id: string, name: string, level: number, school?: string, damage?: string, range?: string, casting_time?: string, description?: string }) => void;
     availableSpells?: any[]; 
 }
 
@@ -32,6 +33,9 @@ const CharacterSheetFloating: React.FC<CharacterSheetFloatingProps> = ({
     const [position, setPosition] = useState({ x: window.innerWidth / 2 - 300, y: window.innerHeight / 2 - 250 });
     const [isDragging, setIsDragging] = useState(false);
     const dragRef = useRef<{ startX: number, startY: number, initialX: number, initialY: number } | null>(null);
+
+    // Estado para controlar as magias expandidas no acordeão
+    const [expandedSpells, setExpandedSpells] = useState<Record<string, boolean>>({});
 
     const handleMouseDown = (e: React.MouseEvent) => {
         setIsDragging(true);
@@ -81,13 +85,10 @@ const CharacterSheetFloating: React.FC<CharacterSheetFloatingProps> = ({
         return isFinesseOrRanged ? Math.max(strMod, dexMod) : strMod;
     };
 
-    // 👉 FILTRO DE MAGIAS BLINDADO
     const allowedSpells = useMemo(() => {
         if (!availableSpells || availableSpells.length === 0) return [];
 
         const rawClass = (character.classType || '').toLowerCase();
-        
-        // Define as chaves que vamos procurar dentro do array 'classes' da magia
         const targetClasses: string[] = [];
 
         if (rawClass.includes('wizard') || rawClass.includes('mago')) targetClasses.push('wizard', 'mago');
@@ -109,15 +110,33 @@ const CharacterSheetFloating: React.FC<CharacterSheetFloatingProps> = ({
             const spellLvl = parseInt(spell.level?.toString()) || 0;
             if (spellLvl > maxSpellLevel) return false;
 
-            // Se a magia não tem a propriedade 'classes', ignora
             if (!spell.classes || !Array.isArray(spell.classes)) return false;
 
-            // Verifica se a magia permite alguma das classes do nosso targetClasses
             return spell.classes.some((c: string) => targetClasses.includes(c.toLowerCase()));
             
         }).sort((a, b) => a.name.localeCompare(b.name));
         
     }, [availableSpells, character.classType, character.level]);
+
+    const toggleSpellExpansion = (spellId: string) => {
+        setExpandedSpells(prev => ({
+            ...prev,
+            [spellId]: !prev[spellId]
+        }));
+    };
+
+    const getSchoolColor = (school: string) => {
+        const s = school?.toLowerCase() || '';
+        if (s.includes('evoc')) return 'text-red-400 border-red-900/50 bg-red-900/20';
+        if (s.includes('abjur')) return 'text-blue-400 border-blue-900/50 bg-blue-900/20';
+        if (s.includes('necro')) return 'text-purple-400 border-purple-900/50 bg-purple-900/20';
+        if (s.includes('ilu')) return 'text-pink-400 border-pink-900/50 bg-pink-900/20';
+        if (s.includes('encant')) return 'text-fuchsia-400 border-fuchsia-900/50 bg-fuchsia-900/20';
+        if (s.includes('transmut')) return 'text-amber-400 border-amber-900/50 bg-amber-900/20';
+        if (s.includes('adivinh')) return 'text-cyan-400 border-cyan-900/50 bg-cyan-900/20';
+        if (s.includes('conjur')) return 'text-emerald-400 border-emerald-900/50 bg-emerald-900/20';
+        return 'text-gray-400 border-gray-700 bg-gray-800/50';
+    };
 
     return (
         <div className="fixed z-[600] w-[600px] h-[550px] bg-[#111111] border border-amber-600/50 rounded-xl shadow-2xl flex flex-col overflow-hidden font-sans pointer-events-auto" style={{ left: position.x, top: position.y }}>
@@ -251,20 +270,12 @@ const CharacterSheetFloating: React.FC<CharacterSheetFloatingProps> = ({
 
                 {activeTab === 'spells' && (
                     <div className="animate-in fade-in duration-300">
-                         <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-2">
-                             <h3 className="text-xs text-amber-500 uppercase tracking-widest font-bold">Magias Disponíveis</h3>
-                             <div className="flex items-center gap-2">
-                                 <span className="text-[10px] text-gray-400 font-mono flex items-center gap-1 mr-2">
-                                     <Sparkles size={12}/> Total Encontradas: <strong className="text-white">{allowedSpells.length}</strong>
-                                 </span>
-                             </div>
-                         </div>
-
+                         
                          {allowedSpells.length === 0 ? (
                              <div className="flex flex-col items-center justify-center py-10 opacity-50 text-center px-4">
                                  <Sparkles size={48} className="text-gray-600 mb-4" />
-                                 <p className="text-gray-400 text-sm font-bold">Nenhuma magia encontrada</p>
-                                 <p className="text-gray-600 text-[9px] mt-4">Banco de dados: {availableSpells.length} entradas.</p>
+                                 <p className="text-gray-400 text-sm font-bold">O seu Grimório está vazio</p>
+                                 <p className="text-gray-600 text-[9px] mt-2 leading-relaxed">Pode ser que a sua classe não seja mágica, ou o seu nível seja muito baixo para conjurar magias.</p>
                              </div>
                          ) : (
                              <div className="flex flex-col gap-4 pb-4">
@@ -272,25 +283,101 @@ const CharacterSheetFloating: React.FC<CharacterSheetFloatingProps> = ({
                                      const levelSpells = allowedSpells.filter(s => (parseInt(s.level) || 0) === level);
                                      if (levelSpells.length === 0) return null;
                                      const slots = character.spellSlots?.[level] || { max: 0, used: 0 };
+                                     
                                      return (
-                                         <div key={level} className="bg-gray-900/50 border border-white/5 rounded-lg overflow-hidden">
-                                             <div className="bg-gray-800/80 px-3 py-2 flex justify-between items-center border-b border-white/5">
-                                                 <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">{level === 0 ? 'Truques' : `Círculo ${level}`}</span>
+                                         <div key={level} className="bg-gray-900/50 border border-purple-900/30 rounded-lg overflow-hidden shadow-md">
+                                             <div className="bg-purple-950/20 px-3 py-2 flex justify-between items-center border-b border-purple-900/30 shadow-[inset_0_-10px_20px_rgba(0,0,0,0.2)]">
+                                                 <span className="text-[10px] font-black text-purple-400 uppercase tracking-widest">{level === 0 ? 'Truques (Infinito)' : `Círculo ${level}`}</span>
                                                  {level > 0 && slots.max > 0 && (
-                                                     <div className="flex items-center gap-1">
+                                                     <div className="flex items-center gap-1.5" title="Espaços de Magia Gastos / Totais">
                                                          {Array.from({ length: slots.max }).map((_, i) => (
-                                                             <div key={i} className={`w-2 h-2 rounded-full border border-amber-500/50 ${i < (slots.max - slots.used) ? 'bg-amber-400 shadow-[0_0_5px_#f59e0b]' : ''}`} />
+                                                             <div key={i} className={`w-2.5 h-2.5 rounded-full border border-purple-500/50 ${i < (slots.max - slots.used) ? 'bg-purple-500 shadow-[0_0_8px_#a855f7]' : 'bg-black opacity-50'}`} />
                                                          ))}
                                                      </div>
                                                  )}
                                              </div>
-                                             <div className="p-2 flex flex-col gap-1">
-                                                 {levelSpells.map((spell, idx) => (
-                                                     <div key={spell.name + idx} className="flex justify-between items-center bg-black/40 hover:bg-black/60 border border-white/5 p-2 rounded group transition-colors">
-                                                         <span className="text-xs font-bold text-gray-200">{spell.name}</span>
-                                                         <button onClick={() => onCastSpell?.(spell)} className="text-[9px] uppercase font-bold bg-indigo-900/40 text-indigo-300 hover:bg-indigo-600 hover:text-white px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">Conjurar</button>
-                                                     </div>
-                                                 ))}
+                                             <div className="p-2 flex flex-col gap-2 bg-black/40">
+                                                 {levelSpells.map((spell, idx) => {
+                                                     const isExpanded = expandedSpells[spell.id || spell.name];
+                                                     const canCast = level === 0 || (slots.max > 0 && slots.used < slots.max);
+                                                     
+                                                     return (
+                                                         <div key={spell.name + idx} className="flex flex-col bg-gray-900/80 border border-white/5 hover:border-purple-500/30 rounded-lg overflow-hidden transition-all">
+                                                             <div 
+                                                                 onClick={() => toggleSpellExpansion(spell.id || spell.name)}
+                                                                 className="flex justify-between items-center p-3 cursor-pointer group"
+                                                             >
+                                                                 <div className="flex flex-col gap-1">
+                                                                     <span className="text-xs font-bold text-gray-200 group-hover:text-purple-300 transition-colors flex items-center gap-2">
+                                                                         {spell.name}
+                                                                     </span>
+                                                                     {spell.school && (
+                                                                         <span className={`text-[8px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded border ${getSchoolColor(spell.school)} w-max`}>
+                                                                             {spell.school}
+                                                                         </span>
+                                                                     )}
+                                                                 </div>
+                                                                 <button className="text-gray-500 group-hover:text-purple-400 transition-colors">
+                                                                     {isExpanded ? <Minus size={14}/> : <Plus size={14}/>}
+                                                                 </button>
+                                                             </div>
+
+                                                             {isExpanded && (
+                                                                 <div className="px-3 pb-3 pt-1 border-t border-white/5 animate-in slide-in-from-top-1 bg-black/60">
+                                                                     
+                                                                     <div className="grid grid-cols-2 gap-2 mb-3">
+                                                                         {spell.casting_time && (
+                                                                             <div className="flex flex-col"><span className="text-[8px] text-gray-500 uppercase font-bold tracking-widest">Tempo</span><span className="text-[10px] text-gray-300">{spell.casting_time}</span></div>
+                                                                         )}
+                                                                         {spell.range && (
+                                                                             <div className="flex flex-col"><span className="text-[8px] text-gray-500 uppercase font-bold tracking-widest">Alcance</span><span className="text-[10px] text-gray-300">{spell.range}</span></div>
+                                                                         )}
+                                                                     </div>
+
+                                                                     {spell.description && (
+                                                                         <p className="text-[10px] text-gray-400 leading-relaxed mb-4 italic border-l-2 border-purple-900/50 pl-2">
+                                                                             {spell.description.substring(0, 150)}...
+                                                                         </p>
+                                                                     )}
+
+                                                                     <div className="flex flex-wrap gap-2 pt-2 border-t border-white/5">
+                                                                         <button 
+                                                                             onClick={(e) => { e.stopPropagation(); onCastSpell?.(spell); }} 
+                                                                             disabled={!canCast}
+                                                                             className="flex items-center gap-1.5 text-[9px] uppercase font-bold bg-indigo-900/40 text-indigo-300 hover:bg-indigo-600 hover:text-white px-3 py-1.5 rounded transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                             title={canCast ? 'Anuncia no Chat e gasta um Slot (se aplicável)' : 'Sem slots de magia disponíveis!'}
+                                                                         >
+                                                                             <Sparkles size={12}/> Conjurar
+                                                                         </button>
+                                                                         
+                                                                         <button 
+                                                                             onClick={(e) => { e.stopPropagation(); onRollAttribute(character.name, `Ataque Mágico: ${spell.name}`, getAttackMod(character.inventory?.[0] || {} as Item)); }}
+                                                                             className="flex items-center gap-1.5 text-[9px] uppercase font-bold bg-blue-900/40 text-blue-300 hover:bg-blue-600 hover:text-white px-3 py-1.5 rounded transition-colors"
+                                                                         >
+                                                                             <Target size={12}/> Atacar (D20)
+                                                                         </button>
+
+                                                                         {spell.damage && (
+                                                                             <button 
+                                                                                 onClick={(e) => { e.stopPropagation(); onRollAttribute(character.name, `Dano: ${spell.name}`, 0, spell.damage); }}
+                                                                                 className="flex items-center gap-1.5 text-[9px] uppercase font-bold bg-red-900/40 text-red-300 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded transition-colors shadow-[0_0_10px_rgba(220,38,38,0.1)]"
+                                                                             >
+                                                                                 <Flame size={12}/> Rolar Dano ({spell.damage})
+                                                                             </button>
+                                                                         )}
+
+                                                                         <button 
+                                                                             onClick={(e) => { e.stopPropagation(); onRollAttribute(character.name, `Resistência contra ${spell.name}`, 0); }}
+                                                                             className="flex items-center gap-1.5 text-[9px] uppercase font-bold bg-amber-900/40 text-amber-300 hover:bg-amber-600 hover:text-white px-3 py-1.5 rounded transition-colors ml-auto"
+                                                                         >
+                                                                             <ShieldAlert size={12}/> Exigir Resis.
+                                                                         </button>
+                                                                     </div>
+                                                                 </div>
+                                                             )}
+                                                         </div>
+                                                     );
+                                                 })}
                                              </div>
                                          </div>
                                      );

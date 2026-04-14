@@ -1,4 +1,4 @@
-import React, { useState, useRef} from 'react';
+import React, { useState, useRef } from 'react';
 import Soundboard from './Soundboard'; 
 import Chat, { ChatMessage } from './Chat'; 
 import { Entity, MonsterPreset } from '../App';
@@ -9,8 +9,7 @@ import SkillList from './SkillList';
 import ItemCreator from './ItemCreator';
 import Scratchpad from './Scratchpad'; 
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
-import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent, Gem, Search } from 'lucide-react'; 
-import GoogleDiceRoller from './GoogleDiceRoller';
+import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent, Gem, Search, ShieldAlert } from 'lucide-react';import GoogleDiceRoller from './GoogleDiceRoller';
 
 export interface InitiativeItem { id: number; name: string; value: number; }
 
@@ -106,12 +105,13 @@ const AoEColorPicker = ({ selected, onSelect }: { selected: string, onSelect: (c
     );
 };
 
-const EntityControlRow = ({ entity, onUpdateHP, onDeleteEntity, onClickEdit, onAddToInit, isTarget, isAttacker, onSetTarget, onSetAttacker, onToggleCondition, onAddXP, onToggleVisibility }: any) => {
+const EntityControlRow = ({ entity, onUpdateHP, onDeleteEntity, onClickEdit, onAddToInit, isTarget, isAttacker, onSetTarget, onSetAttacker, onToggleCondition, onAddXP, onToggleVisibility, onEditEntity }: any) => {
   const hpPercent = Math.max(0, Math.min(100, (entity.hp / entity.maxHp) * 100));
   const isDead = entity.hp <= 0;
   let barColor = 'bg-green-500';
   if (hpPercent < 30) barColor = 'bg-red-600'; else if (hpPercent < 60) barColor = 'bg-yellow-500';
   const [showXPInput, setShowXPInput] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
   const [xpAmount, setXpAmount] = useState('');
   const handleGiveXP = (e: React.FormEvent) => { e.preventDefault(); const amount = parseInt(xpAmount); if (amount && onAddXP) { onAddXP(entity.id, amount); setXpAmount(''); setShowXPInput(false); } };
 
@@ -120,7 +120,10 @@ const EntityControlRow = ({ entity, onUpdateHP, onDeleteEntity, onClickEdit, onA
       {isDead && (<div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20 z-0"><span className="text-4xl">💀</span></div>)}
       
       <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 bg-black/90 border border-white/20 rounded p-0.5 shadow-xl">
-        {entity.type === 'player' && (<button onClick={(e) => { e.stopPropagation(); setShowXPInput(!showXPInput); }} className="text-gray-300 hover:text-purple-400 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Dar XP">✨</button>)}
+        {entity.type === 'player' && (<button onClick={(e) => { e.stopPropagation(); setShowXPInput(!showXPInput); setShowNotes(false); }} className="text-gray-300 hover:text-purple-400 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Dar XP">✨</button>)}
+        
+        <button onClick={(e) => { e.stopPropagation(); setShowNotes(!showNotes); setShowXPInput(false); }} className={`hover:bg-white/10 rounded p-1.5 transition-colors text-sm ${showNotes ? 'text-purple-400' : 'text-gray-300'}`} title="Anotações Secretas">📝</button>
+        
         <button onClick={(e) => { e.stopPropagation(); onSetAttacker(entity.id); }} className={`hover:bg-white/10 rounded p-1.5 transition-colors text-sm ${isAttacker ? 'text-blue-400' : 'text-gray-300'}`} title="Definir como Atacante">🎯</button>
         <button onClick={(e) => { e.stopPropagation(); onAddToInit(); }} className="text-gray-300 hover:text-yellow-400 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Iniciativa">⚔️</button>
         
@@ -152,12 +155,27 @@ const EntityControlRow = ({ entity, onUpdateHP, onDeleteEntity, onClickEdit, onA
       
       {entity.type === 'player' && (<div className="w-full h-1 bg-gray-800 rounded-full mt-1 relative overflow-hidden"><div className="h-full bg-purple-500" style={{ width: `${Math.min(100, ((entity.xp || 0) / getNextLevelXP(getLevelFromXP(entity.xp || 0))) * 100)}%` }}></div></div>)}
       <div className="w-full h-1.5 bg-gray-900 rounded-full overflow-hidden border border-white/5 mt-1 z-10 relative"><div className={`h-full ${barColor} transition-all duration-500 ease-out`} style={{ width: `${hpPercent}%` }}></div></div>
+
+      {showNotes && (
+          <div className="mt-2 pt-2 border-t border-white/5 animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+              <span className="text-[8px] font-black text-purple-400 uppercase tracking-widest mb-1 block">Segredos do Mestre</span>
+              <textarea
+                  autoFocus
+                  className="w-full bg-black/60 border border-purple-500/30 rounded p-2 text-xs text-purple-200 placeholder-purple-900/50 outline-none focus:border-purple-500 min-h-[60px] custom-scrollbar"
+                  placeholder="Anotações confidenciais..."
+                  defaultValue={entity.dmNotes || ''}
+                  onBlur={(e) => onEditEntity(entity.id, { dmNotes: e.target.value })}
+              />
+          </div>
+      )}
     </div>
   );
 };
 
-const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll }: any) => {
+// 👉 COMBAT PANEL ATUALIZADO (A dor em Massa)
+const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll, onRequestRoll }: any) => {
     const [amount, setAmount] = useState('');
+    const [saveAttr, setSaveAttr] = useState('DES');
     
     const applyToAll = (damage: boolean) => {
         const val = parseInt(amount);
@@ -165,6 +183,14 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
             targets.forEach((ent:Entity) => { onUpdateHP(ent.id, damage ? -val : val); });
             setAmount('');
         }
+    };
+
+    // A MÁGICA: Pede Teste de Resistência em Massa!
+    const requestMassSave = () => {
+        targets.forEach((t: Entity) => {
+            onRequestRoll(t.id, `Salvaguarda de ${saveAttr}`, 0, 10);
+        });
+        onSendMessage(`🐉 **O Mestre Exigiu um Teste!**\n> Os alvos selecionados devem rolar **Resistência de ${saveAttr}** imediatamente!`);
     };
 
     const getAtkMod = () => {
@@ -267,6 +293,7 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
                 </div>
             </div>
 
+            {/* BOTÕES DE ATAQUE */}
             {attacker && targets.length > 0 && (
                 <div className="flex gap-2 justify-center mt-5 border-t border-white/10 pt-4 relative z-10">
                     <button onClick={() => handleVisualAttack('disadvantage')} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-[9px] font-bold py-2 rounded border border-gray-600 transition-colors uppercase" title="Rolar 2 dados e pegar o MENOR">
@@ -281,11 +308,30 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll 
                 </div>
             )}
 
+            {/* 👉 BOTÕES DE AÇÃO EM MASSA (Cura/Dano/Resistência) */}
             {targets.length > 0 && (
-                <div className="flex gap-2 mt-4 pt-4 border-t border-white/5 relative z-10">
-                    <input type="number" placeholder="HP..." title="Quantidade de Dano ou Cura" className="w-16 bg-black/80 border border-white/10 rounded p-1 text-center text-white text-xs font-bold outline-none focus:border-red-500" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') applyToAll(true); }} />
-                    <button onClick={() => applyToAll(true)} className="flex-1 bg-red-900/60 hover:bg-red-600 border border-red-700/50 text-red-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1" title="Aplica o valor como DANO nos alvos selecionados">🩸 Aplicar Dano</button>
-                    <button onClick={() => applyToAll(false)} className="flex-1 bg-green-900/60 hover:bg-green-600 border border-green-700/50 text-green-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1" title="Aplica o valor como CURA nos alvos selecionados">💚 Curar</button>
+                <div className="mt-4 pt-4 border-t border-white/5 relative z-10 flex flex-col gap-2">
+                    
+                    <div className="flex gap-2">
+                        <input type="number" placeholder="HP..." title="Quantidade de Dano ou Cura" className="w-16 bg-black/80 border border-white/10 rounded p-1 text-center text-white text-xs font-bold outline-none focus:border-red-500" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') applyToAll(true); }} />
+                        <button onClick={() => applyToAll(true)} className="flex-1 bg-red-900/60 hover:bg-red-600 border border-red-700/50 text-red-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1" title="Aplica o valor como DANO nos alvos selecionados">🩸 Aplicar Dano</button>
+                        <button onClick={() => applyToAll(false)} className="flex-1 bg-green-900/60 hover:bg-green-600 border border-green-700/50 text-green-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1" title="Aplica o valor como CURA nos alvos selecionados">💚 Curar</button>
+                    </div>
+
+                    <div className="flex gap-2 mt-1">
+                        <select value={saveAttr} onChange={e => setSaveAttr(e.target.value)} className="w-16 bg-black/80 border border-amber-900/50 rounded p-1 text-center text-amber-200 text-[10px] font-bold outline-none focus:border-amber-500 cursor-pointer">
+                            <option value="FOR">FOR</option>
+                            <option value="DES">DES</option>
+                            <option value="CON">CON</option>
+                            <option value="INT">INT</option>
+                            <option value="SAB">SAB</option>
+                            <option value="CAR">CAR</option>
+                        </select>
+                        <button onClick={requestMassSave} className="flex-1 bg-amber-900/40 hover:bg-amber-600 border border-amber-700/50 text-amber-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1 shadow-md" title="Força todos os alvos a rolarem essa Salvaguarda">
+                            <ShieldAlert size={12}/> Exigir Resistência em Massa
+                        </button>
+                    </div>
+
                 </div>
             )}
         </section>
@@ -323,7 +369,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const [previewMap, setPreviewMap] = useState<{url: string, name: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [hoveredCondition, setHoveredCondition] = useState<string | null>(null);
+  const [hoveredCondition, setHoveredCondition] = useState<any | null>(null);
 
   const FULL_MONSTER_LIST = [...MONSTER_LIST, ...(customMonsters || [])];
   
@@ -384,12 +430,21 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const sidebarStyle = { backgroundColor: '#1a1510', backgroundImage: `url('/assets/bg-couro-sidebar.png')`, backgroundSize: 'cover', backgroundRepeat: 'no-repeat', boxShadow: 'inset 0 0 60px rgba(0,0,0,0.9)', width: '420px', minWidth: '420px', maxWidth: '420px', flex: '0 0 420px' };
 
   const CONDITION_MAP = [
-      { id: 'Poisoned', icon: '☠️', label: 'Veneno', bg: 'bg-green-900/40 hover:bg-green-600/60', border: 'border-green-500/30', text: 'text-green-100' },
-      { id: 'Stunned', icon: '💫', label: 'Atordoado', bg: 'bg-yellow-900/40 hover:bg-yellow-600/60', border: 'border-yellow-500/30', text: 'text-yellow-100' },
-      { id: 'Prone', icon: '⏬', label: 'Caído', bg: 'bg-orange-900/40 hover:bg-orange-600/60', border: 'border-orange-500/30', text: 'text-orange-100' },
-      { id: 'Unconscious', icon: '💤', label: 'Inconsciente', bg: 'bg-purple-900/40 hover:bg-purple-600/60', border: 'border-purple-500/30', text: 'text-purple-100' },
-      { id: 'Blinded', icon: '🦇', label: 'Cego', bg: 'bg-gray-800/40 hover:bg-gray-600/60', border: 'border-gray-500/30', text: 'text-gray-200' },
-      { id: 'Restrained', icon: '⛓️', label: 'Impedido', bg: 'bg-red-900/40 hover:bg-red-600/60', border: 'border-red-500/30', text: 'text-red-100' },
+      { id: 'Blinded', icon: '🦇', label: 'Cego', bg: 'bg-gray-800/40 hover:bg-gray-600/60', border: 'border-gray-500/30', text: 'text-gray-200', desc: "A criatura não pode ver. Falha automática em testes que exigem visão.\n\nAtaques contra a criatura têm Vantagem, e os ataques dela têm Desvantagem." },
+      { id: 'Charmed', icon: '💕', label: 'Enfeitiçado', bg: 'bg-pink-900/40 hover:bg-pink-600/60', border: 'border-pink-500/30', text: 'text-pink-200', desc: "Não pode atacar quem o enfeitiçou nem ser alvo de habilidades nocivas/mágicas dessa pessoa.\n\nO encantador tem Vantagem em interações sociais com a criatura." },
+      { id: 'Deafened', icon: '🔇', label: 'Surdo', bg: 'bg-slate-800/40 hover:bg-slate-600/60', border: 'border-slate-500/30', text: 'text-slate-200', desc: "Não pode ouvir e falha automaticamente em qualquer teste de habilidade que exija audição." },
+      { id: 'Exhaustion', icon: '😩', label: 'Exaustão', bg: 'bg-amber-900/40 hover:bg-amber-600/60', border: 'border-amber-500/30', text: 'text-amber-200', desc: "Seis níveis de punição. Nível 1: Desv. em testes de habilidade.\nNível 2: Deslocamento cai pela metade.\nNível 3: Desv. em Ataques e Resistências.\nNível 4: Máximo de PV cortado pela metade.\nNível 5: Deslocamento 0.\nNível 6: Morte." },
+      { id: 'Frightened', icon: '😱', label: 'Amedrontado', bg: 'bg-indigo-900/40 hover:bg-indigo-600/60', border: 'border-indigo-500/30', text: 'text-indigo-200', desc: "Desvantagem em testes de habilidade e ataques se a fonte do medo estiver visível.\n\nA criatura não pode se mover voluntariamente na direção da fonte de medo." },
+      { id: 'Grappled', icon: '🤼', label: 'Agarrado', bg: 'bg-orange-900/40 hover:bg-orange-600/60', border: 'border-orange-500/30', text: 'text-orange-200', desc: "Deslocamento torna-se 0.\n\nA condição termina se o agarrador for Incapacitado ou se a criatura for movida para fora do alcance." },
+      { id: 'Incapacitated', icon: '😵', label: 'Incapacitado', bg: 'bg-stone-800/40 hover:bg-stone-600/60', border: 'border-stone-500/30', text: 'text-stone-200', desc: "A criatura não pode usar Ações, Ações Bônus nem Reações.\n\nQualquer magia de Concentração ativa é encerrada imediatamente." },
+      { id: 'Invisible', icon: '👻', label: 'Invisível', bg: 'bg-teal-900/40 hover:bg-teal-600/60', border: 'border-teal-500/30', text: 'text-teal-200', desc: "É impossível ser visto sem magia. Pode ser detectada pelo som ou marcas que deixa.\n\nAtaques contra a criatura têm Desvantagem; ataques da criatura têm Vantagem." },
+      { id: 'Paralyzed', icon: '⚡', label: 'Paralisado', bg: 'bg-yellow-900/40 hover:bg-yellow-600/60', border: 'border-yellow-500/30', text: 'text-yellow-200', desc: "Incapacitado, não pode se mover ou falar.\n\nFalha automática em salvaguardas de Força e Destreza.\nAtaques contra têm Vantagem.\nQualquer ataque que acerte a até 1,5m é Crítico automático!" },
+      { id: 'Petrified', icon: '🗿', label: 'Petrificado', bg: 'bg-zinc-800/40 hover:bg-zinc-600/60', border: 'border-zinc-500/30', text: 'text-zinc-200', desc: "Transformado em pedra inanimada. Peso x10.\nIncapacitado, não pode se mover ou falar.\nAtaques contra têm Vantagem.\nFalha automática em Força/Destreza.\nResistência a TODO o dano.\nImune a veneno e doenças." },
+      { id: 'Poisoned', icon: '🤢', label: 'Envenenado', bg: 'bg-green-900/40 hover:bg-green-600/60', border: 'border-green-500/30', text: 'text-green-200', desc: "A criatura tem Desvantagem em rolagens de ataque e testes de habilidade." },
+      { id: 'Prone', icon: '⏬', label: 'Caído', bg: 'bg-amber-900/40 hover:bg-amber-600/60', border: 'border-amber-500/30', text: 'text-amber-200', desc: "Única opção de movimento é rastejar (gasta metade do deslocamento para levantar).\n\nTem Desvantagem em ataques.\nAtaques contra à 1,5m têm Vantagem. Se for de longe, têm Desvantagem." },
+      { id: 'Restrained', icon: '⛓️', label: 'Impedido', bg: 'bg-red-900/40 hover:bg-red-600/60', border: 'border-red-500/30', text: 'text-red-200', desc: "Deslocamento 0.\n\nAtaques contra a criatura têm Vantagem; ataques dela têm Desvantagem.\n\nA criatura tem Desvantagem em Salvaguardas de Destreza." },
+      { id: 'Stunned', icon: '💫', label: 'Atordoado', bg: 'bg-fuchsia-900/40 hover:bg-fuchsia-600/60', border: 'border-fuchsia-500/30', text: 'text-fuchsia-200', desc: "Incapacitado, não pode se mover e fala falhando.\n\nFalha automática em Força e Destreza.\nAtaques contra a criatura têm Vantagem." },
+      { id: 'Unconscious', icon: '💤', label: 'Inconsciente', bg: 'bg-purple-900/40 hover:bg-purple-600/60', border: 'border-purple-500/30', text: 'text-purple-200', desc: "Incapacitado, não pode mover ou falar, não sabe o que está ao redor. Larga itens e cai Prone.\nFalha em Força e Destreza.\nAtaques contra têm Vantagem.\nAtaques a 1,5m são Críticos Automáticos." },
   ];
 
   return (
@@ -481,7 +536,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                 )}
                             </div>
 
-                            {/* 👉 NOVO: Caixa para Forçar Rolagem 3D Customizada (D64, D100, etc) */}
                             <div className="bg-black/40 p-4 rounded-xl border border-white/5 mt-6 shadow-inner">
                                 <h3 className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2">
                                     <span className="text-lg animate-pulse">🎲</span> Exigir Rolagem 3D Customizada
@@ -542,7 +596,8 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                     
                     {activeTab === 'combat' && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                            <CombatVsPanel attacker={attacker} targets={targets} onUpdateHP={onUpdateHP} onSendMessage={onSendMessage} onDMRoll={onDMRoll} />
+                            
+                            <CombatVsPanel attacker={attacker} targets={targets} onUpdateHP={onUpdateHP} onSendMessage={onSendMessage} onDMRoll={onDMRoll} onRequestRoll={onRequestRoll} />
                             
                             <section className="mb-4 flex gap-2">
                                 <button 
@@ -554,23 +609,48 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                 </button>
                             </section>
                             
+                            {/* 👉 RASTREADOR DE COMBATE APRIMORADO */}
                             <section className="mb-6 bg-black/40 border border-yellow-900/30 rounded p-2">
-                                <div className="flex justify-between items-center mb-2"><h3 className="text-yellow-500 font-mono text-[10px] uppercase tracking-widest">Iniciativa</h3><div className="flex gap-1"><button onClick={onSortInitiative} className="text-[9px] bg-gray-700 px-2 rounded hover:bg-gray-600" title="Ordenar">Sort</button><button onClick={onClearInitiative} className="text-[9px] bg-red-900/50 px-2 rounded hover:bg-red-600" title="Limpar">Limpar</button></div></div>
+                                <div className="flex justify-between items-center mb-2">
+                                    <h3 className="text-yellow-500 font-mono text-[10px] uppercase tracking-widest">Lista de Iniciativa</h3>
+                                    <div className="flex gap-1">
+                                        <button onClick={onSortInitiative} className="text-[9px] bg-gray-700 px-2 rounded hover:bg-gray-600" title="Ordenar">Sort</button>
+                                        <button onClick={onClearInitiative} className="text-[9px] bg-red-900/50 px-2 rounded hover:bg-red-600" title="Limpar">Limpar</button>
+                                    </div>
+                                </div>
                                 {initiativeList.length > 0 ? (
                                     <>
                                         <div className="flex flex-col gap-1 mb-2 max-h-40 overflow-y-auto custom-scrollbar">
-                                            {initiativeList.map((item:any, index:number) => (
+                                            {initiativeList.map((item:any, index:number) => {
+                                                const ent = entities.find(e => e.id === item.id);
+                                                const hpPercent = ent ? Math.max(0, Math.min(100, (ent.hp / ent.maxHp) * 100)) : 0;
+                                                const hpColor = hpPercent > 50 ? 'text-green-400' : hpPercent > 20 ? 'text-yellow-400' : 'text-red-500';
+
+                                                return (
                                                 <div 
                                                     key={index} 
-                                                    className={`flex justify-between items-center p-2 rounded text-xs cursor-pointer border transition-all ${item.id === activeTurnId ? 'bg-yellow-900/40 border-yellow-500/50' : 'bg-white/5 border-transparent hover:bg-white/10'} ${attackerId === item.id ? 'shadow-[inset_3px_0_0_#3b82f6]' : ''} ${targetEntityIds.includes(item.id) ? 'shadow-[inset_-3px_0_0_#ef4444]' : ''}`} 
+                                                    className={`flex justify-between items-center p-2 rounded text-xs cursor-pointer border transition-all ${item.id === activeTurnId ? 'bg-yellow-900/40 border-yellow-500/50 scale-[1.02]' : 'bg-white/5 border-transparent hover:bg-white/10'} ${attackerId === item.id ? 'shadow-[inset_3px_0_0_#3b82f6]' : ''} ${targetEntityIds.includes(item.id) ? 'shadow-[inset_-3px_0_0_#ef4444]' : ''}`} 
                                                     onClick={() => onSetAttacker(item.id)} 
                                                     onContextMenu={(e) => { e.preventDefault(); onSetTarget(item.id, e.shiftKey); }} 
                                                     title="Esquerdo: Selecionar Atacante | Direito: Selecionar Alvo"
                                                 >
-                                                    <span className={item.id === activeTurnId ? 'text-yellow-200 font-bold' : 'text-gray-300'}>{item.value} - {item.name}</span>
-                                                    <button onClick={(e) => { e.stopPropagation(); onRemoveFromInitiative(item.id); }} className="text-red-500 hover:text-red-300 ml-2">×</button>
+                                                    <div className="flex items-center gap-2 overflow-hidden flex-1">
+                                                        <span className={`font-mono text-[10px] bg-black/50 px-1 rounded ${item.id === activeTurnId ? 'text-yellow-400' : 'text-gray-500'}`}>{item.value}</span>
+                                                        <span className={`truncate ${item.id === activeTurnId ? 'text-yellow-100 font-bold' : 'text-gray-300'}`}>{item.name}</span>
+                                                    </div>
+                                                    
+                                                    {ent && (
+                                                        <div className="flex items-center gap-2 shrink-0">
+                                                            <button onClick={(e) => { e.stopPropagation(); onToggleVisibility(ent.id); }} className={`p-1 hover:bg-black/50 rounded ${ent.visible === false ? 'text-white/20' : 'text-cyan-400'}`} title={ent.visible === false ? "Invisível" : "Visível no Mapa"}>
+                                                                {ent.visible === false ? <EyeOff size={12}/> : <Eye size={12}/>}
+                                                            </button>
+                                                            <span className={`text-[10px] font-bold font-mono ${hpColor}`} title="Vida Atual / Máxima">{ent.hp}/{ent.maxHp}</span>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    <button onClick={(e) => { e.stopPropagation(); onRemoveFromInitiative(item.id); }} className="text-red-500/50 hover:text-red-400 ml-1 px-1 text-sm font-bold">×</button>
                                                 </div>
-                                            ))}
+                                            )})}
                                         </div>
                                         <button onClick={onNextTurn} className="w-full py-2 bg-yellow-700 hover:bg-yellow-600 text-white text-xs font-bold uppercase rounded shadow-lg border border-yellow-500/30 animate-pulse">Próximo Turno ⏩</button>
                                     </>
@@ -592,28 +672,28 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
 
                             <section className="mb-4 bg-black/40 border border-white/10 rounded p-2">
                                 <h3 className="text-[10px] text-gray-400 uppercase mb-2 text-center font-bold tracking-widest">Condições Oficiais</h3>
-                                <div className="grid grid-cols-2 gap-2">
+                                <div className="grid grid-cols-3 gap-1.5">
                                     {CONDITION_MAP.map(cond => (
                                         <button 
                                             key={cond.id}
                                             onClick={() => toggleConditionForAll(cond.id)}
-                                            onMouseEnter={() => setHoveredCondition(cond.id)}
+                                            onMouseEnter={() => setHoveredCondition(cond)}
                                             onMouseLeave={() => setHoveredCondition(null)}
-                                            className={`flex items-center justify-center gap-2 px-2 py-2 ${cond.bg} border ${cond.border} rounded transition-all active:scale-95 group`}
+                                            className={`flex flex-col items-center justify-center p-1.5 ${cond.bg} border ${cond.border} rounded transition-all active:scale-95 group`}
                                         >
-                                            <span className="text-sm filter drop-shadow-md group-hover:scale-110 transition-transform">{cond.icon}</span>
-                                            <span className={`text-[10px] font-bold ${cond.text} uppercase tracking-wider`}>{cond.label}</span>
+                                            <span className="text-sm filter drop-shadow-md group-hover:scale-110 transition-transform mb-0.5">{cond.icon}</span>
+                                            <span className={`text-[8px] font-bold ${cond.text} uppercase tracking-wider truncate w-full text-center`}>{cond.label}</span>
                                         </button>
                                     ))}
                                 </div>
                                 
-                                {hoveredCondition && availableConditions?.find(c => c.name === hoveredCondition) && (
-                                    <div className="mt-2 p-2.5 bg-black/80 border border-amber-500/30 rounded-lg animate-in fade-in zoom-in-95 shadow-lg relative z-20">
+                                {hoveredCondition && (
+                                    <div className="mt-2 p-2 bg-black/90 border border-amber-500/30 rounded animate-in fade-in zoom-in-95 shadow-lg relative z-20">
                                         <h4 className="text-[10px] font-black text-amber-400 uppercase mb-1 border-b border-amber-900/50 pb-1">
-                                            {availableConditions.find(c => c.name === hoveredCondition)?.name}
+                                            {hoveredCondition.label} <span className="text-gray-500 font-mono text-[8px] normal-case">({hoveredCondition.id})</span>
                                         </h4>
                                         <p className="text-[9px] text-gray-300 leading-relaxed whitespace-pre-wrap">
-                                            {availableConditions.find(c => c.name === hoveredCondition)?.description}
+                                            {hoveredCondition.desc}
                                         </p>
                                     </div>
                                 )}
@@ -621,7 +701,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
 
                             <section className="mb-8">
                                 <h3 className="text-rpgText font-mono text-[10px] uppercase mb-3 opacity-50 tracking-widest">Entidades no Mapa</h3>
-                                <div className="space-y-2">{entities.map((entity) => (<EntityControlRow key={entity.id} entity={entity} onUpdateHP={onUpdateHP} onDeleteEntity={onDeleteEntity} onClickEdit={() => setEditingEntity(entity)} onAddToInit={() => onAddToInitiative(entity)} isTarget={targetEntityIds.includes(entity.id)} isAttacker={attackerId === entity.id} onSetTarget={onSetTarget} onSetAttacker={onSetAttacker} onToggleCondition={onToggleCondition} onAddXP={onAddXP} onToggleVisibility={() => onToggleVisibility(entity.id)} />))}</div>
+                                <div className="space-y-2">{entities.map((entity) => (<EntityControlRow key={entity.id} entity={entity} onUpdateHP={onUpdateHP} onDeleteEntity={onDeleteEntity} onClickEdit={() => setEditingEntity(entity)} onAddToInit={() => onAddToInitiative(entity)} isTarget={targetEntityIds.includes(entity.id)} isAttacker={attackerId === entity.id} onSetTarget={onSetTarget} onSetAttacker={onSetAttacker} onToggleCondition={onToggleCondition} onAddXP={onAddXP} onToggleVisibility={() => onToggleVisibility(entity.id)} onEditEntity={onEditEntity} />))}</div>
                             </section>
                         </div>
                     )}
@@ -722,6 +802,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                         </div>
                     )}
 
+                    {/* 👉 BESTIÁRIO ATUALIZADO (Drag and Drop Perfeito) */}
                     {activeTab === 'create' && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                             

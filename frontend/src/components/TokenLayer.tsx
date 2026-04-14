@@ -47,6 +47,9 @@ interface TokenLayerProps {
   attackerId: number | null;
   targetEntityIds: number[];
   
+  // 👉 ADICIONADO: Precisamos saber quem é o jogador logado!
+  myCharacterId?: number;
+  
   onMoveToken: (id: number, x: number, y: number) => void;
   onSelectToken: (entity: Entity, multi?: boolean) => void;
   onTokenContextMenu: (e: React.MouseEvent, entity: Entity) => void;
@@ -57,7 +60,7 @@ interface TokenLayerProps {
 
 const TokenLayer: React.FC<TokenLayerProps> = ({
   entities, gridSize, offset, scale, role,
-  activeTurnId, attackerId, targetEntityIds,
+  activeTurnId, attackerId, targetEntityIds, myCharacterId,
   onMoveToken, onSelectToken, onTokenContextMenu, onTokenDoubleClick,
   onGiveItemToToken
 }) => {
@@ -108,6 +111,32 @@ const TokenLayer: React.FC<TokenLayerProps> = ({
             transformOrigin: 'top left' 
         }}
     >
+        <style>{`
+            @keyframes jitter {
+                0% { transform: translate(1px, 1px) rotate(0deg); }
+                10% { transform: translate(-1px, -2px) rotate(-1deg); }
+                20% { transform: translate(-3px, 0px) rotate(1deg); }
+                30% { transform: translate(3px, 2px) rotate(0deg); }
+                40% { transform: translate(1px, -1px) rotate(1deg); }
+                50% { transform: translate(-1px, 2px) rotate(-1deg); }
+                60% { transform: translate(-3px, 1px) rotate(0deg); }
+                70% { transform: translate(3px, 1px) rotate(-1deg); }
+                80% { transform: translate(-1px, -1px) rotate(1deg); }
+                90% { transform: translate(1px, 2px) rotate(0deg); }
+                100% { transform: translate(1px, -2px) rotate(-1deg); }
+            }
+            .animate-jitter {
+                animation: jitter 0.3s infinite;
+            }
+            @keyframes zap {
+                0%, 100% { border-color: transparent; box-shadow: none; }
+                50% { border-color: #fde047; box-shadow: 0 0 20px #eab308, inset 0 0 15px #ca8a04; }
+            }
+            .animate-zap {
+                animation: zap 0.15s infinite;
+            }
+        `}</style>
+
         {floatingTexts.map(ft => (
             <FloatingNumber key={ft.id} text={ft.text} type={ft.type} x={ft.x} y={ft.y} size={ft.size} gridSize={gridSize} />
         ))}
@@ -116,20 +145,57 @@ const TokenLayer: React.FC<TokenLayerProps> = ({
             if (role === 'PLAYER' && entity.visible === false) return null;
 
             const isMyTurn = activeTurnId === entity.id;
+            
+            // 👉 LÓGICA DE BLOQUEIO DE MOVIMENTO (TRAVA DE ADAMANTIUM)
+            const canMove = role === 'DM' || entity.id === myCharacterId;
+            
+            const conds = entity.conditions || [];
+            const isInvisible = conds.includes('Invisible');
+            const isPoisoned = conds.includes('Poisoned');
+            const isStunned = conds.includes('Stunned');
+            const isCharmed = conds.includes('Charmed');
+            const isFrightened = conds.includes('Frightened');
+            const isPetrified = conds.includes('Petrified');
+            const isParalyzed = conds.includes('Paralyzed');
+            const isBlinded = conds.includes('Blinded');
+            const isDeafened = conds.includes('Deafened');
+            const isExhaustion = conds.includes('Exhaustion');
+            const isGrappled = conds.includes('Grappled');
+            const isIncapacitated = conds.includes('Incapacitated');
+            const isRestrained = conds.includes('Restrained');
+            const isUnconscious = conds.includes('Unconscious');
+            const isDead = entity.hp <= 0;
+
+            let tokenOpacity = 1;
+            let filter = 'none';
+            let extraClasses = "relative z-10 transition-all duration-500 ease-in-out";
+
+            if (isInvisible) {
+                tokenOpacity = role === 'DM' ? 0.4 : 0.15; 
+                filter = 'grayscale(30%) sepia(50%) hue-rotate(180deg)'; 
+            }
+            
+            if (isDead) {
+                filter = 'grayscale(100%) brightness(40%) drop-shadow(0 0 5px black)';
+            } else if (isPetrified) {
+                filter = 'grayscale(100%) contrast(130%) brightness(80%) drop-shadow(0 0 10px rgba(0,0,0,0.8))';
+            } else if (isPoisoned) {
+                filter = 'sepia(100%) hue-rotate(60deg) saturate(300%)'; 
+            } else if (isExhaustion) {
+                filter = 'sepia(40%) saturate(60%) brightness(75%)';
+            }
+
+            if (isFrightened && !isDead && !isPetrified && !isParalyzed) {
+                extraClasses += " animate-jitter";
+            }
 
             return (
                 <div key={entity.id} className="pointer-events-auto relative">
                     
-                    {/* 👉 AURA DO TURNO ATIVO (A Roda do Tempo) */}
                     {isMyTurn && (
                         <div 
                             className="absolute pointer-events-none z-0 flex items-center justify-center mix-blend-screen"
-                            style={{
-                                left: entity.x * gridSize,
-                                top: entity.y * gridSize,
-                                width: (entity.size || 1) * gridSize,
-                                height: (entity.size || 1) * gridSize,
-                            }}
+                            style={{ left: entity.x * gridSize, top: entity.y * gridSize, width: (entity.size || 1) * gridSize, height: (entity.size || 1) * gridSize }}
                         >
                             <div className="absolute inset-[-20%] rounded-full bg-yellow-500/30 animate-pulse blur-md"></div>
                             <div className="absolute inset-[-30%] rounded-full border-2 border-dashed border-yellow-400/60 animate-[spin_10s_linear_infinite] drop-shadow-[0_0_10px_#facc15]"></div>
@@ -137,19 +203,81 @@ const TokenLayer: React.FC<TokenLayerProps> = ({
                         </div>
                     )}
 
-                    {/* O Token em si */}
-                    <div className="relative z-10">
+                    {!isDead && isCharmed && (
+                        <div 
+                            className="absolute pointer-events-none z-0 flex items-center justify-center"
+                            style={{ left: entity.x * gridSize, top: entity.y * gridSize, width: (entity.size || 1) * gridSize, height: (entity.size || 1) * gridSize }}
+                        >
+                            <div className="absolute inset-[-15%] rounded-full border-[3px] border-pink-400/70 animate-ping mix-blend-screen"></div>
+                        </div>
+                    )}
+
+                    {!isDead && isFrightened && (
+                        <div 
+                            className="absolute pointer-events-none z-0 flex items-center justify-center"
+                            style={{ left: entity.x * gridSize, top: entity.y * gridSize, width: (entity.size || 1) * gridSize, height: (entity.size || 1) * gridSize }}
+                        >
+                            <div className="absolute inset-[-25%] rounded-full bg-indigo-700/40 blur-md animate-pulse"></div>
+                        </div>
+                    )}
+
+                    {!isDead && isParalyzed && (
+                        <div 
+                            className="absolute pointer-events-none z-0 flex items-center justify-center"
+                            style={{ left: entity.x * gridSize, top: entity.y * gridSize, width: (entity.size || 1) * gridSize, height: (entity.size || 1) * gridSize }}
+                        >
+                            <div className="absolute inset-[-10%] rounded-full border-4 border-dashed animate-zap mix-blend-screen shadow-[0_0_20px_#eab308]"></div>
+                        </div>
+                    )}
+
+                    {!isDead && isPoisoned && (
+                        <div 
+                            className="absolute pointer-events-none z-0 flex items-center justify-center"
+                            style={{ left: entity.x * gridSize, top: entity.y * gridSize, width: (entity.size || 1) * gridSize, height: (entity.size || 1) * gridSize }}
+                        >
+                            <div className="absolute inset-[-10%] rounded-full bg-green-500/30 animate-pulse blur-lg"></div>
+                            <div className="absolute inset-0 rounded-full border border-green-400/50 animate-ping"></div>
+                        </div>
+                    )}
+
+                    <div className={extraClasses} style={{ opacity: tokenOpacity, filter: filter }}>
+                        
+                        {!isDead && isBlinded && (
+                            <div className="absolute inset-0 rounded-full bg-black/60 z-20 pointer-events-none shadow-[inset_0_0_15px_black]"></div>
+                        )}
+
+                        {!isDead && isGrappled && !isRestrained && (
+                            <div className="absolute inset-[5%] rounded-full border-[4px] border-dashed border-orange-600/90 z-20 pointer-events-none shadow-[inset_0_0_10px_#ea580c]"></div>
+                        )}
+
+                        {!isDead && isRestrained && (
+                            <div className="absolute inset-[-2%] rounded-full border-[6px] border-double border-red-700/90 z-20 pointer-events-none shadow-[inset_0_0_15px_#b91c1c]"></div>
+                        )}
+
+                        {!isDead && isDeafened && (
+                            <div className="absolute inset-[-5%] rounded-full border-2 border-dotted border-gray-400/80 z-20 pointer-events-none animate-[spin_8s_linear_infinite]"></div>
+                        )}
+
                         <Token
                             entity={entity}
                             gridSize={gridSize}
                             scale={scale}
+                            
+                            // 👉 Repassamos a variável de controle caso o Token em si possua uma trava interna
+                            isDraggable={canMove}
                             
                             isSelected={false} 
                             isTarget={targetEntityIds.includes(entity.id)}
                             isAttacker={attackerId === entity.id}
                             isActiveTurn={isMyTurn}
                             
-                            onMove={onMoveToken}
+                            // 👉 BLOQUEIO APLICADO NO CALLBACK DE MOVIMENTO
+                            onMove={(id, x, y) => {
+                                if (canMove) {
+                                    onMoveToken(id, x, y);
+                                }
+                            }}
+                            
                             onSelect={(e, ent) => onSelectToken(ent, e.shiftKey || e.ctrlKey)}
                             onContextMenu={onTokenContextMenu}
                             onDoubleClick={(e, ent) => onTokenDoubleClick(ent, e.shiftKey || e.ctrlKey)}
@@ -157,10 +285,36 @@ const TokenLayer: React.FC<TokenLayerProps> = ({
                         />
                     </div>
 
-                    {/* 👉 MARCADOR CENTRAL DE DISTÂNCIA E MIRA */}
+                    {!isDead && isStunned && (
+                        <div 
+                            className="absolute pointer-events-none z-30 flex items-center justify-center"
+                            style={{ left: entity.x * gridSize, top: entity.y * gridSize, width: (entity.size || 1) * gridSize, height: (entity.size || 1) * gridSize }}
+                        >
+                            <span className="absolute -top-6 text-3xl animate-bounce drop-shadow-[0_2px_4px_black]">💫</span>
+                        </div>
+                    )}
+
+                    {!isDead && isIncapacitated && !isStunned && !isUnconscious && !isParalyzed && !isPetrified && (
+                        <div 
+                            className="absolute pointer-events-none z-30 flex items-center justify-center"
+                            style={{ left: entity.x * gridSize, top: entity.y * gridSize, width: (entity.size || 1) * gridSize, height: (entity.size || 1) * gridSize }}
+                        >
+                            <span className="absolute -top-4 text-2xl animate-spin drop-shadow-[0_2px_4px_black]">🌀</span>
+                        </div>
+                    )}
+
+                    {!isDead && isUnconscious && (
+                        <div 
+                            className="absolute pointer-events-none z-30 flex items-center justify-center"
+                            style={{ left: entity.x * gridSize, top: entity.y * gridSize, width: (entity.size || 1) * gridSize, height: (entity.size || 1) * gridSize }}
+                        >
+                            <span className="absolute -top-6 -right-2 text-2xl animate-pulse drop-shadow-[0_2px_4px_black]">💤</span>
+                        </div>
+                    )}
+
                     {entity.type !== 'loot' && entity.classType !== 'Item' && (
                         <div 
-                            className="absolute pointer-events-none z-20 flex items-center justify-center"
+                            className="absolute pointer-events-none z-[25] flex items-center justify-center"
                             style={{
                                 left: entity.x * gridSize,
                                 top: entity.y * gridSize,

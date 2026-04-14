@@ -1,10 +1,13 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Entity, Item } from '../App';
 
 interface TokenProps {
   entity: Entity;
   gridSize: number;
   scale: number;
+  
+  // 👉 NOVO: Define se este token pode ser arrastado
+  isDraggable?: boolean;
   
   isSelected: boolean;
   isTarget: boolean;
@@ -19,12 +22,26 @@ interface TokenProps {
 }
 
 const CONDITIONS_ICONS: Record<string, string> = {
-    'poison': '☠️', 'fire': '🔥', 'stun': '💫', 'shield': '🛡️', 
-    'blood': '🩸', 'sleep': '💤', 'web': '🕸️'
+    'Blinded': '🦇', 
+    'Charmed': '💕', 
+    'Deafened': '🔇', 
+    'Exhaustion': '😩', 
+    'Frightened': '😱', 
+    'Grappled': '🤼', 
+    'Incapacitated': '😵', 
+    'Invisible': '👻', 
+    'Paralyzed': '⚡', 
+    'Petrified': '🗿', 
+    'Poisoned': '🤢', 
+    'Prone': '⏬', 
+    'Restrained': '⛓️', 
+    'Stunned': '💫', 
+    'Unconscious': '💤'
 };
 
 const Token: React.FC<TokenProps> = ({ 
   entity, gridSize, scale,
+  isDraggable = true, // Por padrão pode mover (caso o DM não passe isso)
   isSelected, isTarget, isAttacker, isActiveTurn,
   onMove, onSelect, onContextMenu, onDoubleClick,
   onDropItemOnToken
@@ -58,9 +75,12 @@ const Token: React.FC<TokenProps> = ({
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return; 
     e.preventDefault();
-    e.stopPropagation(); // 👉 BLOQUEIA O CLIQUE DE IR PARA O MAPA
+    e.stopPropagation(); 
 
     onSelect(e, entity);
+
+    // 👉 AQUI A TRAVA FUNCIONA: Se não for Draggable, não inicia o Drag!
+    if (!isDraggable) return;
 
     isDragging.current = true;
     startMouse.current = { x: e.clientX, y: e.clientY };
@@ -78,7 +98,6 @@ const Token: React.FC<TokenProps> = ({
   const handleMouseMove = (e: MouseEvent) => {
     if (!isDragging.current || !elementRef.current) return;
     
-    // 👉 IMPORTANTE: O rato "rouba" o evento do mapa se estivermos arrastar.
     e.preventDefault();
 
     const parentRect = elementRef.current.parentElement?.getBoundingClientRect();
@@ -132,7 +151,7 @@ const Token: React.FC<TokenProps> = ({
     }
 
     elementRef.current.style.zIndex = isActiveTurn ? '150' : (isSelected ? '100' : '10');
-    elementRef.current.style.cursor = 'grab';
+    elementRef.current.style.cursor = isDraggable ? 'grab' : 'pointer';
     elementRef.current.style.transition = 'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)';
     elementRef.current.style.transform = `translate(${finalX}px, ${finalY}px)`;
   };
@@ -172,7 +191,9 @@ const Token: React.FC<TokenProps> = ({
 
   const size = (entity.size || 1) * gridSize;
   const isDead = entity.hp <= 0;
-  const isLoot = entity.type === 'loot'; // 👉 BOOLEANO ÚTIL
+  const isLoot = entity.type === 'loot'; 
+  
+  const isProne = entity.conditions?.includes('Prone') || entity.conditions?.includes('Unconscious');
 
   let ringColor = 'transparent';
   let glowEffect = 'none';
@@ -195,7 +216,7 @@ const Token: React.FC<TokenProps> = ({
     <div
       ref={elementRef}
       onMouseDown={handleMouseDown}
-      onContextMenu={(e) => { e.stopPropagation(); onContextMenu(e, entity); }} // 👉 PROTEGE CONTRA MENU DUPLO
+      onContextMenu={(e) => { e.stopPropagation(); onContextMenu(e, entity); }} 
       onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(e, entity); }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -206,7 +227,7 @@ const Token: React.FC<TokenProps> = ({
         width: size, height: size,
         transform: `translate(${position.x}px, ${position.y}px)`,
         zIndex: isActiveTurn ? 150 : (isSelected ? 100 : 10), 
-        cursor: 'grab',
+        cursor: isDraggable ? 'grab' : 'pointer', // 👉 MUDA O CURSOR SE NÃO PUDER MOVER
         transition: isDragging.current ? 'none' : 'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
         willChange: 'transform'
       }}
@@ -229,7 +250,7 @@ const Token: React.FC<TokenProps> = ({
       <div 
         className="absolute bottom-0 left-0 w-full h-[140%] flex items-end justify-center pointer-events-none"
         style={{
-          transform: `rotate(${entity.rotation || 0}deg) scaleX(${entity.mirrored ? -1 : 1})`,
+          transform: `rotate(${entity.rotation || 0}deg) scaleX(${entity.mirrored ? -1 : 1}) ${(isProne || isDead) ? 'rotate(90deg) scale(0.8)' : ''}`,
           transformOrigin: 'bottom center',
           transition: 'transform 0.2s ease-out',
           filter: isDead ? 'grayscale(100%) brightness(40%) contrast(150%)' : 'none' 
@@ -256,7 +277,6 @@ const Token: React.FC<TokenProps> = ({
         </div>
       )}
       
-      {/* 👉 MÁGICA FINAL: Só mostra Nome/Nível se NÃO FOR LOOT! */}
       {!isLoot && (
           <div className="absolute left-1/2 pointer-events-none z-30 flex flex-col items-center"
                style={{ 

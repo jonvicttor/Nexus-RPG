@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import socket from '../services/socket';
 import { Howl } from 'howler';
 import { Trash2, Play, Sword, Crown, ChevronRight, Search, UserPlus, Sparkles, XCircle, Scroll, Map as MapIcon, Key, ChevronLeft, Upload, User, Swords, Star, Fingerprint, Save, X, ChevronDown, ChevronUp, Backpack, BookOpen, Wand2 } from 'lucide-react'; 
+import CampaignForge from './CampaignForge'; // 👉 IMPORTAÇÃO DA NOSSA NOVA FORJA!
 
 // ============================================================================
 // 📖 DICIONÁRIO ARCANO E LIMITES DE CLASSE
@@ -208,10 +209,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
   const [isMuted, setIsMuted] = useState(false);
   const musicRef = useRef<Howl | null>(null);
   const [savedChar, setSavedChar] = useState<any>(null);
-  const [savedCampaigns, setSavedCampaigns] = useState<{name: string, roomId: string}[]>([]);
+  const [savedCampaigns, setSavedCampaigns] = useState<{name: string, roomId: string, data?: any}[]>([]);
 
   const [campaignName, setCampaignName] = useState('A Mina Perdida de Phandelver');
   const [roomPassword, setRoomPassword] = useState('mesa-do-victor');
+  
+  // 👉 ESTADO DA NOSSA NOVA FORJA
+  const [showForge, setShowForge] = useState(false);
 
   const [builderStep, setBuilderStep] = useState(1);
   const [selectedRaceName, setSelectedRaceName] = useState<string>(''); 
@@ -492,6 +496,20 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
     const updatedCampaigns = [newCampaign, ...existing].slice(0, 5); 
     localStorage.setItem('nexus_saved_campaigns', JSON.stringify(updatedCampaigns));
     onLogin('DM', 'Mestre Supremo', { campaignName: cName, roomId: cRoom });
+  };
+
+  // 👉 HANDLER DA NOSSA NOVA FORJA
+  const handleForgeComplete = (campaignData: any) => {
+      // Cria a chave da sala substituindo espaços por hifens e removendo acentos
+      const generatedRoomId = campaignData.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '-');
+      
+      const newCampaign = { name: campaignData.name, roomId: generatedRoomId, forgeData: campaignData };
+      const existing = savedCampaigns.filter(c => c.roomId !== generatedRoomId);
+      const updatedCampaigns = [newCampaign, ...existing].slice(0, 5);
+      
+      localStorage.setItem('nexus_saved_campaigns', JSON.stringify(updatedCampaigns));
+      setShowForge(false);
+      onLogin('DM', 'Mestre Supremo', { campaignName: campaignData.name, roomId: generatedRoomId, forgeData: campaignData });
   };
 
   const handleFinalSubmit = () => {
@@ -1277,53 +1295,76 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, availableClasses = [
         </BackgroundWrapper>
     );
 
-    if (step === 4) return (
-        <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
-            <ArcaneContainer width="w-full max-w-[600px]" className="!p-6 md:!p-10 gap-4 flex flex-col items-center border-red-900/30 w-full animate-in fade-in zoom-in-95 duration-500">
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(220,38,38,0.15),transparent_70%)] pointer-events-none"></div>
-                <div className="text-center space-y-2 mb-2 w-full"><h2 className="text-2xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-200 via-red-500 to-red-800 uppercase tracking-[0.1em] md:tracking-[0.2em] drop-shadow-md border-b-2 border-red-900/50 pb-4 w-full" style={{ fontFamily: 'Cinzel Decorative' }}>Crônicas</h2></div>
+    if (step === 4) {
+        // 👉 RENDERIZAÇÃO MÁGICA DA FORJA COMO OVERLAY (MANTÉM A MÚSICA TOCANDO)
+        if (showForge) {
+            return (
+                <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
+                    <CampaignForge onClose={() => setShowForge(false)} onComplete={handleForgeComplete} />
+                </BackgroundWrapper>
+            );
+        }
 
-                <div className="w-full flex-col flex gap-2">
-                    {savedCampaigns.length > 0 && (
-                        <div className="w-full mb-2">
-                            <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-3 flex items-center gap-2"><Scroll size={14} className="text-red-500" /> Salão dos Mundos (Salvas)</label>
-                            <div className="flex flex-col gap-3 max-h-[180px] overflow-y-auto custom-scrollbar pr-2">
-                                {savedCampaigns.map((camp, idx) => (
-                                    <div key={idx} className="flex items-center gap-2">
-                                        <button onClick={() => submitCampaign(camp.name, camp.roomId)} className="flex-1 bg-black/60 hover:bg-red-900/40 border border-red-900/30 hover:border-red-500/50 rounded-2xl p-3 md:p-4 transition-all text-left group shadow-inner">
-                                            <div className="text-red-100 font-bold text-sm md:text-base font-serif group-hover:text-white transition-colors truncate">{camp.name}</div>
-                                            <div className="text-[9px] md:text-[10px] text-red-500/60 uppercase tracking-widest font-mono mt-1">Sala ID: <span className="text-red-300">{camp.roomId}</span></div>
-                                        </button>
-                                        <button onClick={() => { if(window.confirm(`Destruir os registros da crônica "${camp.name}"?`)) { const updated = savedCampaigns.filter(c => c.roomId !== camp.roomId); setSavedCampaigns(updated); localStorage.setItem('nexus_saved_campaigns', JSON.stringify(updated)); } }} className="p-3 md:p-4 bg-black/60 hover:bg-red-950 border border-red-900/30 hover:border-red-500/50 rounded-2xl text-red-500/40 hover:text-red-400 transition-all shadow-inner" title="Esquecer Crônica"><Trash2 size={16} /></button>
-                                    </div>
-                                ))}
+        return (
+            <BackgroundWrapper isMuted={isMuted} toggleMute={toggleMute}>
+                <ArcaneContainer width="w-full max-w-[600px]" className="!p-6 md:!p-10 gap-4 flex flex-col items-center border-red-900/30 w-full animate-in fade-in zoom-in-95 duration-500">
+                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(220,38,38,0.15),transparent_70%)] pointer-events-none"></div>
+                    <div className="text-center space-y-2 mb-2 w-full"><h2 className="text-2xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-200 via-red-500 to-red-800 uppercase tracking-[0.1em] md:tracking-[0.2em] drop-shadow-md border-b-2 border-red-900/50 pb-4 w-full" style={{ fontFamily: 'Cinzel Decorative' }}>Crônicas</h2></div>
+
+                    <div className="w-full flex-col flex gap-2">
+                        {savedCampaigns.length > 0 && (
+                            <div className="w-full mb-2">
+                                <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-3 flex items-center gap-2"><Scroll size={14} className="text-red-500" /> Salão dos Mundos (Salvas)</label>
+                                <div className="flex flex-col gap-3 max-h-[180px] overflow-y-auto custom-scrollbar pr-2">
+                                    {savedCampaigns.map((camp, idx) => (
+                                        <div key={idx} className="flex items-center gap-2">
+                                            <button onClick={() => submitCampaign(camp.name, camp.roomId)} className="flex-1 bg-black/60 hover:bg-red-900/40 border border-red-900/30 hover:border-red-500/50 rounded-2xl p-3 md:p-4 transition-all text-left group shadow-inner">
+                                                <div className="text-red-100 font-bold text-sm md:text-base font-serif group-hover:text-white transition-colors truncate">{camp.name}</div>
+                                                <div className="text-[9px] md:text-[10px] text-red-500/60 uppercase tracking-widest font-mono mt-1">Sala ID: <span className="text-red-300">{camp.roomId}</span></div>
+                                            </button>
+                                            <button onClick={() => { if(window.confirm(`Destruir os registros da crônica "${camp.name}"?`)) { const updated = savedCampaigns.filter(c => c.roomId !== camp.roomId); setSavedCampaigns(updated); localStorage.setItem('nexus_saved_campaigns', JSON.stringify(updated)); } }} className="p-3 md:p-4 bg-black/60 hover:bg-red-950 border border-red-900/30 hover:border-red-500/50 rounded-2xl text-red-500/40 hover:text-red-400 transition-all shadow-inner" title="Esquecer Crônica"><Trash2 size={16} /></button>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                            <div className="flex items-center w-full gap-4 opacity-50 mt-6 mb-4"><div className="h-px bg-gradient-to-r from-transparent to-red-500/50 flex-grow"></div><span className="text-red-200/50 text-[10px] uppercase font-black tracking-widest">Ou Forjar Nova</span><div className="h-px bg-gradient-to-l from-transparent to-red-500/50 flex-grow"></div></div>
-                        </div>
-                    )}
+                        )}
 
-                    <div className="bg-black/40 border border-red-900/30 rounded-2xl p-4 shadow-inner hover:border-red-500/50 transition-colors space-y-4">
-                        <div>
-                            <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-2 flex items-center gap-2"><MapIcon size={14} className="text-red-500" /> Nome da Nova Crônica</label>
-                            <StoneInput type="text" placeholder="Ex: A Mina Perdida de Phandelver" value={campaignName} onChange={(e: any) => setCampaignName(e.target.value)} className="!text-lg md:!text-xl !p-3 !border-red-900/50 focus:!border-red-400/80 !text-red-50 rounded-xl" />
-                        </div>
-                        <div>
-                            <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-2 flex items-center gap-2"><Key size={14} className="text-red-500" /> Chave da Sala (ID Secreto)</label>
-                            <StoneInput type="text" placeholder="ex: sala-do-dragao" value={roomPassword} onChange={(e: any) => setRoomPassword(e.target.value.toLowerCase().replace(/\s+/g, '-'))} onKeyDown={(e: any) => e.key === 'Enter' && submitCampaign(campaignName, roomPassword)} className="!text-lg md:!text-xl !p-3 !border-red-900/50 focus:!border-red-400/80 !text-red-400 rounded-xl font-mono text-center tracking-widest" />
-                            <p className="text-[9px] text-red-500/50 mt-2 text-center uppercase tracking-widest">Passe esta chave aos jogadores para entrarem na sua mesa.</p>
+                        <div className="flex flex-col gap-4 w-full mt-4">
+                            <div className="flex items-center w-full gap-4 opacity-50"><div className="h-px bg-gradient-to-r from-transparent to-red-500/50 flex-grow"></div><span className="text-red-200/50 text-[10px] uppercase font-black tracking-widest">Ou</span><div className="h-px bg-gradient-to-l from-transparent to-red-500/50 flex-grow"></div></div>
+
+                            {/* 👉 NOVO BOTÃO DA FORJA DE MUNDOS */}
+                            <button 
+                                onClick={() => setShowForge(true)} 
+                                className="w-full bg-gradient-to-r from-purple-900 to-indigo-900 hover:from-purple-800 hover:to-indigo-800 border border-purple-500/50 text-white font-black text-xs md:text-sm py-4 rounded-xl uppercase tracking-widest transition-all shadow-[0_0_20px_rgba(168,85,247,0.4)] flex items-center justify-center gap-2 active:scale-95"
+                            >
+                                <Sparkles size={18}/> Abrir Forja de Mundos (Avançado)
+                            </button>
+
+                            <div className="bg-black/40 border border-red-900/30 rounded-2xl p-4 shadow-inner hover:border-red-500/50 transition-colors space-y-4 mt-2">
+                                <p className="text-[10px] text-gray-500 uppercase text-center font-bold tracking-widest mb-2 border-b border-white/5 pb-2">Criação Rápida</p>
+                                <div>
+                                    <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-2 flex items-center gap-2"><MapIcon size={14} className="text-red-500" /> Nome da Nova Crônica</label>
+                                    <StoneInput type="text" placeholder="Ex: A Mina Perdida de Phandelver" value={campaignName} onChange={(e: any) => setCampaignName(e.target.value)} className="!text-lg md:!text-xl !p-3 !border-red-900/50 focus:!border-red-400/80 !text-red-50 rounded-xl" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] md:text-xs text-red-300/70 uppercase font-black tracking-[0.15em] mb-2 flex items-center gap-2"><Key size={14} className="text-red-500" /> Chave da Sala (ID Secreto)</label>
+                                    <StoneInput type="text" placeholder="ex: sala-do-dragao" value={roomPassword} onChange={(e: any) => setRoomPassword(e.target.value.toLowerCase().replace(/\s+/g, '-'))} onKeyDown={(e: any) => e.key === 'Enter' && submitCampaign(campaignName, roomPassword)} className="!text-lg md:!text-xl !p-3 !border-red-900/50 focus:!border-red-400/80 !text-red-400 rounded-xl font-mono text-center tracking-widest" />
+                                    <p className="text-[9px] text-red-500/50 mt-2 text-center uppercase tracking-widest">Passe esta chave aos jogadores para entrarem na sua mesa.</p>
+                                </div>
+                                <MetalButton onClick={() => submitCampaign(campaignName, roomPassword)} fullWidth variant="red" className="py-3 text-xs md:text-sm mt-2">Abrir os Portões (Rápido) ❯</MetalButton>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                {error && <p className="text-red-300 text-xs md:text-sm animate-in fade-in slide-in-from-top-2 text-center bg-red-950/50 p-2 md:p-3 rounded-lg border border-red-500/30 shadow-md font-bold flex items-center justify-center gap-2 w-full mt-2"><XCircle size={16}/> {error}</p>}
+                    {error && <p className="text-red-300 text-xs md:text-sm animate-in fade-in slide-in-from-top-2 text-center bg-red-950/50 p-2 md:p-3 rounded-lg border border-red-500/30 shadow-md font-bold flex items-center justify-center gap-2 w-full mt-2"><XCircle size={16}/> {error}</p>}
 
-                <div className="flex gap-3 md:gap-4 w-full mt-2 pt-4 border-t-2 border-red-900/30">
-                    <button onClick={() => { setStep(2); setDmPass(''); }} className="px-4 py-3 text-red-500/50 hover:text-red-200 font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors rounded-xl hover:bg-white/5 border border-transparent hover:border-white/10">❮ Cancelar</button>
-                    <MetalButton onClick={() => submitCampaign(campaignName, roomPassword)} fullWidth variant="red" className="py-4 text-xs md:text-sm">Abrir os Portões ❯</MetalButton>
-                </div>
-            </ArcaneContainer>
-        </BackgroundWrapper>
-    );
+                    <div className="flex w-full mt-2 pt-4 border-t-2 border-red-900/30">
+                        <button onClick={() => { setStep(2); setDmPass(''); }} className="w-full py-3 text-red-500/50 hover:text-red-200 font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors rounded-xl hover:bg-white/5 border border-transparent hover:border-white/10">❮ Cancelar</button>
+                    </div>
+                </ArcaneContainer>
+            </BackgroundWrapper>
+        );
+    }
   }
 
   return null;

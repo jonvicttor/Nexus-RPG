@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import socket from './services/socket';
-import { Howl, Howler } from 'howler';
+import { Howl } from 'howler';
 import GameMap from './components/GameMap'; 
 import SidebarDM, { InitiativeItem } from './components/SidebarDM';
 import SidebarPlayer from './components/SidebarPlayer';
@@ -8,10 +8,8 @@ import LoginScreen from './components/LoginScreen';
 import Lobby from './components/Lobby'; 
 import { ChatMessage } from './components/Chat';
 import EditEntityModal from './components/EditEntityModal';
-import MonsterCreatorModal from './components/MonsterCreatorModal';
 import BaldursDiceRoller, { RollBonus } from './components/BaldursDiceRoller'; 
 import { getLevelFromXP } from './utils/gameRules';
-import ContextMenu from './components/ContextMenu'; 
 import MobilePlayerSheet from './components/MobilePlayerSheet'; 
 import CharacterSheetFloating from './components/CharacterSheetFloating'; 
 import LootGeneratorModal from './components/LootGeneratorModal';
@@ -36,10 +34,16 @@ export interface Entity {
   proficiencies?: Record<string, number>; deathSaves?: { successes: number, failures: number }; inspiration?: boolean; 
   spellSlots?: Record<number, { max: number, used: number }>; spells?: { id: string, name: string, level: number }[];
   coins?: { cp: number, sp: number, ep: number, gp: number, pp: number };
+  resistances?: string[]; 
+  vulnerabilities?: string[];
+  immunities?: string[];
+  dmNotes?: string;
+  customActions?: any[]; 
 }
 
 export interface MonsterPreset {
   name: string; hp: number; ac: number; image: string; tokenImage?: string; size?: number;
+  resistances?: string[]; vulnerabilities?: string[]; immunities?: string[];
 }
 
 export interface MapPing {
@@ -53,9 +57,10 @@ export interface QueuedRoll {
   dc: number;
   entityId: number | null;
   targetName: string;
-  isDamage?: boolean;         
+  isDamage?: boolean;          
   damageExpression?: string;  
-  isCustomNoDamage?: boolean; // 👉 NOVO: Sinaliza que a rolagem usa dados 3D genéricos mas NÃO TIRA VIDA
+  isCustomNoDamage?: boolean; 
+  damageType?: string; 
 }
 
 const InitiativeModal = ({ entity, onClose, onConfirm }: { entity: Entity, onClose: () => void, onConfirm: (val: number) => void }) => {
@@ -127,8 +132,13 @@ const DamageOverlay = ({ data, onComplete }: { data: any, onComplete: () => void
                     {locked ? 'Impacto!' : 'Calculando Dano...'}
                 </h2>
                 
-                <div className="text-white text-lg bg-black/60 px-6 py-2 rounded-full border border-red-500/30 flex items-center gap-2 shadow-lg">
-                    🎯 Alvo: <span className="font-bold text-red-400">{data.targetName}</span>
+                <div className="text-white text-lg bg-black/60 px-6 py-2 rounded-full border border-red-500/30 flex flex-col items-center gap-1 shadow-lg">
+                    <span>🎯 Alvo: <span className="font-bold text-red-400">{data.targetName}</span></span>
+                    {data.damageType && (
+                        <span className={`text-[10px] uppercase font-bold tracking-widest bg-white/10 px-2 py-0.5 rounded shadow-inner ${data.damageModifier === 'immune' ? 'text-gray-400 line-through' : data.damageModifier === 'resistant' ? 'text-blue-400' : data.damageModifier === 'vulnerable' ? 'text-red-400 animate-pulse' : 'text-amber-400'}`}>
+                            {data.damageModifier === 'immune' ? 'Imune a ' : data.damageModifier === 'resistant' ? 'Resistente a ' : data.damageModifier === 'vulnerable' ? 'Vulnerável a ' : 'Elemento: '}{data.damageType}
+                        </span>
+                    )}
                 </div>
 
                 {data.rolls && (
@@ -146,7 +156,7 @@ const DamageOverlay = ({ data, onComplete }: { data: any, onComplete: () => void
 
                 {locked && (
                     <div className="animate-in zoom-in spin-in-12 duration-300 flex flex-col items-center mt-6">
-                        <span className="text-[10rem] leading-none font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-red-500 to-red-950 drop-shadow-[0_10px_20px_rgba(220,38,38,0.8)]" style={{ fontFamily: '"Cinzel Decorative", serif' }}>
+                        <span className={`text-[10rem] leading-none font-black text-transparent bg-clip-text drop-shadow-[0_10px_20px_rgba(220,38,38,0.8)] ${data.damageModifier === 'immune' ? 'bg-gradient-to-b from-gray-400 to-gray-600' : data.damageModifier === 'resistant' ? 'bg-gradient-to-b from-blue-300 to-blue-600' : 'bg-gradient-to-b from-white via-red-500 to-red-950'}`} style={{ fontFamily: '"Cinzel Decorative", serif' }}>
                             {data.total}
                         </span>
                         <span className="text-red-500/50 font-bold tracking-widest mt-4 uppercase">Pontos de Vida Perdidos</span>
@@ -211,15 +221,13 @@ function App() {
   const [availableRaces, setAvailableRaces] = useState<any[]>([]); 
   const [availableConditions, setAvailableConditions] = useState<any[]>([]); 
 
-  const [focusEntity, setFocusEntity] = useState<Entity | null>(null);       
-  const [globalBrightness, setGlobalBrightness] = useState(1);             
+  const [focusEntity, setFocusEntity] = useState<Entity | null>(null);        
+  const [globalBrightness, setGlobalBrightness] = useState(1);              
 
   const [mapOffset, setMapOffset] = useState({ x: 0, y: 0 });
   const [mapScale, setMapScale] = useState(1);
   const [windowSize, setWindowSize] = useState({ w: window.innerWidth, h: window.innerHeight });
 
-  const [showAllyCreator, setShowAllyCreator] = useState(false);
-  const [showEnemyCreator, setShowEnemyCreator] = useState(false);
   const [showBgDice, setShowBgDice] = useState(false);
   const [showLootGenerator, setShowLootGenerator] = useState(false); 
   
@@ -242,14 +250,14 @@ function App() {
       targetName: '',
       isDamage: false,
       damageExpression: '1d20',
-      isCustomNoDamage: false
+      isCustomNoDamage: false,
+      damageType: 'Físico' 
   });
 
   const [currentTrack, setCurrentTrack] = useState<string | null>(null);
   const [audioVolume, setAudioVolume] = useState(0.5);
   const activeMusicRef = useRef<Howl | null>(null);
 
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entity: Entity } | null>(null);
   const [pings, setPings] = useState<MapPing[]>([]);
   const [toastMsg, setToastMsg] = useState<{text: string, id: number, sender?: string} | null>(null);
 
@@ -270,7 +278,8 @@ function App() {
               targetName: nextRoll.targetName,
               isDamage: nextRoll.isDamage || false,
               damageExpression: nextRoll.damageExpression || '1d20',
-              isCustomNoDamage: nextRoll.isCustomNoDamage || false // 👉 NOVO: Adicionado à context state
+              isCustomNoDamage: nextRoll.isCustomNoDamage || false,
+              damageType: nextRoll.damageType || 'Físico' 
           });
           setShowBgDice(true);
       }
@@ -379,7 +388,9 @@ function App() {
           size: customStats?.size || 2, xp: customStats?.xp || 0, level: customStats?.level || 1, inventory: customStats?.inventory || [], 
           race: customStats?.race || 'Humano', visible: true, proficiencies: customStats?.proficiencies || {}, 
           deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, inspiration: customStats?.inspiration || false, 
-          spellSlots: customStats?.spellSlots || {}, spells: customStats?.spells || [], coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } 
+          spellSlots: customStats?.spellSlots || {}, spells: customStats?.spells || [], coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+          resistances: customStats?.resistances || [], vulnerabilities: customStats?.vulnerabilities || [], immunities: customStats?.immunities || [],
+          dmNotes: customStats?.dmNotes || ''
       }; 
       setEntities(prev => [...prev, newEntity]); 
       socket.emit('createEntity', { entity: newEntity, roomId }); 
@@ -502,7 +513,7 @@ function App() {
                         targetName: charName,
                         isDamage: data.isDamage || false,
                         damageExpression: data.damageExpression || '1d20',
-                        isCustomNoDamage: data.isCustomNoDamage || false // 👉 NOVO: Transfere do Socket
+                        isCustomNoDamage: data.isCustomNoDamage || false
                     }]);
                     playSound('notificacao');
                     addLog({ text: `⚠️ O Mestre exigiu uma rolagem de **${data.skillName}** de você!`, type: 'info', sender: 'Sistema' }, false);
@@ -591,9 +602,7 @@ function App() {
       setTargetEntityIds([]);
   };
 
-  // 👉 NOVO: Função que o DM chama para exigir rolagem customizada 3D
   const handleRequestCustomRoll = (targetIds: number[], expression: string, title: string) => {
-      // Se não selecionar ninguém, o próprio Mestre rola o dado
       if (targetIds.length === 0) {
            setRollQueue(prev => [...prev, {
                title: title, subtitle: 'Rolagem Customizada', dc: 0, mod: 0, entityId: null, targetName: 'Mestre', 
@@ -629,8 +638,8 @@ function App() {
       setTargetEntityIds([]);
   };
   
-  const handleAttributeRoll = (charName: string, attrName: string, mod: number) => { 
-      setRollQueue(prev => [...prev, { title: attrName, subtitle: `Teste de Perícia (${charName})`, dc: 15, mod, entityId: null, targetName: charName }]);
+  const handleAttributeRoll = (charName: string, attrName: string, mod: number, damageExpr?: string, damageType?: string) => { 
+      setRollQueue(prev => [...prev, { title: attrName, subtitle: `Ação de Combate`, dc: 10, mod, entityId: null, targetName: charName, damageExpression: damageExpr, damageType: damageType || 'Físico' }]);
   };
 
   const handleApplyDamageFromChat = (targetId: number, damageExpression: string) => {
@@ -660,50 +669,68 @@ function App() {
         }
   };
 
-  // 👉 LÓGICA ATUALIZADA: Suporte a Dados Customizados Sem Dano
   const handleDiceComplete = (total: number, isSuccess: boolean, isCritical: boolean, isSecret: boolean, finalRolls?: number[], finalMod?: number) => {
       const senderName = role === 'DM' ? 'Mestre' : playerName;
 
-      // --- LÓGICA DE DADOS GENÉRICOS (isDamage ativa os dados coloridos/formatos diferentes) ---
       if (diceContext.isDamage) {
           const rollString = finalRolls ? `[${finalRolls.join(', ')}]` : '';
           const modStr = finalMod ? (finalMod > 0 ? `+${finalMod}` : (finalMod < 0 ? finalMod : '')) : '';
 
           if (!diceContext.isCustomNoDamage && diceContext.entityId) {
-              // É DANO REAL (Tira HP e mostra o Sangue)
-              handleUpdateHP(diceContext.entityId, -total);
-              addLog({ text: `⚔️ **DANO APLICADO:** Rolou ${diceContext.damageExpression} ${rollString}${modStr} = **${total} de Dano** no ${diceContext.targetName}!`, type: 'damage', sender: 'Sistema' });
+              const target = entities.find(e => e.id === diceContext.entityId);
+              let finalDamage = total;
+              let dmgModifierInfo = 'normal'; 
+
+              if (target && diceContext.damageType) {
+                  const dType = diceContext.damageType.toLowerCase();
+                  const targetDataStr = JSON.stringify(target).toLowerCase();
+
+                  if (target.immunities?.some(i => i.toLowerCase().includes(dType)) || targetDataStr.includes(`imune a ${dType}`) || targetDataStr.includes(`imunidade a ${dType}`)) {
+                      finalDamage = 0;
+                      dmgModifierInfo = 'immune';
+                  } 
+                  else if (target.vulnerabilities?.some(v => v.toLowerCase().includes(dType)) || targetDataStr.includes(`vulnerável a ${dType}`) || targetDataStr.includes(`vulnerabilidade a ${dType}`)) {
+                      finalDamage = total * 2;
+                      dmgModifierInfo = 'vulnerable';
+                  }
+                  else if (target.resistances?.some(r => r.toLowerCase().includes(dType)) || targetDataStr.includes(`resistente a ${dType}`) || targetDataStr.includes(`resistência a ${dType}`)) {
+                      finalDamage = Math.floor(total / 2);
+                      dmgModifierInfo = 'resistant';
+                  }
+              }
+
+              if (finalDamage > 0) {
+                  handleUpdateHP(diceContext.entityId, -finalDamage); 
+              }
+
+              let narrativeText = `⚔️ **DANO APLICADO:** Rolou ${diceContext.damageExpression} ${rollString}${modStr} = **${total} de Dano ${diceContext.damageType}** no ${diceContext.targetName}!`;
               
-              setDamageOverlayData({ rolls: null, sides: 1, mod: finalMod, total: total, targetName: diceContext.targetName });
+              if (dmgModifierInfo === 'immune') narrativeText = `🛡️ **IMUNIDADE:** ${diceContext.targetName} é imune a ${diceContext.damageType}! Sofreu 0 de dano.`;
+              if (dmgModifierInfo === 'resistant') narrativeText = `🛡️ **RESISTÊNCIA:** ${diceContext.targetName} resistiu ao dano ${diceContext.damageType}! Sofreu apenas **${finalDamage}** de dano.`;
+              if (dmgModifierInfo === 'vulnerable') narrativeText = `🩸 **VULNERABILIDADE:** ${diceContext.targetName} é vulnerável a ${diceContext.damageType}! Sofreu cruéis **${finalDamage}** de dano!`;
+
+              addLog({ text: narrativeText, type: 'damage', sender: 'Sistema' });
+              
+              setDamageOverlayData({ rolls: null, sides: 1, mod: finalMod, total: finalDamage, targetName: diceContext.targetName, damageType: diceContext.damageType, damageModifier: dmgModifierInfo });
               setTimeout(() => {
                   setShowBgDice(false);
                   setRollQueue(prev => prev.slice(1));
               }, 2000);
           } else {
-              // É SÓ UMA ROLAGEM CUSTOMIZADA 3D (ex: 1d100, não tira vida, apenas posta no chat)
               const publicText = `🎲 **${senderName}** rolou ${diceContext.title} (${diceContext.damageExpression}):\n🎯 Resultado: ${rollString}${modStr} = **${total}**`;
-              
-              if (isSecret) {
-                  addLog({ text: `👁️ (Secreto) ` + publicText, type: 'roll', sender: senderName, isSecret: true, secretContent: `👁️ (Secreto) ` + publicText } as any);
-              } else {
-                  addLog({ text: publicText, type: 'roll', sender: senderName } as any);
-                  socket.emit('rollDice', { sides: 20, result: total, roomId, user: senderName });
-              }
-              
-              setTimeout(() => {
-                  setShowBgDice(false);
-                  setRollQueue(prev => prev.slice(1));
-              }, 2000);
+              if (isSecret) addLog({ text: `👁️ (Secreto) ` + publicText, type: 'roll', sender: senderName, isSecret: true, secretContent: `👁️ (Secreto) ` + publicText } as any);
+              else { addLog({ text: publicText, type: 'roll', sender: senderName } as any); socket.emit('rollDice', { sides: 20, result: total, roomId, user: senderName }); }
+              setTimeout(() => { setShowBgDice(false); setRollQueue(prev => prev.slice(1)); }, 2000);
           }
           return;
       }
 
-      // --- LÓGICA NORMAL (ATAQUES / TESTES / INICIATIVA) COM O D20 PADRÃO ---
       let resultMsg = isCritical ? (total >= 20 ? "CRÍTICO! ⚔️" : "FALHA CRÍTICA! 💀") : (isSuccess ? "SUCESSO! ✅" : "FALHA ❌");
       let isAttackHit = false; 
       let targetIdForDamage: number | null = null; 
       let targetInfoMsg = "";
-      let damageExpression = "";
+      let finalDamageExpression = diceContext.damageExpression || "";
+      let finalDamageType = diceContext.damageType || "Físico";
 
       const isAttack = diceContext.title.toLowerCase().includes("ataque");
 
@@ -712,23 +739,27 @@ function App() {
           const weaponName = diceContext.title.replace(/Ataque:\s*/i, '').trim();
           const weapon = attacker?.inventory?.find(i => i.name.toLowerCase() === weaponName.toLowerCase());
 
-          let baseDmg = weapon?.stats?.damage || '1d4';
-          let dmgMod = 0;
-          
-          if (attacker && attacker.stats) {
-              const strMod = Math.floor((attacker.stats.str - 10) / 2);
-              const dexMod = Math.floor((attacker.stats.dex - 10) / 2);
-              const isFinesseOrRanged = weapon?.stats?.properties?.some(p => p.toLowerCase().includes('finesse') || p.toLowerCase().includes('distância') || p.toLowerCase().includes('ranged')) || weaponName.toLowerCase().includes('arco') || weaponName.toLowerCase().includes('besta') || weaponName.toLowerCase().includes('adaga') || weaponName.toLowerCase().includes('rapieira');
-              dmgMod = isFinesseOrRanged ? Math.max(strMod, dexMod) : strMod;
-          }
-
-          const dmgMatch = baseDmg.match(/^(\d+)d(\d+)/i);
-          if (dmgMatch) {
-              const count = parseInt(dmgMatch[1]);
-              const sides = parseInt(dmgMatch[2]);
-              const rollsCount = (isCritical && total >= 20) ? count * 2 : count;
+          if (weapon && !finalDamageExpression) {
+              let baseDmg = weapon.stats?.damage || '1d4';
+              let dmgMod = 0;
               
-              damageExpression = `${rollsCount}d${sides}${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''}`;
+              if (attacker && attacker.stats) {
+                  const strMod = Math.floor((attacker.stats.str - 10) / 2);
+                  const dexMod = Math.floor((attacker.stats.dex - 10) / 2);
+                  const isFinesseOrRanged = weapon.stats?.properties?.some(p => p.toLowerCase().includes('finesse') || p.toLowerCase().includes('distância') || p.toLowerCase().includes('ranged')) || weaponName.toLowerCase().includes('arco') || weaponName.toLowerCase().includes('besta') || weaponName.toLowerCase().includes('adaga') || weaponName.toLowerCase().includes('rapieira');
+                  dmgMod = isFinesseOrRanged ? Math.max(strMod, dexMod) : strMod;
+              }
+
+              const dmgMatch = baseDmg.match(/^(\d+)d(\d+)/i);
+              if (dmgMatch) {
+                  const count = parseInt(dmgMatch[1]);
+                  const sides = parseInt(dmgMatch[2]);
+                  const rollsCount = (isCritical && total >= 20) ? count * 2 : count;
+                  finalDamageExpression = `${rollsCount}d${sides}${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''}`;
+              }
+          } else if (isCritical && total >= 20 && finalDamageExpression) {
+               const dmgMatch = finalDamageExpression.match(/^(\d+)d(\d+)(.*)/i);
+               if(dmgMatch) finalDamageExpression = `${parseInt(dmgMatch[1]) * 2}d${dmgMatch[2]}${dmgMatch[3]}`;
           }
 
           if (targetEntityIds.length > 0) {
@@ -739,18 +770,17 @@ function App() {
                       isAttackHit = true; 
                       targetIdForDamage = target.id;
                       targetInfoMsg = `\n🎯 *${target.name}* recebeu o golpe!`;
-                      
-                      socket.emit('triggerCombatAnimation', { roomId, attackerName: senderName, targetId: target.id, attackType: 'fisico' });
+                      socket.emit('triggerCombatAnimation', { roomId, attackerName: senderName, targetId: target.id, attackType: diceContext.title.includes('Mágico') ? 'magia' : 'fisico' });
                       handlePlaySFX('sword', true);
                   } else { 
                       resultMsg = `**ERROU!** 🛡️`; 
-                      targetInfoMsg = `\n💨 *${target.name}* defendeu o ataque.`; 
+                      targetInfoMsg = `\n💨 *${target.name}* defendeu.`; 
                       handlePlaySFX('dado', true);
                   }
               }
           } else {
               resultMsg = `**Ataque Rolado** ⚔️`;
-              targetInfoMsg = `\n*(Nenhum alvo selecionado)*`;
+              targetInfoMsg = `\n*(⚠️ Selecione um alvo para o Dano Automático funcionar!)*`;
               handlePlaySFX('sword', true);
           }
       }
@@ -758,7 +788,6 @@ function App() {
       if (diceContext.title === 'Iniciativa' && diceContext.entityId) {
           const entName = diceContext.targetName || senderName;
           const newItem = { id: diceContext.entityId, name: entName, value: total };
-          
           setInitiativeList(prev => {
                const filtered = prev.filter(i => i.id !== newItem.id);
                const newList = [...filtered, newItem].sort((a,b) => b.value - a.value);
@@ -771,9 +800,9 @@ function App() {
 
       if (isSecret) {
           const secretText = `👁️ (Secreto) ` + publicText;
-          addLog({ text: role === 'DM' ? secretText : `🎲 **${senderName}** rolou dados misteriosamente...`, type: 'roll', sender: senderName, isSecret: true, secretContent: secretText, targetId: targetIdForDamage, isHit: isAttackHit, damage: damageExpression } as any);
+          addLog({ text: role === 'DM' ? secretText : `🎲 **${senderName}** rolou dados misteriosamente...`, type: 'roll', sender: senderName, isSecret: true, secretContent: secretText, targetId: targetIdForDamage, isHit: isAttackHit, damage: finalDamageExpression } as any);
       } else {
-          addLog({ text: publicText, type: 'roll', sender: senderName, targetId: targetIdForDamage, isHit: isAttackHit, damage: damageExpression } as any);
+          addLog({ text: publicText, type: 'roll', sender: senderName, targetId: targetIdForDamage, isHit: isAttackHit, damage: finalDamageExpression } as any);
           ignoreNextDiceSound.current = true;
           setTimeout(() => { ignoreNextDiceSound.current = false; }, 2000);
           socket.emit('rollDice', { sides: 20, result: total, roomId, user: senderName });
@@ -782,6 +811,19 @@ function App() {
       setTimeout(() => {
           setShowBgDice(false);
           setRollQueue(prev => prev.slice(1));
+
+          if (isAttackHit && finalDamageExpression && targetIdForDamage) {
+              const target = entities.find(e => e.id === targetIdForDamage);
+              setTimeout(() => {
+                  setRollQueue(prev => [...prev, {
+                      title: `Dano: ${diceContext.title}`,
+                      subtitle: `Em ${target?.name || 'Alvo'}`,
+                      dc: 0, mod: 0, entityId: targetIdForDamage, targetName: target?.name || 'Alvo',
+                      isDamage: true, damageExpression: finalDamageExpression,
+                      damageType: finalDamageType
+                  }]);
+              }, 500); 
+          }
       }, 2000);
   };
 
@@ -891,6 +933,14 @@ function App() {
       addLog({ text: `🤝 **${sourceEntity.name}** deu **${item.name}** para **${targetEntity.name}**.`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true);
   };
 
+  const handlePlayerDropItem = (itemId: string) => {
+      const myEntity = entities.find(e => e.name === playerName && e.type === 'player');
+      if (!myEntity) return;
+      const itemToDrop = myEntity.inventory?.find(i => i.id === itemId);
+      if (!itemToDrop) return;
+      handleDropLootOnMap(itemToDrop, myEntity.id, myEntity.x, myEntity.y);
+  };
+
   const handlePickUpLoot = (lootEntity: Entity) => {
       let receiver: Entity | undefined;
       if (role === 'PLAYER') { 
@@ -945,25 +995,9 @@ function App() {
       handlePlaySFX('dado', true); 
   };
 
-  const handleContextMenuAction = (action: string, entity: Entity) => {
-      switch (action) {
-          case 'VIEW_STATUS': 
-              setStatusSelectionId(entity.id); 
-              break;
-          case 'VIEW_SHEET': 
-              if (role === 'DM') {
-                  setActiveCharacterSheetId(entity.id);
-              }
-              else setStatusSelectionId(entity.id); 
-              break;
-          case 'WHISPER': setPrivateChatTarget(entity.name); break;
-          case 'SET_ATTACKER': setAttackerId(entity.id); break;
-          case 'SET_TARGET': handleSetTarget(entity.id, true); break;
-          case 'TOGGLE_VISIBILITY': handleToggleVisibility(entity.id); break;
-          case 'HEAL_FULL': handleUpdateHP(entity.id, entity.maxHp); break;
-          case 'TOGGLE_DEAD': if (entity.hp > 0) handleUpdateHP(entity.id, -entity.hp); else handleUpdateHP(entity.id, 1); break;
-      }
-      setContextMenu(null);
+  const handleAddEntity = (type: 'enemy' | 'player', name: string, customStats?: MonsterPreset) => { 
+      const pos = getCenterGridPosition();
+      createEntity(type, name, pos.x, pos.y, customStats as Partial<Entity>); 
   };
 
   const handlePingMap = (x: number, y: number) => {
@@ -999,8 +1033,9 @@ function App() {
   const handleDeleteEntity = (id: number) => { setEntities(prev => prev.filter(ent => ent.id !== id)); socket.emit('deleteEntity', { entityId: id, roomId }); if (attackerId === id) setAttackerId(null); };
   
   const handleMapDrop = (type: string, x: number, y: number) => { 
+      if (String(type) === 'loot') return;
       const entityType = type as 'enemy' | 'player'; 
-      const nextNum = entities.filter(e => e.type === entityType).length + 1; 
+      const nextNum = entities.filter(e => String(e.type) === String(entityType)).length + 1; 
       createEntity(entityType, entityType === 'enemy' ? `Monstro ${nextNum}` : `Aliado ${nextNum}`, x, y); 
   };
 
@@ -1011,7 +1046,6 @@ function App() {
   const handleSyncFog = () => { socket.emit('syncFogGrid', { grid: fogGrid, roomId }); };
   const handleChangeMap = (mapUrl: string) => { setCurrentMap(mapUrl); setFogGrid(createInitialFog()); socket.emit('changeMap', { mapUrl, roomId }); };
   const handleSaveGame = () => { socket.emit('saveGame', { roomId, entities, fogGrid, currentMap, initiativeList, activeTurnId, chatMessages, customMonsters, globalBrightness, currentTrack }); addLog({ text: "O Mestre salvou o estado da mesa no servidor.", type: 'info', sender: 'Sistema' }); };
-  const handleSaveMonsterPreset = (preset: MonsterPreset) => { setCustomMonsters(prev => [...prev, preset]); addLog({ text: `Novo monstro salvo na lista: ${preset.name}`, type: 'info', sender: 'Sistema' }); };
   const handleUpdateGlobalBrightness = (val: number) => { setGlobalBrightness(val); socket.emit('updateGlobalBrightness', { brightness: val, roomId }); };
 
   const handleAddToInitiative = (entity: Entity) => { if (initiativeList.find(i => i.id === entity.id)) return; setInitModalEntity(entity); };
@@ -1127,33 +1161,6 @@ function App() {
       }
       if (modalPosition.top < 20) modalPosition.top = 20;
   }
-
-  const handleSaveNewAlly = (id: number, data: Partial<Entity>) => { 
-      const nextNum = entities.filter(e => e.type === 'player').length + 1; 
-      const finalName = data.name || `Aliado ${nextNum}`; 
-      const pos = getCenterGridPosition();
-      createEntity('player', finalName, pos.x, pos.y, { ...data, name: finalName, size: data.size || 2 }); 
-      setShowAllyCreator(false); 
-  };
-  const handleSaveNewEnemy = (data: Partial<Entity>) => { 
-      const nextNum = entities.filter(e => e.type === 'enemy').length + 1; 
-      const pos = getCenterGridPosition();
-      createEntity('enemy', data.name || `Monstro ${nextNum}`, pos.x, pos.y, data); 
-      setShowEnemyCreator(false); 
-  };
-
-  const handlePlayerDropItem = (itemId: string) => {
-      const myEntity = entities.find(e => e.name === playerName && e.type === 'player');
-      if (!myEntity) return;
-      const itemToDrop = myEntity.inventory?.find(i => i.id === itemId);
-      if (!itemToDrop) return;
-      handleDropLootOnMap(itemToDrop, myEntity.id, myEntity.x, myEntity.y);
-  };
-
-  const handleAddEntity = (type: 'enemy' | 'player', name: string, customStats?: MonsterPreset) => { 
-      const pos = getCenterGridPosition();
-      createEntity(type, name, pos.x, pos.y, customStats as Partial<Entity>); 
-  };
 
   if (!isLoggedIn) return <LoginScreen onLogin={handleLogin} availableClasses={availableClasses} availableRaces={availableRaces} />;
   
@@ -1356,14 +1363,23 @@ function App() {
                                     </div>
                                 )}
                             </div>
+
+                            {role === 'DM' && (
+                                <div className="mt-3 border-t border-white/10 pt-3">
+                                    <span className="text-[9px] font-black text-purple-400 uppercase tracking-widest mb-1 block">👁️ Anotações Secretas</span>
+                                    <textarea
+                                        className="w-full bg-black/60 border border-purple-500/30 rounded p-2 text-xs text-purple-100 placeholder-purple-900/50 outline-none focus:border-purple-500 resize-none custom-scrollbar"
+                                        rows={3}
+                                        placeholder="Somente o Mestre pode ler e editar isso..."
+                                        defaultValue={selectedStatusEntity.dmNotes || ''}
+                                        onBlur={(e) => handleEditEntity(selectedStatusEntity.id, { dmNotes: e.target.value })}
+                                    />
+                                </div>
+                            )}
                         </>
                     )}
                 </div>
             )}
-            
-            {showAllyCreator && (<EditEntityModal entity={{ id: 0, name: '', hp: 20, maxHp: 20, ac: 12, x:0, y:0, type: 'player', color: '', conditions: [], mirrored: false, size: 2, inventory: [] }} onSave={(id, updates) => handleSaveNewAlly(id, updates)} onClose={() => setShowAllyCreator(false)} availableClasses={availableClasses} availableRaces={availableRaces} />)}
-            {showEnemyCreator && (<MonsterCreatorModal onSave={handleSaveNewEnemy} onSavePreset={handleSaveMonsterPreset} onClose={() => setShowEnemyCreator(false)} />)}
-            {contextMenu && (<ContextMenu x={contextMenu.x} y={contextMenu.y} entity={contextMenu.entity} role={role} onClose={() => setContextMenu(null)} onAction={handleContextMenuAction} />)}
             
             <main className="relative flex-grow h-full overflow-hidden bg-black text-white">
                 <div className="absolute top-4 left-4 z-[150] pointer-events-none opacity-50"><span className={`text-[10px] font-bold px-2 py-1 rounded border ${role === 'DM' ? 'bg-red-900 border-red-500' : 'bg-blue-900 border-blue-500'}`}>{role === 'DM' ? 'Mestre Supremo' : `Jogador: ${playerName}`}</span></div>
@@ -1377,20 +1393,18 @@ function App() {
                     externalOffset={mapOffset} externalScale={mapScale} onMapChange={handleMapSync} focusEntity={focusEntity} globalBrightness={globalBrightness}
                     onDropItem={handleDropLootOnMap} onGiveItemToToken={handleGiveItemToToken} 
                     pings={pings} onPing={handlePingMap}
-                    onSelectEntity={(entity) => { if (entity.classType === 'Item' || entity.type === 'loot') setStatusSelectionId(entity.id); }} 
-                    onTokenDoubleClick={(entity) => { 
-                        if (entity.classType === 'Item' || entity.type === 'loot') {
+                    
+                    myCharacterId={entities.find(e => e.name === playerName)?.id}
+
+                    onSelectEntity={(entity: any) => { if (entity.classType === 'Item' || String(entity.type) === 'loot') setStatusSelectionId(entity.id); }} 
+                    onTokenDoubleClick={(entity: any) => { 
+                        if (entity.classType === 'Item' || String(entity.type) === 'loot') {
                             setStatusSelectionId(entity.id); 
                         } else {
                             if (role === 'DM' || (role === 'PLAYER' && entity.name === playerName)) {
                                 setActiveCharacterSheetId(entity.id);
                             }
                         }
-                    }} 
-                    onContextMenu={(e, entity) => { 
-                        e.preventDefault();
-                        if (entity.classType === 'Item' || entity.type === 'loot') setStatusSelectionId(entity.id); 
-                        else setContextMenu({ x: e.clientX, y: e.clientY, entity }); 
                     }} 
                 />
                 <div className="fixed bottom-6 right-[450px] z-[130] pointer-events-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1404,16 +1418,16 @@ function App() {
                     isFogMode={isFogMode} onToggleFogMode={() => setIsFogMode(!isFogMode)} fogTool={fogTool} onSetFogTool={setFogTool} 
                     fogShape={fogShape} onSetFogShape={setFogShape}
                     onSyncFog={handleSyncFog} onResetFog={handleResetFog} onRevealAll={handleRevealAll} onSaveGame={handleSaveGame} onChangeMap={handleChangeMap} 
-                    initiativeList={initiativeList} activeTurnId={activeTurnId} onAddToInitiative={handleAddToInitiative} onRemoveFromInitiative={handleRemoveFromInitiative} onNextTurn={handleNextTurn} onClearInitiative={handleClearInitiative} onSortInitiative={handleSortInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget} onToggleCondition={handleToggleCondition} onSetAttacker={handleSetAttacker} activeAoE={activeAoE} onSetAoE={setActiveAoE} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} aoeColor={aoeColor} onSetAoEColor={setAoEColor} onOpenCreator={(type) => { if (type === 'player') setShowAllyCreator(true); if (type === 'enemy') setShowEnemyCreator(true); }} onAddXP={handleAddXP} customMonsters={customMonsters} globalBrightness={globalBrightness} onSetGlobalBrightness={handleUpdateGlobalBrightness} onRequestRoll={handleDmRequestRoll} onToggleVisibility={handleToggleVisibility} currentTrack={currentTrack} onPlayMusic={handlePlayMusic} onStopMusic={handleStopMusic} onPlaySFX={handlePlaySFX} audioVolume={audioVolume} onSetAudioVolume={setAudioVolume} onResetView={handleResetView} onGiveItem={handleGiveItem} onApplyDamageFromChat={handleApplyDamageFromChat} onDMRoll={handleDMRoll} 
+                    initiativeList={initiativeList} activeTurnId={activeTurnId} onAddToInitiative={handleAddToInitiative} onRemoveFromInitiative={handleRemoveFromInitiative} onNextTurn={handleNextTurn} onClearInitiative={handleClearInitiative} onSortInitiative={handleSortInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget} onToggleCondition={handleToggleCondition} onSetAttacker={handleSetAttacker} activeAoE={activeAoE} onSetAoE={setActiveAoE} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} aoeColor={aoeColor} onSetAoEColor={setAoEColor} onOpenCreator={(type) => { }} onAddXP={handleAddXP} customMonsters={customMonsters} globalBrightness={globalBrightness} onSetGlobalBrightness={handleUpdateGlobalBrightness} onRequestRoll={handleDmRequestRoll} onToggleVisibility={handleToggleVisibility} currentTrack={currentTrack} onPlayMusic={handlePlayMusic} onStopMusic={handleStopMusic} onPlaySFX={handlePlaySFX} audioVolume={audioVolume} onSetAudioVolume={setAudioVolume} onResetView={handleResetView} onGiveItem={handleGiveItem} onApplyDamageFromChat={handleApplyDamageFromChat} onDMRoll={handleDMRoll} 
                     onLongRest={handleLongRest} 
                     
                     availableItems={availableItems} 
                     availableConditions={availableConditions}
                     onOpenLootGenerator={() => setShowLootGenerator(true)}
                     onRequestInitiative={handleRequestInitiative}
-                    onRequestCustomRoll={handleRequestCustomRoll} // 👉 NOVO: Passado para a Sidebar
+                    onRequestCustomRoll={handleRequestCustomRoll}
                     /> 
-                : <SidebarPlayer entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name === playerName)?.id || 0} initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} onSelectEntity={(entity) => { setFocusEntity(entity); setTimeout(() => setFocusEntity(null), 100); }} onApplyDamageFromChat={handleApplyDamageFromChat} />
+                : <SidebarPlayer entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name === playerName)?.id || 0} initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} onSelectEntity={(entity: any) => { setFocusEntity(entity); setTimeout(() => setFocusEntity(null), 100); }} onApplyDamageFromChat={handleApplyDamageFromChat} availableSpells={availableSpells} /> 
                 }
             </aside>
           </>
