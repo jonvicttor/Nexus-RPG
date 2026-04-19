@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Chat, { ChatMessage } from './Chat';
 import { Entity, Item } from '../App';
 import LevelUpModal from './LevelUpModal';
@@ -6,7 +6,7 @@ import { getLevelFromXP, getProficiencyBonus, calculateHPGain, XP_TABLE } from '
 import Inventory from './Inventory';
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
 import { 
-  Shield, Zap, Skull, Heart, Scroll, Coins, Scale, Sword, BookOpen, Sparkles, Plus, Target, ShieldAlert, Edit, Trash2, Fingerprint, ChevronRight, ChevronLeft, Flame, Star, CheckCircle, Info
+  Zap, Skull, Heart, Scroll, Coins, Scale, Sword, BookOpen, Sparkles, Plus, Edit, Trash2, Fingerprint, ChevronRight, ChevronLeft, Flame, Star, CheckCircle, Info
 } from 'lucide-react';
 
 export interface InitiativeItem { id: number; name: string; value: number; }
@@ -52,7 +52,7 @@ const PT_BR_DICT: Record<string, string> = {
     "thunder": "Trovejante", "poison": "Venenoso", "necrotic": "Necrótico", 
     "radiant": "Radiante", "force": "Energia", "psychic": "Psíquico", 
     "bludgeoning": "Contundente", "piercing": "Perfurante", "slashing": "Cortante",
-    "heal": "Cura", "healing": "Cura", "all": "TUDO", "attack": "ATAQUE", "action": "AÇÃO", "bonus action": "AÇÃO BÔNUS", "reaction": "REAÇÃO", "other": "OUTRO",
+    "heal": "Cura", "healing": "Cura", "all": "ALL", "attack": "ATTACK", "action": "ACTION", "bonus action": "BONUS ACTION", "reaction": "REACTION", "other": "OTHER",
     "saving throws": "Salvaguardas", "proficiencias e treinamento": "Proficiências e Treinamento"
 };
 
@@ -152,6 +152,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   const [pendingLevelData, setPendingLevelData] = useState<{ newLevel: number, hpGain: number } | null>(null);
 
   const [descriptionPanel, setDescriptionPanel] = useState<{ title: string, content: string } | null>(null);
+  const [expandedActionIds, setExpandedActionIds] = useState<Record<string, boolean>>({});
   const [hpInput, setHpInput] = useState<string>('');
 
   const [abilityUsage, setAbilityUsage] = useState<Record<string, number>>({});
@@ -200,6 +201,13 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   const maxWeight = (attributes.FOR || 10) * 7.5; 
   const weightPercent = Math.min(100, (totalWeight / maxWeight) * 100);
 
+  // 🔥 GATILHO MÁGICO INSTANTÂNEO 🔥
+  // Fecha a barra e manda o sinal para renderizar o dado na mesma fração de segundo!
+  const handleTriggerRoll = useCallback((charName: string, attrName: string, mod: number, damageExpr?: string, damageType?: string) => {
+      setIsCollapsed(true); 
+      onRollAttribute(charName, attrName, mod, damageExpr, damageType);
+  }, [onRollAttribute]);
+
   const getSpellcastingMod = () => {
       const cType = myCharacter?.classType?.toLowerCase() || '';
       if (cType.includes('wizard') || cType.includes('mago') || cType.includes('artificer') || cType.includes('artifice')) return Math.floor((attributes.INT - 10) / 2);
@@ -210,6 +218,11 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   const spellMod = getSpellcastingMod();
   const spellAttackBonus = spellMod + proficiencyBonus;
   const spellDC = 8 + proficiencyBonus + spellMod;
+
+  const hasSpellSlots = useMemo(() => {
+      if (!myCharacter?.spellSlots) return false;
+      return [1,2,3,4,5,6,7,8,9].some(level => (myCharacter.spellSlots as any)[level]?.max > 0);
+  }, [myCharacter?.spellSlots]);
 
   const knownSpells = useMemo(() => {
       const rawSpells = myCharacter?.spells || [];
@@ -269,29 +282,33 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
         list.push({ 
             id: weapon.id, name: weapon.name, attackMod: isFinesseOrRanged ? 'dex' : 'str', 
             damageExpr: weapon.stats?.damage || '1d4', damageType: translatedWpnType, hitMod: totalHitMod,
-            category: 'attack', type: 'weapon', typeDetail: 'Ataque de Arma', range: isFinesseOrRanged ? 'Distância' : '5 ft.',
-            desc: `Ataque corpo-a-corpo ou à distância com ${weapon.name}.`
+            category: 'attack', type: 'weapon', typeDetail: 'Ataques', range: isFinesseOrRanged ? 'Distância' : '5 ft.',
+            desc: `Ataque com arma corpo-a-corpo ou à distância. Modificador usado: ${isFinesseOrRanged ? 'Destreza' : 'Força'}.`
         });
     });
 
     list.push(...knownSpells.map(s => {
         const meta = getSpellMeta(s);
-        const metaText = `⏳ Tempo: ${meta.time} | 🎯 Alcance: ${meta.range} | 🗣️ Componentes: ${meta.comps}`;
+        const metaText = `Tempo de Conjuração: ${meta.time} | Alcance: ${meta.range} | Componentes: ${meta.comps}`;
         return {
-            ...s, category: s.isAttack ? 'attack' : 'action', type: 'spell', typeDetail: `Magia Círculo ${s.level}`, range: meta.range,
+            ...s, category: s.isAttack ? 'attack' : 'action', type: 'spell', typeDetail: `Magias Nível ${s.level}`, range: meta.range,
             desc: `${metaText}\n\n${s.cleanDescription}`
         }
     }));
     
     customActions.forEach((action: any) => {
-        list.push({ ...action, category: action.attackMod !== 'none' ? 'attack' : (action.type === 'bonus action' ? 'bonus action' : 'action'), type: 'macro', typeDetail: 'Macro Personalizado', range: '--', desc: "Ação customizada criada pelo jogador." });
+        list.push({ ...action, category: action.attackMod !== 'none' ? 'attack' : (action.type === 'bonus action' ? 'bonus action' : 'action'), type: 'macro', typeDetail: 'Ações Customizadas', range: '--', desc: "Ação customizada criada pelo jogador." });
     });
 
-    list.push(...(CLASS_ABILITIES[myCharacter?.classType?.toUpperCase() || ''] || []).map(a => ({...a, category: a.type, type: 'feature', typeDetail: 'Habilidade de Classe', range: '--'})));
+    list.push(...(CLASS_ABILITIES[myCharacter?.classType?.toUpperCase() || ''] || []).map(a => ({...a, category: a.type, type: 'feature', typeDetail: 'Habilidades de Classe', range: '--'})));
 
     if (actionFilter === 'all') return list.sort((a,b) => a.category.localeCompare(b.category));
     return list.filter(a => a.category === actionFilter).sort((a,b) => a.name.localeCompare(b.name));
   }, [equippedWeapons, knownSpells, customActions, myCharacter?.classType, strMod, dexMod, proficiencyBonus, actionFilter]);
+
+  const toggleActionExpansion = (id: string) => {
+      setExpandedActionIds(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   const handleCoinChange = (coinType: 'cp' | 'sp' | 'ep' | 'gp' | 'pp', amount: number) => {
       if (!myCharacter || !onUpdateCharacter) return;
@@ -495,15 +512,15 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
   };
 
   const executeActionAttack = (action: any) => {
-      onRollAttribute(myCharacterName, `Ataque: ${action.name}`, action.hitMod || 0, action.damageExpr, action.damageType);
+      handleTriggerRoll(myCharacterName, `Ataque: ${action.name}`, action.hitMod || 0, action.damageExpr, action.damageType);
   };
 
   const executeActionDamage = (action: any) => {
-      onRollAttribute(myCharacterName, `Dano: ${action.name}`, 0, action.damageExpr, action.damageType);
+      handleTriggerRoll(myCharacterName, `Dano: ${action.name}`, 0, action.damageExpr, action.damageType);
   };
 
   const executeActionSave = (action: any) => {
-      onRollAttribute(myCharacterName, `Resistência (${action.saveAttr}) contra ${action.name}`, 0);
+      handleTriggerRoll(myCharacterName, `Resistência (${action.saveAttr}) contra ${action.name}`, 0);
   };
 
   const openDescription = (termKey: string, actualName?: string) => {
@@ -587,13 +604,13 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                             const val = attributes[attr as keyof typeof attributes] || 10;
                             const mod = Math.floor((val - 10) / 2);
                             return (
-                                <div key={attr} onClick={() => onRollAttribute(myCharacter.name, attr, mod)} className="flex flex-col items-center group relative cursor-pointer">
-                                    <div className="w-12 lg:w-14 h-14 lg:h-16 bg-white border-2 border-gray-300 rounded flex flex-col items-center justify-center shadow-sm group-hover:border-red-600 transition-colors z-10">
-                                        <span className="text-[8px] font-black uppercase text-gray-500 group-hover:text-red-700">{attr}</span>
-                                        <span className="text-xl font-black text-black leading-none">{mod >= 0 ? `+${mod}` : mod}</span>
-                                    </div>
-                                    <div className="bg-white border-2 border-gray-300 rounded-full px-2 py-0.5 text-[9px] font-bold -mt-2 z-20 group-hover:border-red-600 transition-colors">
-                                        {val}
+                                <div key={attr} onClick={(e) => { e.stopPropagation(); handleTriggerRoll(myCharacter.name, attr, mod); }} className="flex flex-col items-center group relative cursor-pointer pb-2">
+                                    <div className="w-12 h-14 bg-white border border-gray-300 rounded-lg flex flex-col items-center justify-start shadow-sm group-hover:border-[#c53131] transition-colors z-10 relative pt-1">
+                                        <span className="text-[7px] font-black uppercase text-gray-800">{attr}</span>
+                                        <span className="text-xl font-black text-black leading-none mt-0.5">{mod >= 0 ? `+${mod}` : mod}</span>
+                                        <div className="absolute -bottom-2.5 bg-white border border-gray-300 rounded-xl px-2 py-0.5 text-[9px] font-bold z-20 group-hover:border-[#c53131] transition-colors shadow-sm">
+                                            {val}
+                                        </div>
                                     </div>
                                 </div>
                             );
@@ -601,28 +618,34 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                     </div>
                     
                     <div className="flex gap-2">
-                        <div className="bg-white border-2 border-gray-300 rounded-lg flex flex-col items-center justify-center p-1 w-14 shadow-sm">
+                        <div className="bg-white border border-gray-300 rounded-lg flex flex-col items-center justify-center p-1 w-14 shadow-sm">
                             <span className="text-[8px] font-black uppercase text-gray-500">Profic.</span>
                             <span className="text-lg font-black text-black leading-none mt-1">+{proficiencyBonus}</span>
                             <span className="text-[8px] font-black uppercase text-gray-400 mt-1">Bonus</span>
                         </div>
-                        <div className="bg-white border-2 border-gray-300 rounded-lg flex flex-col items-center justify-center p-1 w-14 shadow-sm">
+                        <div className="bg-white border border-gray-300 rounded-lg flex flex-col items-center justify-center p-1 w-14 shadow-sm">
                             <span className="text-[8px] font-black uppercase text-gray-500">Walking</span>
                             <span className="text-lg font-black text-black leading-none mt-1">30<span className="text-[9px]">ft</span></span>
                             <span className="text-[8px] font-black uppercase text-gray-400 mt-1">Speed</span>
                         </div>
                         <div className="flex flex-col items-center ml-2">
                             <span className="text-[8px] font-black uppercase text-gray-500">Initiative</span>
-                            <div className="bg-white border-2 border-blue-300 rounded-lg w-12 h-10 flex items-center justify-center text-base font-black text-blue-900 mt-0.5 shadow-sm gap-1">
+                            <div className="bg-white border border-gray-300 rounded-lg w-12 h-10 flex items-center justify-center text-base font-black text-black mt-0.5 shadow-sm gap-1">
                                 {dexMod >= 0 ? `+${dexMod}` : dexMod}
                             </div>
                         </div>
                         <div className="flex flex-col items-center">
-                            <div className="bg-black border-2 border-gray-800 rounded-t-xl rounded-b w-10 h-12 flex flex-col items-center justify-center shadow-sm relative overflow-hidden mt-1 text-white">
-                                <Shield size={30} className="absolute text-gray-600 -z-10" />
-                                <span className="text-[7px] font-black uppercase text-gray-400 mb-0.5">Armor</span>
-                                <span className="text-lg font-black text-white leading-none">{currentAC}</span>
+                            
+                            {/* CA ESCUDO REAL */}
+                            <div className="w-10 h-[48px] mt-1 relative flex flex-col items-center justify-center shadow-sm cursor-pointer group hover:scale-105 transition-transform" title="Classe de Armadura (CA)">
+                                <svg className="absolute inset-0 w-full h-full text-gray-200 drop-shadow-md group-hover:text-gray-100 transition-colors" viewBox="0 0 100 120" preserveAspectRatio="none">
+                                    <path d="M50 0 L100 15 L100 60 C100 90 75 110 50 120 C25 110 0 90 0 60 L0 15 Z" fill="currentColor" stroke="#6b7280" strokeWidth="4"/>
+                                    <path d="M50 8 L90 20 L90 58 C90 82 70 100 50 108 C30 100 10 82 10 58 L10 20 Z" fill="none" stroke="#ffffff" strokeWidth="2"/>
+                                </svg>
+                                <span className="text-[6px] font-black uppercase text-gray-500 relative z-10 -mt-1 tracking-widest">Armor</span>
+                                <span className="text-lg font-black text-black relative z-10 leading-none">{currentAC}</span>
                             </div>
+
                         </div>
                     </div>
 
@@ -675,7 +698,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                     const rawMod = mods[attr as keyof typeof mods];
                                     const finalMod = rawMod + (isProf ? proficiencyBonus : 0);
                                     return (
-                                        <div key={attr} className="flex items-center gap-2.5 p-1 hover:bg-gray-100 cursor-pointer rounded transition-colors group-inner" onClick={(e) => {e.stopPropagation(); onRollAttribute(myCharacter.name, `Teste de Resistência (${translateTerm(attr)})`, finalMod)}}>
+                                        <div key={attr} className="flex items-center gap-2.5 p-1 hover:bg-gray-100 cursor-pointer rounded transition-colors group-inner" onClick={(e) => {e.stopPropagation(); handleTriggerRoll(myCharacter.name, `Teste de Resistência (${translateTerm(attr)})`, finalMod)}}>
                                             <div className={`w-3 h-3 rounded-full border border-black ${isProf ? 'bg-black' : 'bg-white'}`}></div>
                                             <span className="text-[10px] font-bold uppercase w-8 group-inner-hover:text-red-700">{translateTerm(attr)}</span>
                                             <span className="text-[10px] font-black w-6 text-right bg-gray-200 rounded px-1 group-inner-hover:bg-red-100 group-inner-hover:text-red-800">{finalMod >= 0 ? `+${finalMod}` : finalMod}</span>
@@ -686,9 +709,9 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                         </div>
 
                         <div className="border border-gray-200 rounded-lg bg-white mb-4 shadow-inner space-y-1 p-2">
-                            <div className="flex justify-between items-center bg-gray-50 border border-gray-100 px-2 py-1.5 rounded-sm"><span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Percepção Passiva</span><span className="text-sm font-black text-blue-900 bg-blue-100 px-1.5 rounded-sm">{10+wisMod}</span></div>
-                            <div className="flex justify-between items-center bg-gray-50 border border-gray-100 px-2 py-1.5 rounded-sm"><span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Investig. Passiva</span><span className="text-sm font-black text-blue-900 bg-blue-100 px-1.5 rounded-sm">{10+intMod}</span></div>
-                            <div className="flex justify-between items-center bg-gray-50 border border-gray-100 px-2 py-1.5 rounded-sm"><span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Intuição Passiva</span><span className="text-sm font-black text-blue-900 bg-blue-100 px-1.5 rounded-sm">{10+wisMod}</span></div>
+                            <div className="flex justify-between items-center bg-gray-50 border border-gray-100 px-2 py-1.5 rounded-sm"><span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Percepção Passiva</span><span className="text-sm font-black text-black bg-gray-100 px-1.5 rounded-sm">{10+wisMod}</span></div>
+                            <div className="flex justify-between items-center bg-gray-50 border border-gray-100 px-2 py-1.5 rounded-sm"><span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Investig. Passiva</span><span className="text-sm font-black text-black bg-gray-100 px-1.5 rounded-sm">{10+intMod}</span></div>
+                            <div className="flex justify-between items-center bg-gray-50 border border-gray-100 px-2 py-1.5 rounded-sm"><span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Intuição Passiva</span><span className="text-sm font-black text-black bg-gray-100 px-1.5 rounded-sm">{10+wisMod}</span></div>
                         </div>
 
                         <div className="border border-gray-200 rounded-lg bg-white mb-4 shadow-inner p-2 cursor-pointer group" onClick={() => openDescription('proficiencias e treinamento')}>
@@ -719,7 +742,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                     const finalMod = rawMod + (isProf ? proficiencyBonus : 0);
                                     
                                     return (
-                                        <div key={skill} onClick={(e) => {e.stopPropagation(); onRollAttribute(myCharacter.name, translateTerm(skill), finalMod)}} className="flex items-center py-1.5 px-1.5 lg:py-[7px] hover:bg-gray-200 cursor-pointer rounded transition-colors border-b border-gray-100 last:border-0 group-inner">
+                                        <div key={skill} onClick={(e) => {e.stopPropagation(); handleTriggerRoll(myCharacter.name, translateTerm(skill), finalMod)}} className="flex items-center py-1.5 px-1.5 lg:py-[7px] hover:bg-gray-200 cursor-pointer rounded transition-colors border-b border-gray-100 last:border-0 group-inner">
                                             <div className="w-4 lg:w-5 flex justify-center">
                                                 <div className={`w-2 h-2 rounded-full border border-black ${isProf ? 'bg-black' : 'bg-white'}`}></div>
                                             </div>
@@ -735,7 +758,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
 
                     <div className="flex-1 flex flex-col h-full relative bg-white">
                         
-                        <div className="flex overflow-x-auto custom-scrollbar border-b-2 border-red-800 bg-gray-50 px-2 shrink-0">
+                        <div className="flex overflow-x-auto custom-scrollbar border-b-2 border-red-800 bg-gray-50 px-1 shrink-0">
                             {[
                                 { id: 'actions', label: 'ACTIONS' },
                                 { id: 'inventory', label: 'INVENTORY' },
@@ -747,41 +770,41 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                 <button 
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id as any)}
-                                    className={`px-3 lg:px-4 py-3 text-[10px] lg:text-[11px] font-black uppercase tracking-widest whitespace-nowrap transition-colors relative ${activeTab === tab.id ? 'text-red-700 bg-white' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-200'}`}
+                                    className={`px-2 lg:px-3 py-2 text-[9px] font-black uppercase tracking-widest whitespace-nowrap transition-colors relative ${activeTab === tab.id ? 'text-red-700 bg-white' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-200'}`}
                                 >
                                     {tab.label}
-                                    {activeTab === tab.id && <div className="absolute top-0 left-0 w-full h-1 bg-red-700"></div>}
+                                    {activeTab === tab.id && <div className="absolute top-0 left-0 w-full h-0.5 bg-red-700"></div>}
                                 </button>
                             ))}
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-white relative">
+                        <div className="flex-1 overflow-y-auto p-3 custom-scrollbar bg-white relative">
                             
                             {activeTab === 'actions' && (
                                 <div className="flex flex-col h-full animate-in fade-in duration-300">
-                                    <div className="flex gap-2.5 mb-4 border-b border-gray-200 px-1 shrink-0 bg-white items-center">
-                                        {[ { id: 'all', label: 'TUDO' }, { id: 'attack', label: 'ATAQUE' }, { id: 'action', label: 'AÇÃO' }, { id: 'bonus action', label: 'AÇÃO BÔNUS' }, { id: 'reaction', label: 'REAÇÃO' }, { id: 'other', label: 'OUTRO' } ].map(f => (
-                                            <button key={f.id} onClick={() => setActionFilter(f.id as any)} className={`pb-2 text-[10px] font-black tracking-widest uppercase transition-colors ${actionFilter === f.id ? 'text-red-700 border-b-2 border-red-700' : 'text-gray-500 hover:text-gray-800'}`}>{f.label}</button>
+                                    <div className="flex gap-2 mb-3 border-b border-gray-200 px-1 shrink-0 bg-white items-center flex-wrap">
+                                        {[ { id: 'all', label: 'ALL' }, { id: 'attack', label: 'ATTACK' }, { id: 'action', label: 'ACTION' }, { id: 'bonus action', label: 'BONUS ACTION' }, { id: 'reaction', label: 'REACTION' }, { id: 'other', label: 'OTHER' } ].map(f => (
+                                            <button key={f.id} onClick={() => setActionFilter(f.id as any)} className={`px-2.5 py-1 text-[10px] font-bold tracking-widest uppercase rounded transition-colors ${actionFilter === f.id ? 'bg-[#c53131] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>{f.label}</button>
                                         ))}
-                                        <button onClick={() => { setActionForm({ name: '', attackMod: 'none', damageExpr: '', damageType: 'Físico', saveAttr: 'none' }); setIsEditingAction(!isEditingAction); }} className="pb-2 text-[10px] font-black tracking-widest uppercase transition-colors text-blue-600 hover:text-blue-800 ml-auto flex items-center gap-1"><Plus size={12}/> Macro</button>
+                                        <button onClick={() => { setActionForm({ name: '', attackMod: 'none', damageExpr: '', damageType: 'Físico', saveAttr: 'none' }); setIsEditingAction(!isEditingAction); }} className="pb-1 text-[10px] font-black tracking-widest uppercase transition-colors text-blue-600 hover:text-blue-800 ml-auto flex items-center gap-1"><Plus size={10}/> Macro</button>
                                     </div>
 
                                     {/* HEADER PARA MAGIAS E MACROS */}
-                                    {(actionFilter === 'all' || actionFilter === 'action' || actionFilter === 'bonus action' || actionFilter === 'reaction') && knownSpells.length > 0 && (
-                                        <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-4 shadow-sm flex flex-col items-center justify-center shrink-0">
-                                            <div className="flex gap-6 items-center justify-center w-full mb-3 border-b border-blue-200 pb-2">
-                                                <span className="text-xs font-bold text-blue-900">Ataque Mágico: {spellAttackBonus >= 0 ? `+${spellAttackBonus}` : spellAttackBonus}</span>
-                                                <span className="text-xs font-bold text-red-800">CD Magia: {spellDC}</span>
+                                    {(actionFilter === 'all' || actionFilter === 'action' || actionFilter === 'bonus action' || actionFilter === 'reaction') && hasSpellSlots && (
+                                        <div className="bg-[#f0f5f9] border border-[#d4e4f5] rounded-md p-2.5 mb-4 shadow-sm flex flex-col items-center justify-center shrink-0">
+                                            <div className="flex gap-6 items-center justify-center w-full border-b border-[#d4e4f5] pb-2 mb-2">
+                                                <span className="text-[11px] font-bold text-[#1d5ea8]">Ataque Mágico: {spellAttackBonus >= 0 ? `+${spellAttackBonus}` : spellAttackBonus}</span>
+                                                <span className="text-[11px] font-bold text-[#c53131]">CD Magia: {spellDC}</span>
                                             </div>
                                             <div className="flex flex-wrap gap-2 justify-center">
                                                 {[1,2,3,4,5,6,7,8,9].map(level => {
                                                     const slots = myCharacter?.spellSlots?.[level];
                                                     if (!slots || slots.max === 0) return null;
                                                     return (
-                                                        <div key={level} className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-blue-200">
-                                                            <span className="text-[9px] font-bold uppercase text-gray-500 mr-1">Nv {level}</span>
+                                                        <div key={level} className="flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-[#d4e4f5]">
+                                                            <span className="text-[8px] font-bold uppercase text-gray-500 mr-1">Nível {level}</span>
                                                             {[...Array(slots.max)].map((_, i) => (
-                                                                <div key={i} onClick={() => handleSpellSlotChange(level, 'toggle_used', i)} className={`w-3 h-3 rounded-full border border-blue-500 cursor-pointer ${i < slots.used ? 'bg-white' : 'bg-blue-500'}`} />
+                                                                <div key={i} onClick={() => handleSpellSlotChange(level, 'toggle_used', i)} className={`w-2.5 h-2.5 rounded-full border border-blue-400 cursor-pointer ${i < slots.used ? 'bg-white' : 'bg-blue-400'}`} />
                                                             ))}
                                                         </div>
                                                     )
@@ -789,54 +812,61 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                             </div>
                                         </div>
                                     )}
+                                    
+                                    {(actionFilter === 'all' || actionFilter === 'action' || actionFilter === 'bonus action' || actionFilter === 'reaction') && !hasSpellSlots && knownSpells.length > 0 && (
+                                        <div className="bg-[#f0f5f9] border border-[#d4e4f5] rounded-md p-2.5 mb-4 shadow-sm flex items-center justify-center shrink-0 gap-6 w-full">
+                                            <span className="text-[11px] font-bold text-[#1d5ea8]">Ataque Mágico: {spellAttackBonus >= 0 ? `+${spellAttackBonus}` : spellAttackBonus}</span>
+                                            <span className="text-[11px] font-bold text-[#c53131]">CD Magia: {spellDC}</span>
+                                        </div>
+                                    )}
 
                                     {isEditingAction && (
-                                        <div className="bg-white border-2 border-red-800 rounded-xl p-5 shadow-sm mb-4 animate-in slide-in-from-top-4">
-                                            <h4 className="text-xs text-red-800 font-bold uppercase tracking-widest border-b border-gray-200 pb-2 mb-4">{actionForm.id ? 'Editar Macro' : 'Criar Novo Macro'}</h4>
+                                        <div className="bg-white border border-red-800 rounded-lg p-3 shadow-sm mb-3 animate-in slide-in-from-top-4">
+                                            <h4 className="text-[10px] text-red-800 font-bold uppercase tracking-widest border-b border-gray-200 pb-1 mb-3">{actionForm.id ? 'Editar Macro' : 'Criar Novo Macro'}</h4>
                                             
-                                            <div className="space-y-4">
+                                            <div className="space-y-3">
                                                 <div>
-                                                    <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Nome do Macro</label>
-                                                    <input type="text" value={actionForm.name} onChange={e => setActionForm({...actionForm, name: e.target.value})} placeholder="Ex: Fúria, Golpe Especial..." className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600" />
+                                                    <label className="text-[9px] text-gray-500 uppercase font-bold mb-1 block">Nome do Macro</label>
+                                                    <input type="text" value={actionForm.name} onChange={e => setActionForm({...actionForm, name: e.target.value})} placeholder="Ex: Fúria, Golpe Especial..." className="w-full bg-white border border-gray-300 rounded p-1.5 text-black text-[10px] outline-none focus:border-red-600" />
                                                 </div>
-                                                <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                                                    <label className="text-[9px] text-blue-700 uppercase font-bold mb-1 flex items-center gap-1"><Sparkles size={10}/> Importar (Opcional)</label>
-                                                    <select onChange={(e) => handleAutoFill(e.target.value)} value="" className="w-full bg-white border border-blue-300 rounded p-1.5 text-blue-900 text-xs outline-none focus:border-blue-600 cursor-pointer">
+                                                <div className="mb-1.5 p-1.5 bg-blue-50 border border-blue-200 rounded-md">
+                                                    <label className="text-[8px] text-blue-700 uppercase font-bold mb-1 flex items-center gap-1"><Sparkles size={9}/> Importar (Opcional)</label>
+                                                    <select onChange={(e) => handleAutoFill(e.target.value)} value="" className="w-full bg-white border border-blue-300 rounded px-1.5 py-1 text-blue-900 text-[9px] outline-none focus:border-blue-600 cursor-pointer">
                                                         <option value="" disabled>Escolha Arma ou Magia...</option>
                                                         {equippedWeapons.length > 0 && <optgroup label="🗡️ Armas Equipadas">{equippedWeapons.map(w => <option key={`w-${w.id}`} value={`weapon|${w.id}`}>{w.name}</option>)}</optgroup>}
                                                         {knownSpells.length > 0 && <optgroup label="✨ Magias Memorizadas">{knownSpells.map(s => <option key={`s-${s.id}`} value={`spell|${s.id}`}>{s.name}</option>)}</optgroup>}
                                                     </select>
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-3">
+                                                <div className="grid grid-cols-2 gap-2">
                                                     <div>
-                                                        <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Fórmula de Dano</label>
-                                                        <input type="text" value={actionForm.damageExpr} onChange={e => setActionForm({...actionForm, damageExpr: e.target.value})} placeholder="Ex: 8d6" className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600 font-mono" />
+                                                        <label className="text-[9px] text-gray-500 uppercase font-bold mb-1 block">Fórmula de Dano</label>
+                                                        <input type="text" value={actionForm.damageExpr} onChange={e => setActionForm({...actionForm, damageExpr: e.target.value})} placeholder="Ex: 8d6" className="w-full bg-white border border-gray-300 rounded p-1.5 text-black text-[10px] outline-none focus:border-red-600 font-mono" />
                                                     </div>
                                                     <div>
-                                                        <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Tipo de Dano</label>
-                                                        <select value={actionForm.damageType} onChange={e => setActionForm({...actionForm, damageType: e.target.value})} className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600">
+                                                        <label className="text-[9px] text-gray-500 uppercase font-bold mb-1 block">Tipo de Dano</label>
+                                                        <select value={actionForm.damageType} onChange={e => setActionForm({...actionForm, damageType: e.target.value})} className="w-full bg-white border border-gray-300 rounded p-1.5 text-black text-[10px] outline-none focus:border-red-600">
                                                             <option value="Físico">Físico</option><option value="Cura">Cura</option>
                                                             {Object.keys(PT_BR_DICT).filter(k => PT_BR_DICT[k] !== k && k.length > 3).map(k => <option key={k} value={PT_BR_DICT[k]}>{PT_BR_DICT[k]}</option>)}
                                                         </select>
                                                     </div>
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-3">
+                                                <div className="grid grid-cols-2 gap-2">
                                                     <div>
-                                                        <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Rolar Ataque?</label>
-                                                        <select value={actionForm.attackMod} onChange={e => setActionForm({...actionForm, attackMod: e.target.value})} className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600">
+                                                        <label className="text-[9px] text-gray-500 uppercase font-bold mb-1 block">Rolar Ataque?</label>
+                                                        <select value={actionForm.attackMod} onChange={e => setActionForm({...actionForm, attackMod: e.target.value})} className="w-full bg-white border border-gray-300 rounded p-1.5 text-black text-[10px] outline-none focus:border-red-600">
                                                             <option value="none">Não</option><option value="str">Sim (FOR)</option><option value="dex">Sim (DES)</option><option value="spell">Sim (Magia)</option>
                                                         </select>
                                                     </div>
                                                     <div>
-                                                        <label className="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Resistência?</label>
-                                                        <select value={actionForm.saveAttr} onChange={e => setActionForm({...actionForm, saveAttr: e.target.value})} className="w-full bg-white border-2 border-gray-300 rounded p-2 text-black text-sm outline-none focus:border-red-600">
+                                                        <label className="text-[9px] text-gray-500 uppercase font-bold mb-1 block">Resistência?</label>
+                                                        <select value={actionForm.saveAttr} onChange={e => setActionForm({...actionForm, saveAttr: e.target.value})} className="w-full bg-white border border-gray-300 rounded p-1.5 text-black text-[10px] outline-none focus:border-red-600">
                                                             <option value="none">Não</option><option value="FOR">FOR</option><option value="DES">DES</option><option value="CON">CON</option><option value="INT">INT</option><option value="SAB">SAB</option><option value="CAR">CAR</option>
                                                         </select>
                                                     </div>
                                                 </div>
-                                                <div className="flex gap-2 pt-4 border-t border-gray-200">
-                                                    <button onClick={() => setIsEditingAction(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 border border-gray-300 text-gray-700 text-xs font-bold py-2.5 rounded transition-colors">Cancelar</button>
-                                                    <button onClick={handleSaveCustomAction} disabled={!actionForm.name.trim()} className="flex-1 bg-red-700 hover:bg-red-800 disabled:bg-gray-400 text-white text-xs font-bold py-2.5 rounded transition-colors shadow-sm">Salvar Macro</button>
+                                                <div className="flex gap-1.5 pt-3 border-t border-gray-200">
+                                                    <button onClick={() => setIsEditingAction(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 border border-gray-300 text-gray-700 text-[9px] font-bold py-2 rounded transition-colors">Cancelar</button>
+                                                    <button onClick={handleSaveCustomAction} disabled={!actionForm.name.trim()} className="flex-1 bg-red-700 hover:bg-red-800 disabled:bg-gray-400 text-white text-[9px] font-bold py-2 rounded transition-colors shadow-sm">Salvar Macro</button>
                                                 </div>
                                             </div>
                                         </div>
@@ -844,52 +874,85 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
 
                                     <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4">
                                         {allFilteredActions.length === 0 ? (
-                                            <p className="text-xs text-gray-500 italic text-center py-6 border border-dashed border-gray-300 rounded bg-gray-50">Nenhuma ação encontrada para este filtro.</p>
+                                            <p className="text-[9px] text-gray-500 italic text-center py-4 border border-dashed border-gray-300 rounded bg-gray-50">Nenhuma ação encontrada para este filtro.</p>
                                         ) : (
-                                            <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                                                <div className="grid grid-cols-12 gap-2 p-2 bg-gray-100 border-b border-gray-200 text-[9px] font-black text-gray-500 uppercase tracking-widest items-center">
-                                                    <div className="col-span-5">Ação</div>
-                                                    <div className="col-span-2 text-center">Alcance</div>
-                                                    <div className="col-span-2 text-center">Acerto/CD</div>
-                                                    <div className="col-span-3 text-center">Dano / Efeito</div>
+                                            <div className="w-full">
+                                                <div className="grid grid-cols-12 gap-2 pb-2 mb-1 border-b-2 border-gray-200 text-[9px] font-black text-gray-500 uppercase tracking-widest items-center">
+                                                    <div className="col-span-5 pl-2">ATAQUE</div>
+                                                    <div className="col-span-2 text-center">ALCANCE</div>
+                                                    <div className="col-span-2 text-center">ACERTO / CD</div>
+                                                    <div className="col-span-3 text-right pr-4">DANO / NOTAS</div>
                                                 </div>
-                                                <div className="flex flex-col divide-y divide-gray-100">
+                                                <div className="flex flex-col">
                                                     {allFilteredActions.map((action: any, idx) => {
                                                         const showHeader = actionFilter === 'all' && (idx === 0 || allFilteredActions[idx-1].typeDetail !== action.typeDetail);
                                                         
                                                         return (
                                                             <React.Fragment key={action.id || action.name}>
                                                                 {showHeader && (
-                                                                    <div className="bg-red-50/50 px-3 py-1.5 border-b border-gray-200 flex items-center gap-2">
-                                                                        {action.type === 'weapon' ? <Sword size={12} className="text-red-800"/> : <CheckCircle size={12} className="text-red-800"/>}
-                                                                        <span className="text-[10px] font-bold text-red-800 uppercase tracking-widest">{action.typeDetail}</span>
+                                                                    <div className="flex items-end justify-between border-b border-gray-200 mt-4 pb-1 mb-1">
+                                                                        <span className="text-[11px] font-black text-[#c53131] uppercase tracking-wide">{action.typeDetail}</span>
+                                                                        {action.type === 'macro' && (
+                                                                            <button onClick={(e) => { e.stopPropagation(); setActionForm({ name: '', attackMod: 'none', damageExpr: '', damageType: 'Físico', saveAttr: 'none' }); setIsEditingAction(!isEditingAction); }} className="text-[9px] font-bold text-gray-400 uppercase hover:text-gray-800 transition-colors">
+                                                                                MANAGE CUSTOM
+                                                                            </button>
+                                                                        )}
                                                                     </div>
                                                                 )}
-                                                                <div className="grid grid-cols-12 gap-2 p-2 items-center hover:bg-gray-50 transition-colors group">
-                                                                    <div className="col-span-5 flex items-center gap-2 cursor-pointer" onClick={() => openDescription(action.id || action.name, action.name)}>
-                                                                        {action.type === 'spell' && <BookOpen size={14} className="text-blue-600 shrink-0"/>}
-                                                                        {action.icon && action.icon}
+                                                                <div className="grid grid-cols-12 gap-2 py-2.5 items-center group bg-white border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+                                                                    <div className="col-span-5 flex items-start gap-2 cursor-pointer pl-1" onClick={(e) => { e.stopPropagation(); toggleActionExpansion(action.id || action.name); }}>
+                                                                        <div className="mt-0.5 text-gray-400 group-hover:text-[#c53131] transition-colors">
+                                                                            {action.type === 'weapon' ? <Sword size={14}/> : (action.type === 'spell' ? <BookOpen size={14}/> : <CheckCircle size={14}/>)}
+                                                                        </div>
                                                                         <div className="flex flex-col min-w-0">
-                                                                            <span className="text-xs font-bold text-black group-hover:text-red-800 truncate">{action.name}</span>
-                                                                            <span className="text-[8px] uppercase text-gray-500 truncate">{translateTerm(action.category)}</span>
+                                                                            <span className="text-[11px] font-bold text-black group-hover:text-[#c53131] transition-colors truncate">{action.name}</span>
+                                                                            <span className="text-[9px] text-gray-400 truncate">{translateTerm(action.category)}</span>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="col-span-2 text-center text-[10px] text-gray-600 font-mono truncate">
-                                                                        {action.range || '--'}
+                                                                    <div className="col-span-2 flex flex-col text-center">
+                                                                        <span className="text-[11px] font-medium text-black">{action.range?.split(' ')[0] || '--'}</span>
+                                                                        <span className="text-[8px] text-gray-400">{action.range?.includes(' ') ? action.range.split(' ').slice(1).join(' ') : 'Alcance'}</span>
                                                                     </div>
-                                                                    <div className="col-span-2 flex justify-center gap-1">
-                                                                        {action.attackMod && action.attackMod !== 'none' && <button onClick={() => executeActionAttack(action)} className="border border-gray-300 hover:border-red-600 bg-white text-black font-black text-[10px] py-1 px-2 rounded flex items-center gap-1 shadow-sm"><Target size={10}/> {action.hitMod >= 0 ? `+${action.hitMod}` : action.hitMod}</button>}
-                                                                        {action.saveAttr && action.saveAttr !== 'none' && <button onClick={() => executeActionSave(action)} className="border border-gray-300 hover:border-amber-600 bg-white text-black font-black text-[10px] py-1 px-2 rounded flex items-center gap-1 shadow-sm"><ShieldAlert size={10}/> {action.saveAttr}</button>}
-                                                                    </div>
-                                                                    <div className="col-span-3 flex justify-center items-center gap-1">
-                                                                        {action.damageExpr ? (
-                                                                            <button onClick={() => executeActionDamage(action)} className="border border-gray-300 hover:border-red-600 bg-white text-black font-black text-[10px] py-1 px-2 rounded flex items-center gap-1 shadow-sm w-full justify-center"><Flame size={10}/> {action.damageExpr}</button>
+                                                                    <div className="col-span-2 flex justify-center">
+                                                                        {(action.attackMod && action.attackMod !== 'none') ? (
+                                                                            <button onClick={(e) => { e.stopPropagation(); executeActionAttack(action); }} className="border border-gray-300 rounded bg-white hover:border-gray-400 text-black font-normal text-[12px] min-w-[32px] px-1 py-1 flex items-center justify-center shadow-sm transition-colors">
+                                                                                {action.hitMod >= 0 ? `+${action.hitMod}` : action.hitMod}
+                                                                            </button>
+                                                                        ) : (action.saveAttr && action.saveAttr !== 'none') ? (
+                                                                            <button onClick={(e) => { e.stopPropagation(); executeActionSave(action); }} className="border border-gray-300 rounded bg-white hover:border-gray-400 text-black font-normal text-[10px] min-w-[32px] px-1 py-1 flex items-center justify-center shadow-sm transition-colors">
+                                                                                {action.saveAttr}
+                                                                            </button>
                                                                         ) : (
-                                                                            <span className="text-[9px] text-gray-400 italic">Efeito Especial</span>
+                                                                            <span className="text-gray-300 text-xs">--</span>
                                                                         )}
-                                                                        {action.type === 'spell' && <button onClick={() => onCastSpellRP(action)} className="border border-indigo-300 hover:bg-indigo-600 hover:text-white bg-indigo-50 text-indigo-700 p-1 rounded shadow-sm transition-colors" title="Conjurar no Chat"><Sparkles size={10}/></button>}
-                                                                        {action.type === 'macro' && <button onClick={() => handleDeleteCustomAction(action.id)} className="text-red-400 hover:text-red-700 p-1"><Trash2 size={10}/></button>}
                                                                     </div>
+                                                                    <div className="col-span-3 flex justify-end items-center gap-1.5 pr-2">
+                                                                        {action.damageExpr ? (
+                                                                            <button onClick={(e) => { e.stopPropagation(); executeActionDamage(action); }} className="border border-gray-300 rounded bg-white hover:border-gray-400 text-black font-normal text-[12px] min-w-[36px] px-1 py-1 flex items-center justify-center shadow-sm transition-colors">
+                                                                                {action.damageExpr}
+                                                                            </button>
+                                                                        ) : (
+                                                                            <span className="text-[9px] text-gray-400 italic">--</span>
+                                                                        )}
+                                                                        
+                                                                        {action.type === 'spell' && (
+                                                                            <button onClick={(e) => { e.stopPropagation(); onCastSpellRP(action); }} className="text-indigo-400 hover:text-indigo-600 transition-colors ml-1" title="Conjurar no Chat">
+                                                                                <Sparkles size={12}/>
+                                                                            </button>
+                                                                        )}
+                                                                        {action.type === 'macro' && (
+                                                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteCustomAction(action.id); }} className="text-red-300 hover:text-red-500 transition-colors ml-1" title="Deletar Macro">
+                                                                                <Trash2 size={12}/>
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                    
+                                                                    {expandedActionIds[action.id || action.name] && (
+                                                                        <div className="col-span-12 mt-2 pl-7 pr-2 text-[10px] text-gray-700 font-serif leading-relaxed whitespace-pre-wrap border-t border-dashed border-gray-200 pt-2 pb-1">
+                                                                            <span className="font-bold text-black">{action.name}. </span>
+                                                                            {action.desc}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             </React.Fragment>
                                                         );
@@ -901,6 +964,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                 </div>
                             )}
 
+                            {/* 👉 ABA INVENTORY */}
                             {activeTab === 'inventory' && (
                                 <div className="space-y-6 animate-in fade-in duration-300">
                                     <div className="bg-white border-2 border-gray-200 rounded-xl p-4 shadow-sm">
@@ -930,6 +994,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                 </div>
                             )}
 
+                            {/* 👉 ABA FEATURES E TRAITS */}
                             {activeTab === 'features' && (
                                 <div className="space-y-6 animate-in fade-in duration-300">
                                     <div className="mb-6">
@@ -966,6 +1031,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                 </div>
                             )}
 
+                            {/* 👉 ABA BACKGROUND E ROLEPLAY */}
                             {activeTab === 'background' && (
                                 <div className="animate-in fade-in duration-300 space-y-6">
                                     {charDetails ? (
@@ -996,7 +1062,7 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                                 <div className="bg-white border-2 border-gray-200 rounded-xl p-5 shadow-sm">
                                                     <h4 className="text-xs text-red-800 uppercase tracking-widest font-black border-b border-gray-200 pb-2 mb-4">Appearance</h4>
                                                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                                                        {(charDetails as any).physical.age && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Age</span><span className="text-sm text-gray-900 font-serif">{(charDetails as any).physical.age}</span></div>}
+                                                        {(charDetails as any).physical.age && <div><span className="text-[9px] uppercase text-gray-500 font-bold mb-0.5">Age</span><span className="text-sm text-gray-900 font-serif">{(charDetails as any).physical.age}</span></div>}
                                                         {(charDetails as any).physical.gender && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Gender</span><span className="text-sm text-gray-900 font-serif">{(charDetails as any).physical.gender}</span></div>}
                                                         {(charDetails as any).physical.height && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Height</span><span className="text-sm text-gray-900 font-serif">{(charDetails as any).physical.height}</span></div>}
                                                         {(charDetails as any).physical.weight && <div><span className="text-[9px] uppercase text-gray-500 font-bold block mb-0.5">Weight</span><span className="text-sm text-gray-900 font-serif">{(charDetails as any).physical.weight}</span></div>}

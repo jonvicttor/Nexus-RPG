@@ -8,7 +8,10 @@ import LoginScreen from './components/LoginScreen';
 import Lobby from './components/Lobby'; 
 import { ChatMessage } from './components/Chat';
 import EditEntityModal from './components/EditEntityModal';
-import BaldursDiceRoller, { RollBonus } from './components/BaldursDiceRoller'; 
+
+// 👉 MAGIA NOVA: Invocando o Universal Dice Roller
+import UniversalDiceRoller, { RollBonus } from './components/UniversalDiceRoller'; 
+
 import { getLevelFromXP } from './utils/gameRules';
 import MobilePlayerSheet from './components/MobilePlayerSheet'; 
 import CharacterSheetFloating from './components/CharacterSheetFloating'; 
@@ -83,6 +86,7 @@ export interface QueuedRoll {
   isCustomNoDamage?: boolean; 
   damageType?: string; 
 }
+
 
 const InitiativeModal = ({ entity, onClose, onConfirm }: { entity: Entity, onClose: () => void, onConfirm: (val: number) => void }) => {
   const [manualValue, setManualValue] = useState('');
@@ -242,7 +246,6 @@ function App() {
   const [availableRaces, setAvailableRaces] = useState<any[]>([]); 
   const [availableConditions, setAvailableConditions] = useState<any[]>([]); 
 
-  const [focusEntity, setFocusEntity] = useState<Entity | null>(null);        
   const [globalBrightness, setGlobalBrightness] = useState(1);              
 
   const [mapOffset, setMapOffset] = useState({ x: 0, y: 0 });
@@ -258,6 +261,8 @@ function App() {
   const [damageOverlayData, setDamageOverlayData] = useState<any>(null);
 
   const [rollQueue, setRollQueue] = useState<QueuedRoll[]>([]);
+  
+  const [diceRollId, setDiceRollId] = useState(0);
 
   const [diceContext, setDiceContext] = useState({
       title: 'Teste Geral',
@@ -284,6 +289,21 @@ function App() {
 
   const ignoreNextDiceSound = useRef(false);
 
+  // 🔥 TECLA ESC PARA LIMPAR SELEÇÃO (MAPA/ALVOS/ATACANTE) 🔥
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if (e.key === 'Escape') {
+              setTargetEntityIds([]);
+              setAttackerId(null);
+              setStatusSelectionId(null);
+              setActiveAoE(null);
+              setActiveCharacterSheetId(null);
+          }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   useEffect(() => {
       if (rollQueue.length > 0 && !showBgDice) {
           const nextRoll = rollQueue[0];
@@ -302,6 +322,7 @@ function App() {
               isCustomNoDamage: nextRoll.isCustomNoDamage || false,
               damageType: nextRoll.damageType || 'Físico' 
           });
+          setDiceRollId(prev => prev + 1); 
           setShowBgDice(true);
       }
   }, [rollQueue, showBgDice]);
@@ -1119,7 +1140,8 @@ function App() {
       setTargetEntityIds(multiSelect ? (targetEntityIds.includes(id) ? targetEntityIds.filter(tid => tid !== id) : [...targetEntityIds, id]) : [id]); 
   };
   
-  const handleSetAttacker = (id: number | null) => { if (role !== 'DM') return; setAttackerId(id); };
+  // 👉 1. REMOVIDO BLOQUEIO DO JOGADOR NO handleSetAttacker 👈
+  const handleSetAttacker = (id: number | null) => { setAttackerId(id); };
 
   const handleLogin = (selectedRole: 'DM' | 'PLAYER', name: string, charData?: any) => { 
       const sessionRoomId = charData?.roomId || 'mesa-do-victor';
@@ -1278,8 +1300,9 @@ function App() {
           />
       )}
       
-      <BaldursDiceRoller 
+      <UniversalDiceRoller 
         isOpen={showBgDice} 
+        rollId={diceRollId} 
         onClose={() => setShowBgDice(false)} 
         title={diceContext.title} 
         subtitle={diceContext.subtitle} 
@@ -1411,46 +1434,78 @@ function App() {
                     onResizeToken={handleResizeToken} 
                     targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget}
                     onSetAttacker={handleSetAttacker} onFlipToken={handleFlipToken} activeAoE={activeAoE} onAoEComplete={() => setActiveAoE(null)} aoeColor={aoeColor} 
-                    externalOffset={mapOffset} externalScale={mapScale} onMapChange={handleMapSync} focusEntity={focusEntity} globalBrightness={globalBrightness}
+                    externalOffset={mapOffset} externalScale={mapScale} onMapChange={handleMapSync} globalBrightness={globalBrightness}
                     onDropItem={handleDropLootOnMap} onGiveItemToToken={handleGiveItemToToken} 
                     pings={pings} onPing={handlePingMap}
                     
                     myCharacterId={entities.find(e => e.name === playerName)?.id}
 
-                    onSelectEntity={(entity: any) => { if (entity.classType === 'Item' || String(entity.type) === 'loot') setStatusSelectionId(entity.id); }} 
+                    // 👉 2. MAPEANDO OS CLIQUES NO MAPA CORRETAMENTE 👈
+                    onSelectEntity={(entity: any) => { 
+                        if (entity.classType === 'Item' || String(entity.type) === 'loot') {
+                            setStatusSelectionId(entity.id); 
+                        } else {
+                            handleSetAttacker(entity.id); // 1 Clique = Atacante
+                        }
+                    }} 
                     onTokenDoubleClick={(entity: any) => { 
                         if (entity.classType === 'Item' || String(entity.type) === 'loot') {
                             setStatusSelectionId(entity.id); 
                         } else {
-                            if (role === 'DM' || (role === 'PLAYER' && entity.name === playerName)) {
-                                setActiveCharacterSheetId(entity.id);
-                            }
+                            handleSetTarget(entity.id, false); // 2 Cliques = Alvo
                         }
                     }} 
                 />
-                <div className="fixed bottom-6 right-[450px] z-[130] pointer-events-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <button onClick={openDiceRoller} className="group relative flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-900 to-purple-900 rounded-full border-2 border-yellow-500 shadow-[0_0_20px_rgba(168,85,247,0.6)] hover:scale-110 transition-all duration-300" title="Rolar Dado (Estilo BG3)"><span className="text-3xl filter drop-shadow-md group-hover:rotate-12 transition-transform">🎲</span><div className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full text-[10px] flex items-center justify-center border border-white font-bold animate-pulse">!</div></button>
-                </div>
+                
+                {role === 'PLAYER' && (
+                  <div className="fixed bottom-6 right-[450px] z-[130] pointer-events-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+                      <button onClick={openDiceRoller} className="group relative flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-900 to-purple-900 rounded-full border-2 border-yellow-500 shadow-[0_0_20px_rgba(168,85,247,0.6)] hover:scale-110 transition-all duration-300" title="Rolar Dado">
+                        <span className="text-3xl filter drop-shadow-md group-hover:rotate-12 transition-transform">🎲</span>
+                        <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full text-[10px] flex items-center justify-center border border-white font-bold animate-pulse">!</div>
+                      </button>
+                  </div>
+                )}
             </main>
-            <aside className="w-auto flex-shrink-0 border-l border-rpgAccent/20 bg-rpgPanel shadow-2xl z-[140]">
-                {role === 'DM' 
-                ? <SidebarDM 
-                    entities={entities} onUpdateHP={handleUpdateHP} onAddEntity={handleAddEntity} onDeleteEntity={handleDeleteEntity} onEditEntity={handleEditEntity} 
-                    isFogMode={isFogMode} onToggleFogMode={() => setIsFogMode(!isFogMode)} fogTool={fogTool} onSetFogTool={setFogTool} 
-                    fogShape={fogShape} onSetFogShape={setFogShape}
-                    onSyncFog={handleSyncFog} onResetFog={handleResetFog} onRevealAll={handleRevealAll} onSaveGame={handleSaveGame} onChangeMap={handleChangeMap} 
-                    initiativeList={initiativeList} activeTurnId={activeTurnId} onAddToInitiative={handleAddToInitiative} onRemoveFromInitiative={handleRemoveFromInitiative} onNextTurn={handleNextTurn} onClearInitiative={handleClearInitiative} onSortInitiative={handleSortInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget} onToggleCondition={handleToggleCondition} onSetAttacker={handleSetAttacker} activeAoE={activeAoE} onSetAoE={setActiveAoE} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} aoeColor={aoeColor} onSetAoEColor={setAoEColor} onOpenCreator={(type) => { }} onAddXP={handleAddXP} customMonsters={customMonsters} globalBrightness={globalBrightness} onSetGlobalBrightness={handleUpdateGlobalBrightness} onRequestRoll={handleDmRequestRoll} onToggleVisibility={handleToggleVisibility} currentTrack={currentTrack} onPlayMusic={handlePlayMusic} onStopMusic={handleStopMusic} onPlaySFX={handlePlaySFX} audioVolume={audioVolume} onSetAudioVolume={setAudioVolume} onResetView={handleResetView} onGiveItem={handleGiveItem} onApplyDamageFromChat={handleApplyDamageFromChat} onDMRoll={handleDMRoll} 
-                    onLongRest={handleLongRest} 
-                    
-                    availableItems={availableItems} 
-                    availableConditions={availableConditions}
-                    onOpenLootGenerator={() => setShowLootGenerator(true)}
-                    onRequestInitiative={handleRequestInitiative}
-                    onRequestCustomRoll={handleRequestCustomRoll}
+
+            {/* SE FOR JOGADOR: Mostra a Barra Lateral Direita */}
+                {role === 'PLAYER' && (
+                <aside className="w-auto h-full flex flex-col flex-shrink-0 border-l border-rpgAccent/20 bg-rpgPanel shadow-2xl z-[140]">
+                    <SidebarPlayer 
+                        entities={entities} 
+                        myCharacterName={playerName} 
+                        myCharacterId={entities.find(e => e.name === playerName)?.id || 0} 
+                        initiativeList={initiativeList} 
+                        activeTurnId={activeTurnId} 
+                        chatMessages={publicChatMessages} 
+                        onSendMessage={handleSendMessage} 
+                        onRollAttribute={handleAttributeRoll} 
+                        onUpdateCharacter={handleEditEntity} 
+                        
+                        // 👉 4. ABRINDO A FICHA PELO AVATAR DA SIDEBAR 👈
+                        onSelectEntity={(entity: any) => { setActiveCharacterSheetId(entity.id); }} 
+                        
+                        onApplyDamageFromChat={handleApplyDamageFromChat} 
+                        availableSpells={availableSpells} 
                     /> 
-                : <SidebarPlayer entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name === playerName)?.id || 0} initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} onSelectEntity={(entity: any) => { setFocusEntity(entity); setTimeout(() => setFocusEntity(null), 100); }} onApplyDamageFromChat={handleApplyDamageFromChat} availableSpells={availableSpells} /> 
-                }
-            </aside>
+                </aside>
+                )}
+
+            {/* SE FOR MESTRE: Injeta o Escudo (Barra Inferior) diretamente sobre a tela sem espremer o mapa */}
+            {role === 'DM' && (
+               <SidebarDM 
+                  entities={entities} onUpdateHP={handleUpdateHP} onAddEntity={handleAddEntity} onDeleteEntity={handleDeleteEntity} onEditEntity={handleEditEntity} 
+                  isFogMode={isFogMode} onToggleFogMode={() => setIsFogMode(!isFogMode)} fogTool={fogTool} onSetFogTool={setFogTool} 
+                  fogShape={fogShape} onSetFogShape={setFogShape}
+                  onSyncFog={handleSyncFog} onResetFog={handleResetFog} onRevealAll={handleRevealAll} onSaveGame={handleSaveGame} onChangeMap={handleChangeMap} 
+                  initiativeList={initiativeList} activeTurnId={activeTurnId} onAddToInitiative={handleAddToInitiative} onRemoveFromInitiative={handleRemoveFromInitiative} onNextTurn={handleNextTurn} onClearInitiative={handleClearInitiative} onSortInitiative={handleSortInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget} onToggleCondition={handleToggleCondition} onSetAttacker={handleSetAttacker} activeAoE={activeAoE} onSetAoE={setActiveAoE} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} aoeColor={aoeColor} onSetAoEColor={setAoEColor} onOpenCreator={(type) => { }} onAddXP={handleAddXP} customMonsters={customMonsters} globalBrightness={globalBrightness} onSetGlobalBrightness={handleUpdateGlobalBrightness} onRequestRoll={handleDmRequestRoll} onToggleVisibility={handleToggleVisibility} currentTrack={currentTrack} onPlayMusic={handlePlayMusic} onStopMusic={handleStopMusic} onPlaySFX={handlePlaySFX} audioVolume={audioVolume} onSetAudioVolume={setAudioVolume} onResetView={handleResetView} onGiveItem={handleGiveItem} onApplyDamageFromChat={handleApplyDamageFromChat} onDMRoll={handleDMRoll} 
+                  onLongRest={handleLongRest} 
+                  availableItems={availableItems} 
+                  availableConditions={availableConditions}
+                  onOpenLootGenerator={() => setShowLootGenerator(true)}
+                  onRequestInitiative={handleRequestInitiative}
+                  onRequestCustomRoll={handleRequestCustomRoll}
+                  /> 
+            )}
           </>
       )}
 

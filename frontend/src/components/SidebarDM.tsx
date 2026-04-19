@@ -1,5 +1,4 @@
 import React, { useState, useRef } from 'react';
-import Soundboard from './Soundboard'; 
 import Chat, { ChatMessage } from './Chat'; 
 import { Entity, MonsterPreset } from '../App';
 import EditEntityModal from './EditEntityModal';
@@ -8,8 +7,10 @@ import { getLevelFromXP, getNextLevelXP } from '../utils/gameRules';
 import SkillList from './SkillList';
 import ItemCreator from './ItemCreator';
 import Scratchpad from './Scratchpad'; 
+import Soundboard from './Soundboard';
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
-import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent, Gem, Search, ShieldAlert } from 'lucide-react';import GoogleDiceRoller from './GoogleDiceRoller';
+import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent, Gem, Search, ShieldAlert, Flame, Heart, Sword, ChevronDown, ChevronRight, Activity, Skull } from 'lucide-react';
+import UniversalDiceRoller from './UniversalDiceRoller';
 
 export interface InitiativeItem { id: number; name: string; value: number; }
 
@@ -38,7 +39,6 @@ interface SidebarDMProps {
   onAddEntity: (type: 'enemy' | 'player', name: string, preset?: MonsterPreset) => void;
   onDeleteEntity: (id: number) => void;
   onEditEntity: (id: number, updates: Partial<Entity>) => void;
-  
   isFogMode: boolean;
   onToggleFogMode: () => void;
   onResetFog: () => void;
@@ -48,7 +48,6 @@ interface SidebarDMProps {
   fogShape?: 'brush' | 'rect' | 'line';
   onSetFogShape?: (shape: 'brush' | 'rect' | 'line') => void;
   onSyncFog: () => void;
-  
   onSaveGame: () => void;
   onChangeMap: (mapUrl: string) => void;
   initiativeList: InitiativeItem[];
@@ -69,21 +68,19 @@ interface SidebarDMProps {
   onSetAttacker: (id: number | null) => void;
   aoeColor: string;
   onSetAoEColor: (color: string) => void;
-  onOpenCreator: (type: 'player' | 'enemy') => void;
+  onOpenCreator: (type: any) => void;
   onAddXP?: (id: number, amount: number) => void;
   customMonsters?: MonsterPreset[]; 
   globalBrightness?: number;
   onSetGlobalBrightness?: (val: number) => void;
   onRequestRoll: (targetId: number, skillName: string, mod: number, dc: number) => void;
   onToggleVisibility: (id: number) => void;
-  
   currentTrack: string | null;
   onPlayMusic: (trackId: string) => void;
   onStopMusic: () => void;
   onPlaySFX: (sfxId: string) => void;
   audioVolume: number;
   onSetAudioVolume: (val: number) => void;
-
   onResetView: () => void;
   onGiveItem: (targetId: number, item: any) => void;
   onApplyDamageFromChat: (targetId: number, damageExpression: string) => void;
@@ -99,69 +96,104 @@ interface SidebarDMProps {
 const AoEColorPicker = ({ selected, onSelect }: { selected: string, onSelect: (c: string) => void }) => {
     const colors = [{ c: '#ef4444', label: '🔥', name: 'Fogo' }, { c: '#3b82f6', label: '❄️', name: 'Gelo' }, { c: '#22c55e', label: '🧪', name: 'Ácido' }, { c: '#a855f7', label: '🔮', name: 'Magia' }, { c: '#eab308', label: '⚡', name: 'Raio' }, { c: '#111827', label: '🌑', name: 'Escuridão' }];
     return (
-        <div className="flex gap-1 justify-center bg-black/40 p-1.5 rounded mt-2">
-            {colors.map(opt => (<button key={opt.c} onClick={() => onSelect(opt.c)} className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] transition-all hover:scale-110 border ${selected === opt.c ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-70 hover:opacity-100'}`} style={{ backgroundColor: opt.c }} title={opt.name}>{opt.label}</button>))}
+        <div className="flex gap-2 justify-center bg-black/60 p-2 rounded-xl mt-3 border border-white/5 shadow-inner">
+            {colors.map(opt => (<button key={opt.c} onClick={() => onSelect(opt.c)} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm transition-all hover:scale-110 border-2 ${selected === opt.c ? 'border-white scale-110 shadow-[0_0_15px_currentColor]' : 'border-transparent opacity-60 hover:opacity-100'}`} style={{ backgroundColor: opt.c, color: selected === opt.c ? opt.c : 'transparent' }} title={opt.name}>{opt.label}</button>))}
         </div>
     );
 };
 
-const EntityControlRow = ({ entity, onUpdateHP, onDeleteEntity, onClickEdit, onAddToInit, isTarget, isAttacker, onSetTarget, onSetAttacker, onToggleCondition, onAddXP, onToggleVisibility, onEditEntity }: any) => {
+// --- COMPONENTE COLLAPSIBLE REFINADO ---
+const CollapsibleSection = ({ title, icon: Icon, children, defaultOpen = false }: { title: string, icon?: any, children: React.ReactNode, defaultOpen?: boolean }) => {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+    return (
+        <div className={`bg-black/40 backdrop-blur-md border ${isOpen ? 'border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.05)]' : 'border-white/5'} rounded-xl flex flex-col overflow-hidden mb-4 transition-all duration-300`}>
+            <button 
+                onClick={() => setIsOpen(!isOpen)} 
+                className={`flex justify-between items-center p-3 transition-colors cursor-pointer w-full text-left ${isOpen ? 'bg-gradient-to-r from-amber-900/20 to-transparent border-b border-amber-500/20' : 'bg-transparent hover:bg-white/5'}`}
+            >
+                <h3 className={`font-black text-[11px] uppercase tracking-[0.2em] flex items-center gap-2 ${isOpen ? 'text-amber-500' : 'text-gray-400'}`}>
+                    {Icon && <Icon size={14} className={isOpen ? "opacity-100" : "opacity-50"}/>} {title}
+                </h3>
+                {isOpen ? <ChevronDown size={16} className="text-amber-500" /> : <ChevronRight size={16} className="text-gray-500" />}
+            </button>
+            {isOpen && (
+                <div className="animate-in slide-in-from-top-2 fade-in duration-300">
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const EntityControlRow = ({ entity, onUpdateHP, onDeleteEntity, onClickEdit, onAddToInit, isTarget, isAttacker, onSetTarget, onSetAttacker, onAddXP, onToggleVisibility, onEditEntity }: any) => {
   const hpPercent = Math.max(0, Math.min(100, (entity.hp / entity.maxHp) * 100));
   const isDead = entity.hp <= 0;
-  let barColor = 'bg-green-500';
-  if (hpPercent < 30) barColor = 'bg-red-600'; else if (hpPercent < 60) barColor = 'bg-yellow-500';
+  
+  let barColor = 'from-green-500 to-green-400';
+  let barShadow = 'shadow-[0_0_10px_rgba(34,197,94,0.4)]';
+  if (hpPercent < 30) { barColor = 'from-red-600 to-red-500'; barShadow = 'shadow-[0_0_10px_rgba(220,38,38,0.6)]'; } 
+  else if (hpPercent < 60) { barColor = 'from-yellow-500 to-yellow-400'; barShadow = 'shadow-[0_0_10px_rgba(234,179,8,0.4)]'; }
+
   const [showXPInput, setShowXPInput] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [xpAmount, setXpAmount] = useState('');
   const handleGiveXP = (e: React.FormEvent) => { e.preventDefault(); const amount = parseInt(xpAmount); if (amount && onAddXP) { onAddXP(entity.id, amount); setXpAmount(''); setShowXPInput(false); } };
 
   return (
-    <div className={`relative p-3 rounded border transition-all flex flex-col gap-2 group overflow-hidden cursor-pointer ${isDead ? 'opacity-60 grayscale bg-gray-900 border-gray-800' : ''} ${isTarget && !isDead ? 'bg-red-900/30 border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : isAttacker ? 'bg-blue-900/30 border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.3)]' : 'bg-black/40 border-white/10 hover:bg-black/60'}`} onClick={(e) => onSetTarget(entity.id, e.shiftKey)}>
-      {isDead && (<div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20 z-0"><span className="text-4xl">💀</span></div>)}
+    <div className={`relative p-3 rounded-xl border backdrop-blur-md transition-all duration-300 flex flex-col gap-2 group overflow-hidden cursor-pointer ${isDead ? 'opacity-50 grayscale bg-black/60 border-gray-800' : ''} ${isTarget && !isDead ? 'bg-red-950/40 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : isAttacker ? 'bg-blue-950/40 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.4)]' : 'bg-black/40 border-white/10 hover:bg-black/60 hover:border-white/20'}`} onClick={(e) => onSetTarget(entity.id, e.shiftKey)}>
+      {isDead && (<div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20 z-0"><Skull size={40} className="text-gray-300" /></div>)}
       
-      <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20 bg-black/90 border border-white/20 rounded p-0.5 shadow-xl">
-        {entity.type === 'player' && (<button onClick={(e) => { e.stopPropagation(); setShowXPInput(!showXPInput); setShowNotes(false); }} className="text-gray-300 hover:text-purple-400 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Dar XP">✨</button>)}
-        
-        <button onClick={(e) => { e.stopPropagation(); setShowNotes(!showNotes); setShowXPInput(false); }} className={`hover:bg-white/10 rounded p-1.5 transition-colors text-sm ${showNotes ? 'text-purple-400' : 'text-gray-300'}`} title="Anotações Secretas">📝</button>
-        
-        <button onClick={(e) => { e.stopPropagation(); onSetAttacker(entity.id); }} className={`hover:bg-white/10 rounded p-1.5 transition-colors text-sm ${isAttacker ? 'text-blue-400' : 'text-gray-300'}`} title="Definir como Atacante">🎯</button>
-        <button onClick={(e) => { e.stopPropagation(); onAddToInit(); }} className="text-gray-300 hover:text-yellow-400 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Iniciativa">⚔️</button>
-        
-        <button onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }} className={`hover:bg-white/10 rounded p-1.5 transition-colors text-sm ${entity.visible === false ? 'text-white/30' : 'text-cyan-400'}`} title={entity.visible === false ? "Revelar" : "Ocultar"}>
+      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-20 bg-black/80 backdrop-blur-xl border border-white/10 rounded-lg p-1 shadow-2xl">
+        {entity.type === 'player' && (<button onClick={(e) => { e.stopPropagation(); setShowXPInput(!showXPInput); setShowNotes(false); }} className="text-gray-400 hover:text-amber-400 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Dar XP">✨</button>)}
+        <button onClick={(e) => { e.stopPropagation(); setShowNotes(!showNotes); setShowXPInput(false); }} className={`hover:bg-white/10 rounded p-1.5 transition-colors text-sm ${showNotes ? 'text-purple-400' : 'text-gray-400'}`} title="Anotações Secretas">📝</button>
+        <button onClick={(e) => { e.stopPropagation(); onSetAttacker(entity.id); }} className={`hover:bg-white/10 rounded p-1.5 transition-colors text-sm ${isAttacker ? 'text-blue-400' : 'text-gray-400'}`} title="Definir como Atacante">🎯</button>
+        <button onClick={(e) => { e.stopPropagation(); onAddToInit(); }} className="text-gray-400 hover:text-yellow-400 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Iniciativa">⚔️</button>
+        <button onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }} className={`hover:bg-white/10 rounded p-1.5 transition-colors text-sm ${entity.visible === false ? 'text-white/20' : 'text-cyan-400'}`} title={entity.visible === false ? "Revelar" : "Ocultar"}>
             {entity.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}
         </button>
-
-        <button onClick={(e) => { e.stopPropagation(); onClickEdit(); }} className="text-gray-300 hover:text-blue-400 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Editar">✎</button>
-        <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Deletar ${entity.name}?`)) onDeleteEntity(entity.id); }} className="text-gray-300 hover:text-red-500 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Excluir (Remove o Corpo)">✕</button>
+        <button onClick={(e) => { e.stopPropagation(); onClickEdit(); }} className="text-gray-400 hover:text-blue-400 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Editar">✎</button>
+        <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Deletar ${entity.name}?`)) onDeleteEntity(entity.id); }} className="text-gray-400 hover:text-red-500 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Excluir (Remove o Corpo)">✕</button>
       </div>
 
-      {showXPInput && (<div className="absolute inset-0 z-30 bg-black/90 flex items-center justify-center p-2" onClick={(e) => e.stopPropagation()}><form onSubmit={handleGiveXP} className="flex gap-2 w-full"><input autoFocus type="number" placeholder="XP" className="w-full bg-gray-800 border border-purple-500 text-white px-2 py-1 rounded text-xs" value={xpAmount} onChange={(e) => setXpAmount(e.target.value)} /><button type="submit" className="bg-purple-600 text-white px-3 py-1 rounded text-xs font-bold">OK</button><button type="button" onClick={() => setShowXPInput(false)} className="text-gray-400 hover:text-white text-xs">X</button></form></div>)}
+      {showXPInput && (<div className="absolute inset-0 z-30 bg-black/95 backdrop-blur-sm flex items-center justify-center p-3 animate-in fade-in" onClick={(e) => e.stopPropagation()}><form onSubmit={handleGiveXP} className="flex gap-2 w-full"><input autoFocus type="number" placeholder="XP" className="flex-1 bg-black border border-amber-500/50 text-white px-3 py-2 rounded-lg text-sm outline-none focus:border-amber-400" value={xpAmount} onChange={(e) => setXpAmount(e.target.value)} /><button type="submit" className="bg-amber-600 text-black px-4 py-2 rounded-lg font-black uppercase tracking-widest text-xs transition-transform active:scale-95">OK</button><button type="button" onClick={() => setShowXPInput(false)} className="text-gray-500 hover:text-white px-2">✕</button></form></div>)}
 
-      <div className="flex items-center justify-between pr-2 z-10 relative">
-        <div className="flex items-center gap-3">
-          <div className="relative w-10 h-10 flex-shrink-0">
-            {(entity.tokenImage || entity.image) ? (<img src={entity.tokenImage || entity.image} alt={entity.name} className={`w-full h-full rounded-full object-cover border border-white/20 shadow-sm ${entity.visible === false ? 'opacity-50 grayscale' : ''}`}/>) : (<div className="w-full h-full rounded-full" style={{ backgroundColor: entity.color }}></div>)}
-            {entity.type === 'player' && (<div className="absolute -bottom-1 -right-1 bg-purple-900 border border-purple-500 text-white text-[9px] font-bold px-1 rounded-full shadow-md">Nv.{getLevelFromXP(entity.xp || 0)}</div>)}
+      <div className="flex items-center justify-between pr-2 z-10 relative pointer-events-none">
+        <div className="flex items-center gap-4">
+          <div className={`relative w-12 h-12 flex-shrink-0 rounded-full border-2 p-0.5 ${isTarget && !isDead ? 'border-red-500' : isAttacker ? 'border-blue-500' : 'border-white/10'}`}>
+            {(entity.tokenImage || entity.image) ? (<img src={entity.tokenImage || entity.image} alt={entity.name} className={`w-full h-full rounded-full object-cover shadow-inner ${entity.visible === false ? 'opacity-40 grayscale' : ''}`}/>) : (<div className="w-full h-full rounded-full" style={{ backgroundColor: entity.color }}></div>)}
+            {entity.type === 'player' && (<div className="absolute -bottom-1 -right-1 bg-gradient-to-br from-amber-600 to-amber-800 border border-black text-black text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-lg">Nv.{getLevelFromXP(entity.xp || 0)}</div>)}
           </div>
-          <div className="overflow-hidden">
-              <span className={`text-gray-200 font-bold text-sm truncate block ${isDead ? 'line-through text-gray-500' : ''} ${entity.visible === false ? 'opacity-50 italic' : ''}`}>
+          <div className="overflow-hidden flex flex-col justify-center">
+              <span className={`text-white font-bold text-sm tracking-wide truncate block ${isDead ? 'line-through text-gray-600' : ''} ${entity.visible === false ? 'opacity-40 italic' : ''}`}>
                   {entity.name} {entity.visible === false && '(Oculto)'}
               </span>
-              <span className="text-[10px] text-gray-500 uppercase">{entity.classType || 'NPC'}</span>
+              <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[9px] text-gray-500 uppercase tracking-widest font-bold leading-none">{entity.classType || 'NPC'}</span>
+                  {entity.conditions && entity.conditions.length > 0 && (
+                      <span className="flex gap-1">
+                          {entity.conditions.map((c: string, idx: number) => {
+                              const icon = CONDITION_MAP.find(cm => cm.id === c)?.icon;
+                              return icon ? <span key={idx} className="text-[10px] filter drop-shadow-md leading-none" title={c}>{icon}</span> : null;
+                          })}
+                      </span>
+                  )}
+              </div>
           </div>
         </div>
-        <div className="text-right"><span className={`text-xs font-bold font-mono ${isDead ? 'text-gray-500' : (entity.hp < entity.maxHp / 2 ? 'text-red-500' : 'text-green-400')}`}>{entity.hp}/{entity.maxHp}</span></div>
+        <div className="text-right">
+            <span className={`text-sm font-black font-mono tracking-tighter ${isDead ? 'text-gray-600' : (entity.hp < entity.maxHp / 2 ? 'text-red-400' : 'text-white')}`}>{entity.hp}<span className="text-[10px] text-gray-500 font-normal">/{entity.maxHp}</span></span>
+        </div>
       </div>
       
-      {entity.type === 'player' && (<div className="w-full h-1 bg-gray-800 rounded-full mt-1 relative overflow-hidden"><div className="h-full bg-purple-500" style={{ width: `${Math.min(100, ((entity.xp || 0) / getNextLevelXP(getLevelFromXP(entity.xp || 0))) * 100)}%` }}></div></div>)}
-      <div className="w-full h-1.5 bg-gray-900 rounded-full overflow-hidden border border-white/5 mt-1 z-10 relative"><div className={`h-full ${barColor} transition-all duration-500 ease-out`} style={{ width: `${hpPercent}%` }}></div></div>
+      {entity.type === 'player' && (<div className="w-full h-1 bg-black/50 rounded-full mt-1.5 relative overflow-hidden pointer-events-none"><div className="h-full bg-cyan-500" style={{ width: `${Math.min(100, ((entity.xp || 0) / getNextLevelXP(getLevelFromXP(entity.xp || 0))) * 100)}%` }}></div></div>)}
+      <div className="w-full h-1.5 bg-black/60 rounded-full overflow-hidden border border-white/5 mt-1 z-10 relative pointer-events-none shadow-inner"><div className={`h-full bg-gradient-to-r ${barColor} ${barShadow} transition-all duration-500 ease-out`} style={{ width: `${hpPercent}%` }}></div></div>
 
       {showNotes && (
-          <div className="mt-2 pt-2 border-t border-white/5 animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-              <span className="text-[8px] font-black text-purple-400 uppercase tracking-widest mb-1 block">Segredos do Mestre</span>
+          <div className="mt-3 pt-3 border-t border-white/10 animate-in slide-in-from-top-2 fade-in duration-200" onClick={e => e.stopPropagation()}>
+              <span className="text-[9px] font-black text-purple-400 uppercase tracking-widest mb-1.5 flex items-center gap-1"><Eye size={10} /> Segredos do Mestre</span>
               <textarea
                   autoFocus
-                  className="w-full bg-black/60 border border-purple-500/30 rounded p-2 text-xs text-purple-200 placeholder-purple-900/50 outline-none focus:border-purple-500 min-h-[60px] custom-scrollbar"
+                  className="w-full bg-black/50 border border-purple-500/30 rounded-lg p-3 text-xs text-purple-100 placeholder-purple-900/50 outline-none focus:border-purple-400 focus:bg-black/80 min-h-[70px] custom-scrollbar transition-all"
                   placeholder="Anotações confidenciais..."
                   defaultValue={entity.dmNotes || ''}
                   onBlur={(e) => onEditEntity(entity.id, { dmNotes: e.target.value })}
@@ -172,7 +204,6 @@ const EntityControlRow = ({ entity, onUpdateHP, onDeleteEntity, onClickEdit, onA
   );
 };
 
-// 👉 COMBAT PANEL ATUALIZADO (A dor em Massa)
 const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll, onRequestRoll }: any) => {
     const [amount, setAmount] = useState('');
     const [saveAttr, setSaveAttr] = useState('DES');
@@ -185,11 +216,8 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll,
         }
     };
 
-    // A MÁGICA: Pede Teste de Resistência em Massa!
     const requestMassSave = () => {
-        targets.forEach((t: Entity) => {
-            onRequestRoll(t.id, `Salvaguarda de ${saveAttr}`, 0, 10);
-        });
+        targets.forEach((t: Entity) => { onRequestRoll(t.id, `Salvaguarda de ${saveAttr}`, 0, 10); });
         onSendMessage(`🐉 **O Mestre Exigiu um Teste!**\n> Os alvos selecionados devem rolar **Resistência de ${saveAttr}** imediatamente!`);
     };
 
@@ -199,9 +227,7 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll,
         const dex = attacker.stats?.dex || 10;
         return Math.floor((Math.max(str, dex) - 10) / 2);
     };
-
     const atkMod = getAtkMod();
-    const modString = atkMod >= 0 ? `+${atkMod}` : `${atkMod}`;
 
     const handleVisualAttack = (rollType: 'normal' | 'advantage' | 'disadvantage') => {
         if (!attacker) return;
@@ -211,132 +237,161 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll,
 
     const renderHpBar = (entity: Entity) => {
         const hpPercent = Math.max(0, Math.min(100, (entity.hp / entity.maxHp) * 100));
-        let barColor = 'bg-green-500';
-        if (hpPercent < 30) barColor = 'bg-red-600';
-        else if (hpPercent < 60) barColor = 'bg-yellow-500';
+        let barColor = 'from-green-500 to-green-400';
+        let shadow = 'shadow-[0_0_10px_rgba(34,197,94,0.3)]';
+        if (hpPercent < 30) { barColor = 'from-red-600 to-red-500'; shadow = 'shadow-[0_0_10px_rgba(220,38,38,0.5)]'; }
+        else if (hpPercent < 60) { barColor = 'from-yellow-500 to-yellow-400'; shadow = 'shadow-[0_0_10px_rgba(234,179,8,0.3)]'; }
+        
         return (
-            <div className="flex flex-col items-center w-full px-1 mt-2" title="Vida Atual">
-                <div className="w-20 h-2 bg-gray-700 rounded-full border border-black/50 overflow-hidden relative shadow-inner">
-                    <div className={`h-full ${barColor} transition-all duration-300`} style={{ width: `${hpPercent}%` }}></div>
+            <div className="flex flex-col items-center w-full mt-3 pointer-events-none" title="Vida Atual">
+                <div className="w-full h-2 bg-black border border-white/10 rounded-full overflow-hidden shadow-inner">
+                    <div className={`h-full bg-gradient-to-r ${barColor} ${shadow} transition-all duration-500`} style={{ width: `${hpPercent}%` }}></div>
                 </div>
-                <span className="text-[10px] text-white/90 font-mono mt-1 font-bold shadow-black drop-shadow-md">{entity.hp} / {entity.maxHp}</span>
+                <span className="text-[10px] text-gray-400 font-mono mt-1.5 uppercase tracking-widest font-bold">{entity.hp} / {entity.maxHp} HP</span>
             </div>
         );
     };
 
-    if (targets.length === 0 && !attacker) return null;
+    const renderAttributeCard = (label: string, value: number) => {
+        const mod = Math.floor((value - 10) / 2);
+        return (
+            <div className="flex flex-col items-center border border-white/10 rounded-xl bg-black/40 p-2 shadow-inner group hover:border-blue-500/50 hover:bg-blue-900/10 transition-all cursor-default relative w-[52px] h-[68px]">
+                <span className="text-[8px] font-black uppercase text-gray-500 group-hover:text-blue-300 z-10 tracking-widest mb-1">{label}</span>
+                <span className="text-xl font-black text-white leading-none z-10">{mod >= 0 ? `+${mod}` : mod}</span>
+                <div className="absolute -bottom-2 bg-black border border-white/10 rounded-xl px-2 py-[2px] text-[9px] font-bold z-20 group-hover:border-blue-500 group-hover:text-white transition-colors text-gray-400 shadow-md">
+                    {value}
+                </div>
+            </div>
+        );
+    }
+
+    if (!attacker && targets.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center h-40 opacity-40">
+                <div className="w-16 h-16 rounded-full bg-black/50 border border-white/10 flex items-center justify-center mb-3 shadow-inner">
+                    <Sword size={24} className="text-gray-500" />
+                </div>
+                <span className="text-xs font-serif italic text-center text-gray-400">Selecione o Atacante e o(s) Alvo(s)<br/>na lista abaixo.</span>
+            </div>
+        );
+    }
 
     return (
-        <section className="mb-4 bg-gradient-to-r from-blue-950/40 via-purple-900/20 to-red-950/40 border border-white/10 rounded-xl p-4 shadow-xl relative overflow-hidden">
-            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay pointer-events-none"></div>
-            
-            <h3 className="text-yellow-500/90 font-black text-[11px] uppercase tracking-widest mb-4 text-center flex items-center justify-center gap-2">
-                <span className="w-8 h-px bg-yellow-500/50"></span>
-                ⚔️ {attacker ? `TURNO DE "${attacker.name.toUpperCase()}"` : 'MESA DE COMBATE'}
-                <span className="w-8 h-px bg-yellow-500/50"></span>
-            </h3>
-            
-            <div className="flex items-center justify-between gap-4 mb-4 relative z-10">
-                <div className="flex flex-col items-center w-[40%]">
-                    <span className="text-[9px] text-blue-400 font-bold uppercase tracking-widest mb-2">⚔️ Atacante</span>
-                    {attacker ? (
-                        <>
-                            <div className="w-16 h-16 rounded-full border-2 border-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.4)] overflow-hidden bg-black relative group">
-                                <img src={attacker.tokenImage || attacker.image || ''} className="w-full h-full object-cover group-hover:scale-110 transition-transform" alt="" />
-                            </div>
-                            <span className="text-[12px] text-blue-300 font-black mt-2 truncate max-w-full text-center leading-tight drop-shadow-md">{attacker.name}</span>
-                            <div className="bg-black/60 border border-blue-500/30 rounded px-3 py-1 mt-1" title="Modificador de Ataque (Soma no D20)">
-                                <span className="text-[9px] font-bold text-gray-400 uppercase">Mod: </span>
-                                <span className="text-[11px] font-black text-white">{modString}</span>
+        <div className="flex flex-col h-full justify-between pb-2">
+            <div>
+                {attacker && (
+                    <div className="flex items-start justify-between gap-4 mb-4 pb-5 border-b border-white/10 relative">
+                        <div className="absolute -left-3 top-0 bottom-5 w-1 bg-gradient-to-b from-blue-500 to-transparent rounded-r"></div>
+                        <div className="flex flex-wrap gap-2 w-[65%] justify-start">
+                            {renderAttributeCard('FOR', attacker.stats?.str || 10)}
+                            {renderAttributeCard('DES', attacker.stats?.dex || 10)}
+                            {renderAttributeCard('CON', attacker.stats?.con || 10)}
+                            {renderAttributeCard('INT', attacker.stats?.int || 10)}
+                            {renderAttributeCard('SAB', attacker.stats?.wis || 10)}
+                            {renderAttributeCard('CAR', attacker.stats?.cha || 10)}
+                        </div>
+                        <div className="flex flex-col items-center justify-start w-[30%] gap-2 bg-black/30 p-2 rounded-xl border border-white/5">
+                            <div className="w-12 h-[52px] relative flex flex-col items-center justify-center cursor-default hover:scale-105 transition-transform" title="Classe de Armadura (CA)">
+                                <svg className="absolute inset-0 w-full h-full text-blue-900/40 drop-shadow-[0_0_10px_rgba(59,130,246,0.2)]" viewBox="0 0 100 120" preserveAspectRatio="none">
+                                    <path d="M50 0 L100 15 L100 60 C100 90 75 110 50 120 C25 110 0 90 0 60 L0 15 Z" fill="currentColor" stroke="#3b82f6" strokeWidth="2"/>
+                                </svg>
+                                <span className="text-[8px] font-black uppercase text-blue-200 relative z-10 -mt-1 tracking-widest">CA</span>
+                                <span className="text-2xl font-black text-white relative z-10 leading-none drop-shadow-md">{attacker.ac || 10}</span>
                             </div>
                             {renderHpBar(attacker)}
-                        </>
-                    ) : (
-                        <div className="w-16 h-16 rounded-full border-2 border-dashed border-blue-500/30 flex items-center justify-center text-blue-500/30 text-[10px] uppercase font-bold bg-black/40 tracking-widest">Vazio</div>
-                    )}
-                </div>
+                        </div>
+                    </div>
+                )}
 
-                <div className="flex flex-col items-center justify-center gap-2 w-[20%]">
-                    <span className="text-white/20 text-3xl font-black italic" style={{ fontFamily: 'Cinzel Decorative' }}>VS</span>
-                </div>
-
-                <div className="flex flex-col items-center w-[40%]">
-                    <span className="text-[9px] text-red-400 font-bold uppercase tracking-widest mb-2">🎯 Alvo(s)</span>
-                    {targets.length > 0 ? (
-                        <>
-                            <div className="flex -space-x-3 overflow-hidden justify-center w-full">
-                                {targets.slice(0, 3).map((t: Entity) => (
-                                    <div key={t.id} className="w-16 h-16 rounded-full border-2 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)] overflow-hidden bg-black flex-shrink-0 relative z-10">
-                                        <img src={t.tokenImage || t.image || ''} className="w-full h-full object-cover" alt="" />
+                <div className="flex items-center justify-between gap-4 mb-4 relative z-10">
+                    <div className="flex flex-col items-center w-full">
+                        {targets.length > 0 && (
+                            <div className="w-full bg-black/40 border border-red-900/30 rounded-xl p-3 shadow-inner relative">
+                                <div className="absolute -left-3 top-2 bottom-2 w-1 bg-gradient-to-b from-red-500 to-transparent rounded-r"></div>
+                                <div className="flex flex-col items-center">
+                                    <div className="flex -space-x-4 overflow-hidden justify-center w-full mb-3">
+                                        {targets.slice(0, 5).map((t: Entity, idx: number) => (
+                                            <div key={t.id} className="w-14 h-14 rounded-full border-2 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)] overflow-hidden bg-black flex-shrink-0 relative z-10" style={{ zIndex: 10 - idx }}>
+                                                <img src={t.tokenImage || t.image || ''} className="w-full h-full object-cover" alt="" />
+                                            </div>
+                                        ))}
+                                        {targets.length > 5 && (<div className="w-14 h-14 rounded-full border-2 border-red-500 bg-red-950 text-red-200 text-xs font-black flex items-center justify-center z-0 relative -ml-5 shadow-[0_0_15px_rgba(239,68,68,0.4)]">+{targets.length - 5}</div>)}
                                     </div>
-                                ))}
-                                {targets.length > 3 && (<div className="w-16 h-16 rounded-full border-2 border-red-500 bg-red-950 text-white text-[10px] font-bold flex items-center justify-center z-0 relative -ml-4 shadow-lg shadow-red-500/20">+{targets.length - 3}</div>)}
-                            </div>
-                            
-                            {targets.length === 1 ? (
-                                <span className="text-[12px] text-red-400 font-black mt-2 truncate max-w-full text-center leading-tight drop-shadow-md">{targets[0].name}</span>
-                            ) : (
-                                <span className="text-[11px] text-red-400 font-bold mt-2 uppercase tracking-widest">{targets.length} Alvos Selecionados</span>
-                            )}
-                            
-                            {targets.length === 1 && (
-                                <div className="bg-black/60 border border-red-500/30 rounded px-3 py-1 mt-1 cursor-help" title="Classe de Armadura / Classe de Dificuldade (O D20 precisa igualar ou superar esse número para acertar)">
-                                    <span className="text-[9px] font-bold text-gray-400 uppercase">CA/CD: </span>
-                                    <span className="text-[11px] font-black text-white">{targets[0].ac}</span>
+                                    
+                                    {targets.length === 1 ? (
+                                        <div className="flex flex-col items-center w-full">
+                                            <span className="text-[14px] text-white font-black uppercase tracking-wider truncate max-w-full text-center">{targets[0].name}</span>
+                                            <div className="mt-2 flex gap-4 text-[11px] font-mono items-center justify-center bg-black/50 px-3 py-1.5 rounded-lg border border-white/5">
+                                                <span title="Armor Class" className="text-gray-400">CA <strong className="text-white text-sm ml-1">{targets[0].ac}</strong></span>
+                                                <div className="w-px h-4 bg-white/20"></div>
+                                                <span title="Hit Points" className="text-gray-400">HP <strong className={`text-sm ml-1 ${targets[0].hp < targets[0].maxHp / 2 ? 'text-red-500' : 'text-green-400'}`}>{targets[0].hp}/{targets[0].maxHp}</strong></span>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <span className="text-[11px] text-red-400 font-black uppercase tracking-[0.2em] bg-red-950/50 border border-red-900 px-4 py-1.5 rounded-full shadow-inner">{targets.length} Alvos Selecionados</span>
+                                    )}
                                 </div>
-                            )}
-                            {targets.length === 1 && renderHpBar(targets[0])}
-                        </>
-                    ) : (
-                        <div className="w-16 h-16 rounded-full border-2 border-dashed border-red-500/30 flex items-center justify-center text-red-500/30 text-[10px] uppercase font-bold bg-black/40 tracking-widest">Vazio</div>
-                    )}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
-            {/* BOTÕES DE ATAQUE */}
-            {attacker && targets.length > 0 && (
-                <div className="flex gap-2 justify-center mt-5 border-t border-white/10 pt-4 relative z-10">
-                    <button onClick={() => handleVisualAttack('disadvantage')} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-[9px] font-bold py-2 rounded border border-gray-600 transition-colors uppercase" title="Rolar 2 dados e pegar o MENOR">
-                        Desvantagem
-                    </button>
-                    <button onClick={() => handleVisualAttack('normal')} className="flex-[2] bg-gradient-to-b from-yellow-600 to-yellow-800 hover:from-yellow-500 hover:to-yellow-700 text-white text-[11px] font-black py-2 rounded shadow-[0_0_15px_rgba(202,138,4,0.4)] border border-yellow-400/50 transition-all active:scale-95 uppercase tracking-widest flex items-center justify-center gap-1" title="Rolar D20 padrão">
-                        <span className="text-sm">🎲</span> Rolar Ataque
-                    </button>
-                    <button onClick={() => handleVisualAttack('advantage')} className="flex-1 bg-gray-800 hover:bg-gray-700 text-green-400 text-[9px] font-bold py-2 rounded border border-green-900/50 transition-colors uppercase" title="Rolar 2 dados e pegar o MAIOR">
-                        Vantagem
-                    </button>
-                </div>
-            )}
-
-            {/* 👉 BOTÕES DE AÇÃO EM MASSA (Cura/Dano/Resistência) */}
-            {targets.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-white/5 relative z-10 flex flex-col gap-2">
-                    
-                    <div className="flex gap-2">
-                        <input type="number" placeholder="HP..." title="Quantidade de Dano ou Cura" className="w-16 bg-black/80 border border-white/10 rounded p-1 text-center text-white text-xs font-bold outline-none focus:border-red-500" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') applyToAll(true); }} />
-                        <button onClick={() => applyToAll(true)} className="flex-1 bg-red-900/60 hover:bg-red-600 border border-red-700/50 text-red-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1" title="Aplica o valor como DANO nos alvos selecionados">🩸 Aplicar Dano</button>
-                        <button onClick={() => applyToAll(false)} className="flex-1 bg-green-900/60 hover:bg-green-600 border border-green-700/50 text-green-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1" title="Aplica o valor como CURA nos alvos selecionados">💚 Curar</button>
-                    </div>
-
-                    <div className="flex gap-2 mt-1">
-                        <select value={saveAttr} onChange={e => setSaveAttr(e.target.value)} className="w-16 bg-black/80 border border-amber-900/50 rounded p-1 text-center text-amber-200 text-[10px] font-bold outline-none focus:border-amber-500 cursor-pointer">
-                            <option value="FOR">FOR</option>
-                            <option value="DES">DES</option>
-                            <option value="CON">CON</option>
-                            <option value="INT">INT</option>
-                            <option value="SAB">SAB</option>
-                            <option value="CAR">CAR</option>
-                        </select>
-                        <button onClick={requestMassSave} className="flex-1 bg-amber-900/40 hover:bg-amber-600 border border-amber-700/50 text-amber-100 font-bold rounded uppercase text-[10px] transition-colors flex items-center justify-center gap-1 shadow-md" title="Força todos os alvos a rolarem essa Salvaguarda">
-                            <ShieldAlert size={12}/> Exigir Resistência em Massa
+            <div className="mt-auto space-y-4">
+                {attacker && targets.length > 0 && (
+                    <div className="flex gap-2 justify-center pt-2 relative z-10">
+                        <button onClick={() => handleVisualAttack('disadvantage')} className="flex-1 bg-black/60 hover:bg-white/10 text-gray-400 text-[10px] font-bold py-3 rounded-xl border border-white/10 transition-all uppercase tracking-widest hover:border-white/30" title="Rolar 2 dados e pegar o MENOR">
+                            Desv.
+                        </button>
+                        <button onClick={() => handleVisualAttack('normal')} className="flex-[1.5] bg-gradient-to-t from-red-800 to-red-600 hover:from-red-700 hover:to-red-500 text-white text-xs font-black py-3 rounded-xl shadow-[0_0_20px_rgba(220,38,38,0.4)] border border-red-400 transition-all active:scale-95 uppercase tracking-widest flex items-center justify-center gap-2" title="Rolar D20 padrão">
+                            <span className="text-lg">🎲</span> Atacar
+                        </button>
+                        <button onClick={() => handleVisualAttack('advantage')} className="flex-1 bg-black/60 hover:bg-white/10 text-gray-400 hover:text-green-400 text-[10px] font-bold py-3 rounded-xl border border-white/10 transition-all uppercase tracking-widest hover:border-green-500/50" title="Rolar 2 dados e pegar o MAIOR">
+                            Vant.
                         </button>
                     </div>
+                )}
 
-                </div>
-            )}
-        </section>
+                {targets.length > 0 && (
+                    <div className="bg-black/40 border border-red-900/30 rounded-xl p-3 shadow-inner relative z-10 flex flex-col gap-3">
+                        <div className="flex gap-2">
+                            <input type="number" placeholder="HP" className="w-16 bg-black border border-white/10 rounded-lg p-2 text-center text-white text-sm font-black outline-none focus:border-red-500 shadow-inner placeholder-gray-700" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') applyToAll(true); }} />
+                            <button onClick={() => applyToAll(true)} className="flex-1 bg-black hover:bg-red-900/80 border border-white/10 hover:border-red-500 text-gray-400 hover:text-red-100 font-bold rounded-lg uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-1.5 active:scale-95"><Flame size={14}/> Dano</button>
+                            <button onClick={() => applyToAll(false)} className="flex-1 bg-black hover:bg-green-900/80 border border-white/10 hover:border-green-500 text-gray-400 hover:text-green-100 font-bold rounded-lg uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-1.5 active:scale-95"><Heart size={14}/> Curar</button>
+                        </div>
+                        <div className="flex gap-2 border-t border-white/5 pt-3">
+                            <select value={saveAttr} onChange={e => setSaveAttr(e.target.value)} className="w-16 bg-black border border-white/10 rounded-lg p-1 text-center text-gray-400 font-bold outline-none focus:border-amber-500 cursor-pointer text-xs appearance-none">
+                                <option value="FOR">FOR</option><option value="DES">DES</option><option value="CON">CON</option><option value="INT">INT</option><option value="SAB">SAB</option><option value="CAR">CAR</option>
+                            </select>
+                            <button onClick={requestMassSave} className="flex-1 bg-amber-900/20 hover:bg-amber-600 border border-amber-700/50 hover:border-amber-400 text-amber-500 hover:text-black font-black rounded-lg uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-1.5 shadow-[0_0_10px_rgba(245,158,11,0.1)] active:scale-95">
+                                <ShieldAlert size={14}/> Exigir Resistência
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
     );
 };
+
+// --- DICIONÁRIO DE CONDIÇÕES ---
+const CONDITION_MAP = [
+    { id: 'Blinded', icon: '🦇', label: 'Cego', bg: 'bg-gray-900 hover:bg-gray-800', border: 'border-gray-500/50', text: 'text-gray-200' },
+    { id: 'Charmed', icon: '💕', label: 'Enfeitiçado', bg: 'bg-pink-950 hover:bg-pink-900', border: 'border-pink-500/50', text: 'text-pink-300' },
+    { id: 'Deafened', icon: '🔇', label: 'Surdo', bg: 'bg-slate-900 hover:bg-slate-800', border: 'border-slate-500/50', text: 'text-slate-300' },
+    { id: 'Exhaustion', icon: '😩', label: 'Exaustão', bg: 'bg-amber-950 hover:bg-amber-900', border: 'border-amber-500/50', text: 'text-amber-300' },
+    { id: 'Frightened', icon: '😱', label: 'Amedrontado', bg: 'bg-indigo-950 hover:bg-indigo-900', border: 'border-indigo-500/50', text: 'text-indigo-300' },
+    { id: 'Grappled', icon: '🤼', label: 'Agarrado', bg: 'bg-orange-950 hover:bg-orange-900', border: 'border-orange-500/50', text: 'text-orange-300' },
+    { id: 'Incapacitated', icon: '😵', label: 'Incapacitado', bg: 'bg-stone-900 hover:bg-stone-800', border: 'border-stone-500/50', text: 'text-stone-300' },
+    { id: 'Invisible', icon: '👻', label: 'Invisível', bg: 'bg-teal-950 hover:bg-teal-900', border: 'border-teal-500/50', text: 'text-teal-300' },
+    { id: 'Paralyzed', icon: '⚡', label: 'Paralisado', bg: 'bg-yellow-950 hover:bg-yellow-900', border: 'border-yellow-500/50', text: 'text-yellow-300' },
+    { id: 'Petrified', icon: '🗿', label: 'Petrificado', bg: 'bg-zinc-900 hover:bg-zinc-800', border: 'border-zinc-500/50', text: 'text-zinc-300' },
+    { id: 'Poisoned', icon: '🤢', label: 'Envenenado', bg: 'bg-green-950 hover:bg-green-900', border: 'border-green-500/50', text: 'text-green-300' },
+    { id: 'Prone', icon: '⏬', label: 'Caído', bg: 'bg-amber-950 hover:bg-amber-900', border: 'border-amber-500/50', text: 'text-amber-300' },
+    { id: 'Restrained', icon: '⛓️', label: 'Impedido', bg: 'bg-red-950 hover:bg-red-900', border: 'border-red-500/50', text: 'text-red-300' },
+    { id: 'Stunned', icon: '💫', label: 'Atordoado', bg: 'bg-fuchsia-950 hover:bg-fuchsia-900', border: 'border-fuchsia-500/50', text: 'text-fuchsia-300' },
+    { id: 'Unconscious', icon: '💤', label: 'Inconsciente', bg: 'bg-purple-950 hover:bg-purple-900', border: 'border-purple-500/50', text: 'text-purple-300' },
+];
 
 const SidebarDM: React.FC<SidebarDMProps> = ({ 
   entities, onUpdateHP, onAddEntity, onDeleteEntity, onEditEntity,
@@ -360,6 +415,7 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const [dcInput, setDcInput] = useState<number>(10);
   
   const [monsterSearch, setMonsterSearch] = useState('');
+  const [isUniversalRollerOpen, setIsUniversalRollerOpen] = useState(false);
   
   const [customRollExpr, setCustomRollExpr] = useState('1d100');
   const [customRollTitle, setCustomRollTitle] = useState('Rolagem Customizada');
@@ -368,8 +424,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const [customMapUrl, setCustomMapUrl] = useState('');
   const [previewMap, setPreviewMap] = useState<{url: string, name: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [hoveredCondition, setHoveredCondition] = useState<any | null>(null);
 
   const FULL_MONSTER_LIST = [...MONSTER_LIST, ...(customMonsters || [])];
   
@@ -427,30 +481,30 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const targets = entities.filter(e => targetEntityIds.includes(e.id));
   const toggleConditionForAll = (cond: string) => { targets.forEach(t => onToggleCondition(t.id, cond)); };
   
-  const sidebarStyle = { backgroundColor: '#1a1510', backgroundImage: `url('/assets/bg-couro-sidebar.png')`, backgroundSize: 'cover', backgroundRepeat: 'no-repeat', boxShadow: 'inset 0 0 60px rgba(0,0,0,0.9)', width: '420px', minWidth: '420px', maxWidth: '420px', flex: '0 0 420px' };
-
-  const CONDITION_MAP = [
-      { id: 'Blinded', icon: '🦇', label: 'Cego', bg: 'bg-gray-800/40 hover:bg-gray-600/60', border: 'border-gray-500/30', text: 'text-gray-200', desc: "A criatura não pode ver. Falha automática em testes que exigem visão.\n\nAtaques contra a criatura têm Vantagem, e os ataques dela têm Desvantagem." },
-      { id: 'Charmed', icon: '💕', label: 'Enfeitiçado', bg: 'bg-pink-900/40 hover:bg-pink-600/60', border: 'border-pink-500/30', text: 'text-pink-200', desc: "Não pode atacar quem o enfeitiçou nem ser alvo de habilidades nocivas/mágicas dessa pessoa.\n\nO encantador tem Vantagem em interações sociais com a criatura." },
-      { id: 'Deafened', icon: '🔇', label: 'Surdo', bg: 'bg-slate-800/40 hover:bg-slate-600/60', border: 'border-slate-500/30', text: 'text-slate-200', desc: "Não pode ouvir e falha automaticamente em qualquer teste de habilidade que exija audição." },
-      { id: 'Exhaustion', icon: '😩', label: 'Exaustão', bg: 'bg-amber-900/40 hover:bg-amber-600/60', border: 'border-amber-500/30', text: 'text-amber-200', desc: "Seis níveis de punição. Nível 1: Desv. em testes de habilidade.\nNível 2: Deslocamento cai pela metade.\nNível 3: Desv. em Ataques e Resistências.\nNível 4: Máximo de PV cortado pela metade.\nNível 5: Deslocamento 0.\nNível 6: Morte." },
-      { id: 'Frightened', icon: '😱', label: 'Amedrontado', bg: 'bg-indigo-900/40 hover:bg-indigo-600/60', border: 'border-indigo-500/30', text: 'text-indigo-200', desc: "Desvantagem em testes de habilidade e ataques se a fonte do medo estiver visível.\n\nA criatura não pode se mover voluntariamente na direção da fonte de medo." },
-      { id: 'Grappled', icon: '🤼', label: 'Agarrado', bg: 'bg-orange-900/40 hover:bg-orange-600/60', border: 'border-orange-500/30', text: 'text-orange-200', desc: "Deslocamento torna-se 0.\n\nA condição termina se o agarrador for Incapacitado ou se a criatura for movida para fora do alcance." },
-      { id: 'Incapacitated', icon: '😵', label: 'Incapacitado', bg: 'bg-stone-800/40 hover:bg-stone-600/60', border: 'border-stone-500/30', text: 'text-stone-200', desc: "A criatura não pode usar Ações, Ações Bônus nem Reações.\n\nQualquer magia de Concentração ativa é encerrada imediatamente." },
-      { id: 'Invisible', icon: '👻', label: 'Invisível', bg: 'bg-teal-900/40 hover:bg-teal-600/60', border: 'border-teal-500/30', text: 'text-teal-200', desc: "É impossível ser visto sem magia. Pode ser detectada pelo som ou marcas que deixa.\n\nAtaques contra a criatura têm Desvantagem; ataques da criatura têm Vantagem." },
-      { id: 'Paralyzed', icon: '⚡', label: 'Paralisado', bg: 'bg-yellow-900/40 hover:bg-yellow-600/60', border: 'border-yellow-500/30', text: 'text-yellow-200', desc: "Incapacitado, não pode se mover ou falar.\n\nFalha automática em salvaguardas de Força e Destreza.\nAtaques contra têm Vantagem.\nQualquer ataque que acerte a até 1,5m é Crítico automático!" },
-      { id: 'Petrified', icon: '🗿', label: 'Petrificado', bg: 'bg-zinc-800/40 hover:bg-zinc-600/60', border: 'border-zinc-500/30', text: 'text-zinc-200', desc: "Transformado em pedra inanimada. Peso x10.\nIncapacitado, não pode se mover ou falar.\nAtaques contra têm Vantagem.\nFalha automática em Força/Destreza.\nResistência a TODO o dano.\nImune a veneno e doenças." },
-      { id: 'Poisoned', icon: '🤢', label: 'Envenenado', bg: 'bg-green-900/40 hover:bg-green-600/60', border: 'border-green-500/30', text: 'text-green-200', desc: "A criatura tem Desvantagem em rolagens de ataque e testes de habilidade." },
-      { id: 'Prone', icon: '⏬', label: 'Caído', bg: 'bg-amber-900/40 hover:bg-amber-600/60', border: 'border-amber-500/30', text: 'text-amber-200', desc: "Única opção de movimento é rastejar (gasta metade do deslocamento para levantar).\n\nTem Desvantagem em ataques.\nAtaques contra à 1,5m têm Vantagem. Se for de longe, têm Desvantagem." },
-      { id: 'Restrained', icon: '⛓️', label: 'Impedido', bg: 'bg-red-900/40 hover:bg-red-600/60', border: 'border-red-500/30', text: 'text-red-200', desc: "Deslocamento 0.\n\nAtaques contra a criatura têm Vantagem; ataques dela têm Desvantagem.\n\nA criatura tem Desvantagem em Salvaguardas de Destreza." },
-      { id: 'Stunned', icon: '💫', label: 'Atordoado', bg: 'bg-fuchsia-900/40 hover:bg-fuchsia-600/60', border: 'border-fuchsia-500/30', text: 'text-fuchsia-200', desc: "Incapacitado, não pode se mover e fala falhando.\n\nFalha automática em Força e Destreza.\nAtaques contra a criatura têm Vantagem." },
-      { id: 'Unconscious', icon: '💤', label: 'Inconsciente', bg: 'bg-purple-900/40 hover:bg-purple-600/60', border: 'border-purple-500/30', text: 'text-purple-200', desc: "Incapacitado, não pode mover ou falar, não sabe o que está ao redor. Larga itens e cai Prone.\nFalha em Força e Destreza.\nAtaques contra têm Vantagem.\nAtaques a 1,5m são Críticos Automáticos." },
-  ];
+  const sidebarStyle = { backgroundColor: '#111', backgroundImage: `url('/assets/bg-couro-sidebar.png')`, backgroundSize: 'cover', backgroundRepeat: 'no-repeat', boxShadow: 'inset 0 0 100px rgba(0,0,0,0.95)', width: '420px', minWidth: '420px', maxWidth: '420px', flex: '0 0 420px' };
 
   return (
     <>
       {editingEntity && (<EditEntityModal entity={editingEntity} onSave={onEditEntity} onClose={() => setEditingEntity(null)} />)}
       
+      {/* 🚀 O NOVO ROLADOR UNIVERSAL 🚀 */}
+      {isUniversalRollerOpen && (
+          <UniversalDiceRoller 
+              isOpen={isUniversalRollerOpen}
+              onClose={() => setIsUniversalRollerOpen(false)}
+              title={customRollTitle || "Rolagem do Mestre"}
+              subtitle={customRollExpr || "Dados Livres"}
+              difficultyClass={10}
+              baseModifier={0}
+              proficiency={0}
+              isDamage={true}
+              damageExpression={customRollExpr || "1d100"}
+              onComplete={(t: number, s: boolean, c: boolean, sec: boolean) => {
+                 setIsUniversalRollerOpen(false); 
+              }}
+          />
+      )}
+
       {pendingSkillRequest && targetEntity && (
           <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPendingSkillRequest(null)}>
               <div className="bg-[#15151a] border border-purple-500/50 p-6 rounded-lg shadow-2xl w-80 animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
@@ -480,18 +534,25 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
           </div>
       )}
 
-      <div className="flex flex-col h-full border-l-8 border-[#2a2018] relative" style={sidebarStyle}>
-        <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-black/20 via-transparent to-black/40 z-0" />
+      <div className="flex flex-col h-full border-l border-white/5 relative" style={sidebarStyle}>
+        <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-black/40 via-black/10 to-black/60 z-0 backdrop-blur-[2px]" />
         <div className="relative z-10 flex flex-col h-full w-full">
-            <div className="flex border-b border-white/10 bg-black/40 flex-shrink-0">
-                <button onClick={() => setMainTab('tools')} className={`flex-1 py-3 text-center text-sm font-bold uppercase tracking-wider transition-all ${mainTab === 'tools' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>🛠️ Ferramentas</button>
-                <button onClick={() => setMainTab('chat')} className={`flex-1 py-3 text-center text-sm font-bold uppercase tracking-wider transition-all ${mainTab === 'chat' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>💬 Chat</button>
+            <div className="flex bg-black/60 backdrop-blur-md flex-shrink-0 relative">
+                <div className="absolute bottom-0 left-0 w-full h-[1px] bg-white/10"></div>
+                <button onClick={() => setMainTab('tools')} className={`flex-1 py-3 text-center text-xs font-black uppercase tracking-[0.2em] transition-all relative ${mainTab === 'tools' ? 'text-amber-500' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>
+                    🛠️ Ferramentas
+                    {mainTab === 'tools' && <div className="absolute bottom-0 left-0 w-full h-[2px] bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.8)]"></div>}
+                </button>
+                <button onClick={() => setMainTab('chat')} className={`flex-1 py-3 text-center text-xs font-black uppercase tracking-[0.2em] transition-all relative ${mainTab === 'chat' ? 'text-amber-500' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>
+                    💬 Chat
+                    {mainTab === 'chat' && <div className="absolute bottom-0 left-0 w-full h-[2px] bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.8)]"></div>}
+                </button>
             </div>
 
-            <div className={`flex-1 min-h-0 flex-col w-full relative z-20 bg-black/50 ${mainTab === 'chat' ? 'flex' : 'hidden'}`}>
-                <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-black/40 shrink-0">
-                    <p className="text-[8px] text-rpgText/50 font-mono italic">Canal Global</p>
-                    <span className="text-[8px] text-rpgAccent/80 font-bold font-mono uppercase tracking-widest">Mestre On-line</span>
+            <div className={`flex-1 min-h-0 flex-col w-full relative z-20 bg-black/30 backdrop-blur-sm ${mainTab === 'chat' ? 'flex' : 'hidden'}`}>
+                <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-black/60 shrink-0">
+                    <p className="text-[9px] text-gray-500 font-mono italic">Canal Global</p>
+                    <span className="text-[9px] text-amber-500 font-black font-mono uppercase tracking-[0.2em]">Mestre On-line</span>
                 </div>
                 <div className="flex-1 w-full max-w-full overflow-hidden">
                     <Chat 
@@ -504,64 +565,222 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
             </div>
 
             <div className={`flex-1 min-h-0 flex-col w-full ${mainTab === 'tools' ? 'flex' : 'hidden'}`}>
-                <div className="flex border-b border-white/10 bg-black/40 flex-shrink-0">
-                    <button onClick={() => setActiveTab('combat')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'combat' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Combate">⚔️</button>
-                    <button onClick={() => setActiveTab('map')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'map' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Mapa">🗺️</button>
-                    <button onClick={() => setActiveTab('tools')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'tools' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Forja e Dados">🔨</button>
-                    <button onClick={() => setActiveTab('campaign')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'campaign' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Campanha">📜</button>
-                    <button onClick={() => setActiveTab('create')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'create' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Bestiário">🐉</button>
-                    <button onClick={() => setActiveTab('audio')} className={`flex-1 py-2 text-center text-lg transition-all ${activeTab === 'audio' ? 'text-white bg-rpgAccent/20 border-b-2 border-rpgAccent' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Áudio">🔊</button>
+                <div className="flex bg-black/60 backdrop-blur-md flex-shrink-0 relative border-b border-white/5">
+                    <button onClick={() => setActiveTab('combat')} className={`flex-1 py-2.5 text-center text-lg transition-all ${activeTab === 'combat' ? 'text-amber-500 bg-white/5' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Combate">⚔️</button>
+                    <button onClick={() => setActiveTab('map')} className={`flex-1 py-2.5 text-center text-lg transition-all ${activeTab === 'map' ? 'text-amber-500 bg-white/5' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Mapa">🗺️</button>
+                    <button onClick={() => setActiveTab('tools')} className={`flex-1 py-2.5 text-center text-lg transition-all ${activeTab === 'tools' ? 'text-amber-500 bg-white/5' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Forja e Dados">🔨</button>
+                    <button onClick={() => setActiveTab('campaign')} className={`flex-1 py-2.5 text-center text-lg transition-all ${activeTab === 'campaign' ? 'text-amber-500 bg-white/5' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Campanha">📜</button>
+                    <button onClick={() => setActiveTab('create')} className={`flex-1 py-2.5 text-center text-lg transition-all ${activeTab === 'create' ? 'text-amber-500 bg-white/5' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Bestiário">🐉</button>
+                    <button onClick={() => setActiveTab('audio')} className={`flex-1 py-2.5 text-center text-lg transition-all ${activeTab === 'audio' ? 'text-amber-500 bg-white/5' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Áudio">🔊</button>
                 </div>
 
-                <div className="flex-grow overflow-y-auto p-4 custom-scrollbar w-full">
-                    {activeTab === 'tools' && (
-                        <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-6">
+                <div className="flex-grow overflow-y-auto p-4 custom-scrollbar w-full relative">
+                    
+                    {activeTab === 'combat' && (
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-5 pb-10">
                             
-                            <div className="w-full flex justify-center">
-                                <GoogleDiceRoller />
+                            {/* Mesa de Combate Premium */}
+                            <div className="bg-black/60 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/10 flex flex-col overflow-hidden relative">
+                                <div className="absolute inset-0 pointer-events-none rounded-2xl shadow-[inset_0_0_30px_rgba(245,158,11,0.05)]"></div>
+                                <div className="flex items-center justify-between p-3 border-b border-white/5 bg-gradient-to-r from-amber-900/20 to-transparent relative z-10">
+                                    <span className="text-amber-500 font-black text-[11px] uppercase tracking-[0.2em] flex items-center gap-2">
+                                        ⚔️ MESA DE COMBATE
+                                    </span>
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); onRequestInitiative && onRequestInitiative(targetEntityIds) }} 
+                                        disabled={targetEntityIds.length === 0}
+                                        className="bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:grayscale text-black text-[9px] px-3 py-1.5 rounded-lg font-black uppercase tracking-widest transition-all shadow-[0_0_10px_rgba(217,119,6,0.3)] active:scale-95"
+                                    >
+                                        Iniciativa ({targetEntityIds.length})
+                                    </button>
+                                </div>
+                                <div className="p-4 relative z-10">
+                                    <CombatVsPanel attacker={attacker} targets={targets} onUpdateHP={onUpdateHP} onSendMessage={onSendMessage} onDMRoll={onDMRoll} onRequestRoll={onRequestRoll} />
+                                </div>
                             </div>
 
-                            <div className="bg-black/40 p-4 rounded-xl border border-white/5">
-                                <h3 className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-3">Teste de Perícia</h3>
-                                {targetEntity ? (
-                                    <>
-                                        <div className="mb-4 flex items-center gap-3 bg-purple-900/20 p-2 rounded">
-                                            <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-700">{targetEntity.image && <img src={targetEntity.tokenImage || targetEntity.image} className="w-full h-full object-cover" alt="" />}</div>
-                                            <div><p className="text-sm font-bold text-white">{targetEntity.name}</p><p className="text-[10px] text-gray-400">Solicitando Teste</p></div>
+                            {/* Lista de Iniciativa Premium */}
+                            <div className="bg-black/60 backdrop-blur-xl border border-amber-900/30 rounded-2xl flex flex-col overflow-hidden relative shadow-2xl">
+                                <div className="flex justify-between items-center p-3 border-b border-amber-900/30 bg-gradient-to-r from-amber-900/10 to-transparent">
+                                    <h3 className="text-amber-500 font-black text-[11px] uppercase tracking-[0.2em] flex items-center gap-2">⚡ INICIATIVA</h3>
+                                    <div className="flex gap-2">
+                                        <button onClick={onSortInitiative} className="text-[9px] bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1 rounded text-gray-300 font-bold uppercase tracking-widest transition-colors">Sort</button>
+                                        <button onClick={onClearInitiative} className="text-[9px] bg-red-950/50 hover:bg-red-900 border border-red-900/50 px-3 py-1 rounded text-red-200 font-bold uppercase tracking-widest transition-colors">Limpar</button>
+                                    </div>
+                                </div>
+                                <div className="flex-1 overflow-y-auto custom-scrollbar p-2 max-h-60">
+                                    {initiativeList.length > 0 ? (
+                                        <div className="flex flex-col gap-1.5">
+                                            {initiativeList.map((item:any, i:number) => {
+                                                const ent = entities.find(e => e.id === item.id);
+                                                const hpPercent = ent ? Math.max(0, Math.min(100, (ent.hp / ent.maxHp) * 100)) : 0;
+                                                
+                                                // Cor da bolinha de saúde Premium
+                                                let hpStatusColor = 'bg-gray-500';
+                                                if (hpPercent > 50) hpStatusColor = 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]';
+                                                else if (hpPercent > 20) hpStatusColor = 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.6)]';
+                                                else if (hpPercent > 0) hpStatusColor = 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse';
+                                                else hpStatusColor = 'bg-black border-2 border-red-900';
+
+                                                return (
+                                                <div 
+                                                    key={i} 
+                                                    className={`flex justify-between items-center p-2 rounded-xl text-xs cursor-pointer border backdrop-blur-sm transition-all duration-300 ${item.id === activeTurnId ? 'bg-gradient-to-r from-amber-900/40 to-black/40 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.15)] scale-[1.02]' : 'bg-white/5 border-transparent hover:bg-white/10'} ${attackerId === item.id ? 'shadow-[inset_3px_0_0_#3b82f6]' : ''} ${targetEntityIds.includes(item.id) ? 'shadow-[inset_-3px_0_0_#ef4444]' : ''}`} 
+                                                    onClick={() => onSetAttacker(item.id)} 
+                                                    onContextMenu={(e) => { e.preventDefault(); onSetTarget(item.id, e.shiftKey); }} 
+                                                    title="Esquerdo: Selecionar Atacante | Direito: Selecionar Alvo"
+                                                >
+                                                    <div className="flex items-center gap-3 overflow-hidden flex-1 pl-1">
+                                                        <span className={`font-black text-[10px] w-6 text-center ${item.id === activeTurnId ? 'text-amber-400' : 'text-gray-500'}`}>{item.value}</span>
+                                                        
+                                                        {ent && (
+                                                            <div className={`w-2.5 h-2.5 rounded-full ${hpStatusColor} shrink-0 flex items-center justify-center`}>
+                                                                {ent.hp <= 0 && <Skull size={8} className="text-red-500" />}
+                                                            </div>
+                                                        )}
+
+                                                        <span className={`truncate text-[11px] uppercase tracking-wide ${item.id === activeTurnId ? 'text-amber-100 font-black' : 'text-gray-300 font-bold'}`}>{item.name}</span>
+                                                        
+                                                        {ent && ent.conditions && ent.conditions.length > 0 && (
+                                                            <div className="flex gap-1 shrink-0 ml-1">
+                                                                {ent.conditions.map((c: string, idx: number) => {
+                                                                    const icon = CONDITION_MAP.find(cm => cm.id === c)?.icon;
+                                                                    return icon ? <span key={idx} className="text-[10px] filter drop-shadow-md leading-none" title={c}>{icon}</span> : null;
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        {ent && (
+                                                            <button onClick={(e) => { e.stopPropagation(); onToggleVisibility(ent.id); }} className={`p-1.5 hover:bg-black/60 rounded-lg transition-colors ${ent.visible === false ? 'text-white/20' : 'text-cyan-400'}`}>
+                                                                {ent.visible === false ? <EyeOff size={12}/> : <Eye size={12}/>}
+                                                            </button>
+                                                        )}
+                                                        <button onClick={(e) => { e.stopPropagation(); onRemoveFromInitiative(item.id); }} className="text-gray-600 hover:text-red-500 p-1.5 hover:bg-red-950/50 rounded-lg transition-colors font-bold">✕</button>
+                                                    </div>
+                                                </div>
+                                            )})}
                                         </div>
-                                        <SkillList attributes={mapEntityStatsToAttributes(targetEntity)} proficiencyBonus={2} profs={[]} isDmMode={true} onRoll={(skillName, mod) => setPendingSkillRequest({ skillName, mod })}/>
-                                    </>
-                                ) : (
-                                    <p className="text-gray-500 text-sm italic text-center py-4 bg-white/5 rounded border border-dashed border-white/10">Selecione um token no mapa para rolar perícias.</p>
+                                    ) : (
+                                        <p className="text-center text-gray-500 text-xs py-4 italic font-serif">A batalha aguarda o primeiro movimento...</p>
+                                    )}
+                                </div>
+                                {initiativeList.length > 0 && (
+                                    <div className="p-2 border-t border-amber-900/30 bg-black/40">
+                                        <button onClick={onNextTurn} className="w-full py-3 bg-gradient-to-r from-amber-700 to-amber-600 hover:from-amber-600 hover:to-amber-500 text-black text-[10px] font-black uppercase tracking-[0.2em] rounded-xl shadow-[0_0_15px_rgba(217,119,6,0.3)] transition-all active:scale-95">Próximo Turno ⏩</button>
+                                    </div>
                                 )}
                             </div>
 
-                            <div className="bg-black/40 p-4 rounded-xl border border-white/5 mt-6 shadow-inner">
-                                <h3 className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2">
-                                    <span className="text-lg animate-pulse">🎲</span> Exigir Rolagem 3D Customizada
+                            {/* MENUS SANFONA PREMIUM */}
+                            <CollapsibleSection title="Entidades no Mapa" icon={Activity}>
+                                <div className="p-2 space-y-2 max-h-[400px] overflow-y-auto custom-scrollbar">
+                                    {entities.map((entity) => (<EntityControlRow key={entity.id} entity={entity} onUpdateHP={onUpdateHP} onDeleteEntity={onDeleteEntity} onClickEdit={() => setEditingEntity(entity)} onAddToInit={() => onAddToInitiative(entity)} isTarget={targetEntityIds.includes(entity.id)} isAttacker={attackerId === entity.id} onSetTarget={onSetTarget} onSetAttacker={onSetAttacker} onToggleCondition={onToggleCondition} onAddXP={onAddXP} onToggleVisibility={() => onToggleVisibility(entity.id)} onEditEntity={onEditEntity} />))}
+                                </div>
+                            </CollapsibleSection>
+
+                            <CollapsibleSection title="Condições" icon={ShieldAlert}>
+                                <div className="p-2 bg-black/20">
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {CONDITION_MAP.map(cond => (
+                                            <button 
+                                                key={cond.id}
+                                                onClick={() => toggleConditionForAll(cond.id)}
+                                                className={`flex flex-col items-center justify-center gap-1.5 p-2 ${cond.bg} border ${cond.border} rounded-lg transition-all active:scale-95 shadow-inner hover:shadow-lg w-full text-center`}
+                                            >
+                                                <span className="text-xl filter drop-shadow-md leading-none">{cond.icon}</span>
+                                                <span className={`text-[8px] font-black ${cond.text} uppercase tracking-widest truncate w-full`}>{cond.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </CollapsibleSection>
+
+                            <CollapsibleSection title="Áreas (AoE)">
+                                <div className="p-3 flex flex-col items-center bg-black/20">
+                                    <AoEColorPicker selected={aoeColor} onSelect={onSetAoEColor} />
+                                    <div className="flex gap-2 w-full mt-4">
+                                            <button onClick={() => onSetAoE(activeAoE === 'circle' ? null : 'circle')} className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all flex flex-col items-center justify-center gap-1.5 ${activeAoE === 'circle' ? 'border-white text-white bg-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.1)]' : 'border-white/5 text-gray-500 hover:bg-white/5'}`} style={activeAoE === 'circle' ? {borderColor: aoeColor, color: aoeColor, textShadow: `0 0 10px ${aoeColor}`} : {}}><span className="text-lg">⭕</span> Círculo</button>
+                                            <button onClick={() => onSetAoE(activeAoE === 'cone' ? null : 'cone')} className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all flex flex-col items-center justify-center gap-1.5 ${activeAoE === 'cone' ? 'border-white text-white bg-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.1)]' : 'border-white/5 text-gray-500 hover:bg-white/5'}`} style={activeAoE === 'cone' ? {borderColor: aoeColor, color: aoeColor, textShadow: `0 0 10px ${aoeColor}`} : {}}><span className="text-lg">🔺</span> Cone</button>
+                                            <button onClick={() => onSetAoE(activeAoE === 'cube' ? null : 'cube')} className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all flex flex-col items-center justify-center gap-1.5 ${activeAoE === 'cube' ? 'border-white text-white bg-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.1)]' : 'border-white/5 text-gray-500 hover:bg-white/5'}`} style={activeAoE === 'cube' ? {borderColor: aoeColor, color: aoeColor, textShadow: `0 0 10px ${aoeColor}`} : {}}><span className="text-lg">🟥</span> Cubo</button>
+                                    </div>
+                                </div>
+                            </CollapsibleSection>
+
+                        </div>
+                    )}
+
+                    {activeTab === 'tools' && (
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-6">
+                            
+                            <div className="bg-black/60 backdrop-blur-xl p-5 rounded-2xl border border-white/5 shadow-2xl relative overflow-hidden">
+                                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(245,158,11,0.1)_0%,transparent_70%)] pointer-events-none"></div>
+                                <h3 className="text-amber-500 text-[10px] font-black uppercase tracking-[0.2em] mb-4 flex items-center gap-2 relative z-10">
+                                    <span className="text-base">🎲</span> Rolar Dados 3D
                                 </h3>
-                                <div className="flex flex-col gap-2 mb-3">
+                                <button 
+                                    onClick={() => {
+                                        setCustomRollTitle('Rolagem do Mestre');
+                                        setCustomRollExpr('1d20');
+                                        setIsUniversalRollerOpen(true);
+                                    }} 
+                                    className="w-full py-4 bg-gradient-to-r from-amber-700 to-yellow-600 hover:from-amber-600 hover:to-yellow-500 text-black font-black uppercase tracking-widest rounded-xl shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all active:scale-95 border border-yellow-400/50 flex items-center justify-center gap-2 relative z-10"
+                                >
+                                    Abrir Dado Universal
+                                </button>
+                            </div>
+
+                            <div className="bg-black/60 backdrop-blur-xl p-5 rounded-2xl border border-white/5 shadow-2xl relative overflow-hidden">
+                                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(168,85,247,0.1)_0%,transparent_70%)] pointer-events-none"></div>
+                                <h3 className="text-purple-400 text-[10px] font-black uppercase tracking-[0.2em] mb-4 flex items-center gap-2 relative z-10">
+                                    <span className="text-base animate-pulse">⚡</span> Forçar Rolagem em Alvos
+                                </h3>
+                                <div className="flex flex-col gap-3 mb-4 relative z-10">
                                     <input 
                                         type="text" 
                                         value={customRollTitle} 
                                         onChange={(e) => setCustomRollTitle(e.target.value)} 
-                                        placeholder="Motivo (ex: Tabela de Saque)" 
-                                        className="w-full bg-black/60 border border-white/10 rounded p-2 text-xs text-white outline-none focus:border-purple-500 transition-colors" 
+                                        placeholder="Motivo (ex: Bola de Fogo)" 
+                                        className="w-full bg-black/80 border border-white/10 rounded-lg p-3 text-xs text-white outline-none focus:border-purple-500 transition-colors shadow-inner" 
                                     />
                                     <input 
                                         type="text" 
                                         value={customRollExpr} 
                                         onChange={(e) => setCustomRollExpr(e.target.value)} 
-                                        placeholder="Dado (ex: 1d100, 2d64)" 
-                                        className="w-full bg-black/60 border border-white/10 rounded p-2 text-xs text-white outline-none focus:border-purple-500 font-mono transition-colors" 
+                                        placeholder="Dado (ex: 8d6)" 
+                                        className="w-full bg-black/80 border border-white/10 rounded-lg p-3 text-xs text-purple-200 outline-none focus:border-purple-500 font-mono transition-colors shadow-inner" 
                                     />
                                 </div>
                                 <button 
-                                    onClick={() => onRequestCustomRoll && onRequestCustomRoll(targetEntityIds, customRollExpr, customRollTitle)} 
-                                    className="w-full py-3 bg-gradient-to-r from-purple-700 to-indigo-800 hover:from-purple-600 hover:to-indigo-700 text-white font-bold uppercase tracking-widest rounded shadow-lg transition-all active:scale-95 text-[10px] border border-purple-500/50"
+                                    onClick={() => {
+                                        if (targetEntityIds.length > 0 && onRequestCustomRoll) {
+                                            onRequestCustomRoll(targetEntityIds, customRollExpr, customRollTitle);
+                                        } else {
+                                            setIsUniversalRollerOpen(true);
+                                        }
+                                    }} 
+                                    className="w-full py-3 bg-gradient-to-r from-purple-800 to-indigo-900 hover:from-purple-700 hover:to-indigo-800 text-white font-bold uppercase tracking-widest rounded-xl shadow-lg transition-all active:scale-95 text-[10px] border border-purple-500/30 relative z-10"
                                 >
                                     {targetEntityIds.length > 0 ? `Forçar em ${targetEntityIds.length} Alvo(s)` : 'Rolar para Mim (Mestre)'}
                                 </button>
+                            </div>
+
+                            <div className="bg-black/60 backdrop-blur-xl p-5 rounded-2xl border border-white/5 shadow-2xl relative overflow-hidden">
+                                <h3 className="text-cyan-400 text-[10px] font-black uppercase tracking-[0.2em] mb-4 relative z-10">Teste de Perícia</h3>
+                                {targetEntity ? (
+                                    <div className="relative z-10">
+                                        <div className="mb-4 flex items-center gap-3 bg-cyan-950/30 border border-cyan-900/50 p-3 rounded-xl shadow-inner">
+                                            <div className="w-10 h-10 rounded-full overflow-hidden bg-black border border-cyan-500/50">{targetEntity.image && <img src={targetEntity.tokenImage || targetEntity.image} className="w-full h-full object-cover" alt="" />}</div>
+                                            <div><p className="text-sm font-black text-white tracking-wide">{targetEntity.name}</p><p className="text-[9px] text-cyan-500 uppercase tracking-widest font-bold">Alvo Selecionado</p></div>
+                                        </div>
+                                        <SkillList attributes={mapEntityStatsToAttributes(targetEntity)} proficiencyBonus={2} profs={[]} isDmMode={true} onRoll={(skillName, mod) => setPendingSkillRequest({ skillName, mod })}/>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-6 bg-white/5 rounded-xl border border-dashed border-white/10 relative z-10">
+                                        <ShieldAlert size={24} className="text-gray-600 mb-2" />
+                                        <p className="text-gray-500 text-[10px] uppercase font-bold tracking-widest text-center">Selecione um Alvo<br/>para exigir testes</p>
+                                    </div>
+                                )}
                             </div>
 
                             <ItemCreator 
@@ -577,273 +796,178 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-6">
                             <CampaignManager />
                             
-                            <section className="bg-black/40 border border-orange-900/30 rounded-xl p-4 shadow-inner">
-                                <h3 className="text-orange-500 font-bold text-[10px] uppercase tracking-widest mb-3 border-b border-orange-900/30 pb-2">Gerenciar Grupo</h3>
-                                <p className="text-xs text-gray-400 mb-4 italic">Cura completamente todos os aventureiros (apenas jogadores) e restaura seus espaços de magia.</p>
+                            <section className="bg-black/60 backdrop-blur-xl border border-orange-900/30 rounded-2xl p-5 shadow-2xl relative overflow-hidden">
+                                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,rgba(249,115,22,0.1)_0%,transparent_70%)] pointer-events-none"></div>
+                                <h3 className="text-orange-500 font-black text-[10px] uppercase tracking-[0.2em] mb-3 border-b border-orange-900/30 pb-3 relative z-10">Gerenciar Grupo</h3>
+                                <p className="text-xs text-gray-400 mb-5 font-serif leading-relaxed relative z-10">Cura completamente todos os aventureiros da mesa e restaura seus espaços de magia e habilidades diárias.</p>
                                 <button 
                                     onClick={() => {
                                         if (window.confirm("Os heróis montaram acampamento para um descanso longo? (Cura total para todos os jogadores)")) {
                                             onLongRest();
                                         }
                                     }} 
-                                    className="w-full py-3 bg-gradient-to-r from-orange-900 to-amber-900 hover:from-orange-700 hover:to-amber-700 border border-orange-500/50 text-white font-black uppercase tracking-widest rounded-lg transition-all shadow-[0_0_15px_rgba(249,115,22,0.3)] flex items-center justify-center gap-2 active:scale-95"
+                                    className="w-full py-4 bg-gradient-to-r from-orange-900 to-amber-900 hover:from-orange-800 hover:to-amber-800 border border-orange-500/50 text-white font-black uppercase tracking-widest rounded-xl transition-all shadow-[0_0_20px_rgba(249,115,22,0.2)] flex items-center justify-center gap-2 active:scale-95 relative z-10"
                                 >
-                                    <Tent size={18} /> Descanso Longo
+                                    <Tent size={18} /> Acampamento Seguro
                                 </button>
                             </section>
                         </div>
                     )}
-                    
-                    {activeTab === 'combat' && (
-                        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                            
-                            <CombatVsPanel attacker={attacker} targets={targets} onUpdateHP={onUpdateHP} onSendMessage={onSendMessage} onDMRoll={onDMRoll} onRequestRoll={onRequestRoll} />
-                            
-                            <section className="mb-4 flex gap-2">
-                                <button 
-                                    onClick={() => onRequestInitiative && onRequestInitiative(targetEntityIds)} 
-                                    disabled={targetEntityIds.length === 0}
-                                    className="w-full bg-gradient-to-r from-yellow-700 to-amber-900 hover:from-yellow-600 hover:to-amber-800 disabled:from-gray-800 disabled:to-gray-900 disabled:border-gray-700 disabled:text-gray-500 border border-yellow-500 text-[11px] text-white py-3 rounded shadow-[0_0_15px_rgba(234,179,8,0.4)] uppercase font-black tracking-widest active:scale-95 transition-all"
-                                >
-                                   ⚔️ Solicitar Iniciativa ({targetEntityIds.length} Alvos)
-                                </button>
-                            </section>
-                            
-                            {/* 👉 RASTREADOR DE COMBATE APRIMORADO */}
-                            <section className="mb-6 bg-black/40 border border-yellow-900/30 rounded p-2">
-                                <div className="flex justify-between items-center mb-2">
-                                    <h3 className="text-yellow-500 font-mono text-[10px] uppercase tracking-widest">Lista de Iniciativa</h3>
-                                    <div className="flex gap-1">
-                                        <button onClick={onSortInitiative} className="text-[9px] bg-gray-700 px-2 rounded hover:bg-gray-600" title="Ordenar">Sort</button>
-                                        <button onClick={onClearInitiative} className="text-[9px] bg-red-900/50 px-2 rounded hover:bg-red-600" title="Limpar">Limpar</button>
-                                    </div>
-                                </div>
-                                {initiativeList.length > 0 ? (
-                                    <>
-                                        <div className="flex flex-col gap-1 mb-2 max-h-40 overflow-y-auto custom-scrollbar">
-                                            {initiativeList.map((item:any, index:number) => {
-                                                const ent = entities.find(e => e.id === item.id);
-                                                const hpPercent = ent ? Math.max(0, Math.min(100, (ent.hp / ent.maxHp) * 100)) : 0;
-                                                const hpColor = hpPercent > 50 ? 'text-green-400' : hpPercent > 20 ? 'text-yellow-400' : 'text-red-500';
 
-                                                return (
-                                                <div 
-                                                    key={index} 
-                                                    className={`flex justify-between items-center p-2 rounded text-xs cursor-pointer border transition-all ${item.id === activeTurnId ? 'bg-yellow-900/40 border-yellow-500/50 scale-[1.02]' : 'bg-white/5 border-transparent hover:bg-white/10'} ${attackerId === item.id ? 'shadow-[inset_3px_0_0_#3b82f6]' : ''} ${targetEntityIds.includes(item.id) ? 'shadow-[inset_-3px_0_0_#ef4444]' : ''}`} 
-                                                    onClick={() => onSetAttacker(item.id)} 
-                                                    onContextMenu={(e) => { e.preventDefault(); onSetTarget(item.id, e.shiftKey); }} 
-                                                    title="Esquerdo: Selecionar Atacante | Direito: Selecionar Alvo"
-                                                >
-                                                    <div className="flex items-center gap-2 overflow-hidden flex-1">
-                                                        <span className={`font-mono text-[10px] bg-black/50 px-1 rounded ${item.id === activeTurnId ? 'text-yellow-400' : 'text-gray-500'}`}>{item.value}</span>
-                                                        <span className={`truncate ${item.id === activeTurnId ? 'text-yellow-100 font-bold' : 'text-gray-300'}`}>{item.name}</span>
-                                                    </div>
-                                                    
-                                                    {ent && (
-                                                        <div className="flex items-center gap-2 shrink-0">
-                                                            <button onClick={(e) => { e.stopPropagation(); onToggleVisibility(ent.id); }} className={`p-1 hover:bg-black/50 rounded ${ent.visible === false ? 'text-white/20' : 'text-cyan-400'}`} title={ent.visible === false ? "Invisível" : "Visível no Mapa"}>
-                                                                {ent.visible === false ? <EyeOff size={12}/> : <Eye size={12}/>}
-                                                            </button>
-                                                            <span className={`text-[10px] font-bold font-mono ${hpColor}`} title="Vida Atual / Máxima">{ent.hp}/{ent.maxHp}</span>
-                                                        </div>
-                                                    )}
-                                                    
-                                                    <button onClick={(e) => { e.stopPropagation(); onRemoveFromInitiative(item.id); }} className="text-red-500/50 hover:text-red-400 ml-1 px-1 text-sm font-bold">×</button>
-                                                </div>
-                                            )})}
-                                        </div>
-                                        <button onClick={onNextTurn} className="w-full py-2 bg-yellow-700 hover:bg-yellow-600 text-white text-xs font-bold uppercase rounded shadow-lg border border-yellow-500/30 animate-pulse">Próximo Turno ⏩</button>
-                                    </>
-                                ) : (
-                                    <p className="text-center text-gray-500 text-xs py-2">Sem iniciativa.</p>
-                                )}
-                            </section>
-
-                            <section className="mb-6 border-b border-white/5 pb-4 bg-white/5 rounded p-2">
-                                <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest text-center">Magias & Áreas</h3>
-                                <AoEColorPicker selected={aoeColor} onSelect={onSetAoEColor} />
-                                <div className="flex gap-2 mt-3">
-                                        <button onClick={() => onSetAoE(activeAoE === 'circle' ? null : 'circle')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'circle' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'circle' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">⭕</span> Círculo</button>
-                                        <button onClick={() => onSetAoE(activeAoE === 'cone' ? null : 'cone')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'cone' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'cone' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">🔺</span> Cone</button>
-                                        <button onClick={() => onSetAoE(activeAoE === 'cube' ? null : 'cube')} className={`flex-1 py-2 rounded text-[10px] font-bold border transition-all flex flex-col items-center gap-1 ${activeAoE === 'cube' ? 'border-white text-white bg-white/10' : 'border-white/10 text-gray-400 hover:bg-white/5'}`} style={activeAoE === 'cube' ? {borderColor: aoeColor, color: aoeColor} : {}}><span className="text-lg">🟥</span> Cubo</button>
-                                </div>
-                                {activeAoE && <p className="text-[9px] mt-2 text-center animate-pulse opacity-80" style={{color: aoeColor}}>🖌️ Clique e arraste no mapa</p>}
-                            </section>
-
-                            <section className="mb-4 bg-black/40 border border-white/10 rounded p-2">
-                                <h3 className="text-[10px] text-gray-400 uppercase mb-2 text-center font-bold tracking-widest">Condições Oficiais</h3>
-                                <div className="grid grid-cols-3 gap-1.5">
-                                    {CONDITION_MAP.map(cond => (
-                                        <button 
-                                            key={cond.id}
-                                            onClick={() => toggleConditionForAll(cond.id)}
-                                            onMouseEnter={() => setHoveredCondition(cond)}
-                                            onMouseLeave={() => setHoveredCondition(null)}
-                                            className={`flex flex-col items-center justify-center p-1.5 ${cond.bg} border ${cond.border} rounded transition-all active:scale-95 group`}
-                                        >
-                                            <span className="text-sm filter drop-shadow-md group-hover:scale-110 transition-transform mb-0.5">{cond.icon}</span>
-                                            <span className={`text-[8px] font-bold ${cond.text} uppercase tracking-wider truncate w-full text-center`}>{cond.label}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                                
-                                {hoveredCondition && (
-                                    <div className="mt-2 p-2 bg-black/90 border border-amber-500/30 rounded animate-in fade-in zoom-in-95 shadow-lg relative z-20">
-                                        <h4 className="text-[10px] font-black text-amber-400 uppercase mb-1 border-b border-amber-900/50 pb-1">
-                                            {hoveredCondition.label} <span className="text-gray-500 font-mono text-[8px] normal-case">({hoveredCondition.id})</span>
-                                        </h4>
-                                        <p className="text-[9px] text-gray-300 leading-relaxed whitespace-pre-wrap">
-                                            {hoveredCondition.desc}
-                                        </p>
-                                    </div>
-                                )}
-                            </section>
-
-                            <section className="mb-8">
-                                <h3 className="text-rpgText font-mono text-[10px] uppercase mb-3 opacity-50 tracking-widest">Entidades no Mapa</h3>
-                                <div className="space-y-2">{entities.map((entity) => (<EntityControlRow key={entity.id} entity={entity} onUpdateHP={onUpdateHP} onDeleteEntity={onDeleteEntity} onClickEdit={() => setEditingEntity(entity)} onAddToInit={() => onAddToInitiative(entity)} isTarget={targetEntityIds.includes(entity.id)} isAttacker={attackerId === entity.id} onSetTarget={onSetTarget} onSetAttacker={onSetAttacker} onToggleCondition={onToggleCondition} onAddXP={onAddXP} onToggleVisibility={() => onToggleVisibility(entity.id)} onEditEntity={onEditEntity} />))}</div>
-                            </section>
-                        </div>
-                    )}
                     {activeTab === 'map' && (
-                        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-6">
                             
-                            <section className="mb-6 pb-4 bg-blue-900/10 p-3 rounded-lg border border-blue-500/20 shadow-inner">
-                                <h3 className="text-blue-400 font-bold text-[11px] uppercase mb-3 tracking-widest flex items-center gap-2"><ImageIcon size={14}/> Carregar Novo Mapa</h3>
+                            <section className="bg-black/60 backdrop-blur-xl p-5 rounded-2xl border border-blue-900/30 shadow-2xl relative overflow-hidden">
+                                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(59,130,246,0.1)_0%,transparent_70%)] pointer-events-none"></div>
+                                <h3 className="text-blue-400 font-black text-[10px] uppercase mb-4 tracking-[0.2em] flex items-center gap-2 relative z-10"><ImageIcon size={14}/> Carregar Novo Mapa</h3>
                                 
                                 {!previewMap ? (
-                                    <>
-                                        <div className="flex gap-2">
-                                            <input type="text" placeholder="Cole o link da imagem (URL)..." className="w-full bg-black/60 border border-white/20 rounded p-2 text-xs text-white outline-none focus:border-blue-500" value={customMapUrl} onChange={(e) => setCustomMapUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleUrlPreview()} />
-                                            <button onClick={handleUrlPreview} className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-3 rounded text-xs transition-colors disabled:opacity-50" disabled={!customMapUrl.trim()}>Preview</button>
+                                    <div className="relative z-10">
+                                        <div className="flex gap-2 mb-4">
+                                            <input type="text" placeholder="Cole o link da imagem (URL)..." className="w-full bg-black/80 border border-white/10 rounded-lg p-2.5 text-xs text-white outline-none focus:border-blue-500 shadow-inner transition-colors" value={customMapUrl} onChange={(e) => setCustomMapUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleUrlPreview()} />
+                                            <button onClick={handleUrlPreview} className="bg-blue-700 hover:bg-blue-600 text-white font-bold px-4 rounded-lg text-[10px] uppercase tracking-widest transition-colors disabled:opacity-50" disabled={!customMapUrl.trim()}>Testar</button>
                                         </div>
-                                        <div className="mt-3 mb-3 flex items-center justify-center"><span className="text-[9px] text-gray-500 uppercase px-2 font-bold">Ou do seu Computador</span></div>
+                                        <div className="flex items-center justify-center mb-4 opacity-50">
+                                            <div className="h-px bg-white flex-1"></div>
+                                            <span className="text-[9px] text-white uppercase px-3 font-black tracking-widest">Ou Local</span>
+                                            <div className="h-px bg-white flex-1"></div>
+                                        </div>
                                         <input type="file" ref={fileInputRef} onChange={handleFileUploadPreview} className="hidden" accept="image/*" />
-                                        <button onClick={() => fileInputRef.current?.click()} className="w-full bg-black/60 hover:bg-blue-900/40 border border-blue-500/50 text-blue-200 font-bold py-2.5 rounded uppercase text-xs transition-all flex items-center justify-center gap-2 shadow">📂 Escolher Arquivo Local</button>
-                                    </>
+                                        <button onClick={() => fileInputRef.current?.click()} className="w-full bg-black/80 hover:bg-blue-950/50 border border-blue-500/30 text-blue-300 font-black py-3.5 rounded-xl uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 shadow-lg hover:border-blue-400 active:scale-95">📂 Selecionar Arquivo</button>
+                                    </div>
                                 ) : (
-                                    <div className="animate-in zoom-in-95 duration-200">
-                                        <div className="w-full h-32 rounded-lg overflow-hidden border-2 border-blue-500 mb-3 shadow-[0_0_15px_rgba(59,130,246,0.3)] relative">
+                                    <div className="animate-in zoom-in-95 duration-200 relative z-10">
+                                        <div className="w-full h-36 rounded-xl overflow-hidden border border-blue-500/50 mb-4 shadow-[0_0_20px_rgba(59,130,246,0.2)] relative">
                                             <img src={previewMap.url} alt="Preview" className="w-full h-full object-cover opacity-80" />
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-2">
-                                                <span className="text-[10px] text-white font-mono tracking-widest">PRÉ-VISUALIZAÇÃO</span>
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent flex items-end p-3">
+                                                <span className="text-[10px] text-blue-300 font-black tracking-[0.2em] uppercase">Pré-visualização</span>
                                             </div>
                                         </div>
                                         
-                                        <div className="mb-3">
-                                            <label className="text-[9px] text-blue-300 uppercase font-bold mb-1 block">Nome do Botão:</label>
-                                            <input autoFocus type="text" className="w-full bg-black border border-blue-500/50 rounded p-2 text-sm text-white font-bold" value={previewMap.name} onChange={(e) => setPreviewMap({...previewMap, name: e.target.value})} />
+                                        <div className="mb-4">
+                                            <label className="text-[9px] text-gray-400 uppercase tracking-widest font-bold mb-1.5 block">Nome do Botão:</label>
+                                            <input autoFocus type="text" className="w-full bg-black/80 border border-white/10 rounded-lg p-2.5 text-sm text-white font-bold outline-none focus:border-blue-500 shadow-inner" value={previewMap.name} onChange={(e) => setPreviewMap({...previewMap, name: e.target.value})} />
                                         </div>
 
                                         <div className="flex gap-2">
-                                            <button onClick={() => setPreviewMap(null)} className="flex-1 bg-red-900/50 hover:bg-red-700 text-red-200 text-xs py-2 rounded font-bold flex items-center justify-center gap-1 transition-colors"><X size={14}/> Cancelar</button>
-                                            <button onClick={handleConfirmNewMap} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs py-2 rounded font-bold flex items-center justify-center gap-1 transition-colors shadow-lg"><Check size={14}/> Salvar & Usar</button>
+                                            <button onClick={() => setPreviewMap(null)} className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-[10px] font-black uppercase tracking-widest py-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors active:scale-95"><X size={14}/> Descartar</button>
+                                            <button onClick={handleConfirmNewMap} className="flex-[1.5] bg-blue-700 hover:bg-blue-600 border border-blue-500 text-white text-[10px] font-black uppercase tracking-widest py-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-[0_0_15px_rgba(59,130,246,0.3)] active:scale-95"><Check size={14}/> Salvar & Abrir</button>
                                         </div>
                                     </div>
                                 )}
                             </section>
 
-                            <section className="mb-6 border-b border-white/5 pb-4">
-                                <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest">Mapas Disponíveis</h3>
-                                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                            <section className="bg-black/60 backdrop-blur-xl p-5 rounded-2xl border border-white/5 shadow-2xl relative">
+                                <h3 className="text-gray-400 font-mono text-[10px] uppercase mb-4 tracking-[0.2em] font-black">Mapas Salvos</h3>
+                                <div className="grid grid-cols-2 gap-2 max-h-[250px] overflow-y-auto custom-scrollbar pr-1 relative z-10">
                                     {mapList.map((map, idx) => (
-                                        <button key={idx} onClick={() => onChangeMap(map.url)} className="bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-blue-400 text-gray-300 hover:text-white text-[10px] font-bold py-3 px-2 rounded transition-all active:scale-95 truncate">
+                                        <button key={idx} onClick={() => onChangeMap(map.url)} className="bg-black/50 hover:bg-blue-900/20 border border-white/5 hover:border-blue-500/50 text-gray-400 hover:text-blue-100 text-[10px] font-bold uppercase tracking-wider py-4 px-2 rounded-xl transition-all active:scale-95 truncate shadow-inner">
                                             {map.name}
                                         </button>
                                     ))}
                                 </div>
                             </section>
 
-                            <section className="mb-6 border-b border-white/5 pb-4">
-                                <h3 className="text-rpgText font-mono text-[10px] uppercase mb-2 opacity-50 tracking-widest">Ambiente & Luz</h3>
-                                <div className="bg-black/40 p-2 rounded border border-white/10">
-                                        <div className="flex justify-between items-center mb-1">
-                                            <span className="text-xs font-bold text-yellow-500">{globalBrightness >= 1 ? '☀️ Dia' : globalBrightness <= 0.2 ? '🌑 Noite' : '🌅 Crepúsculo'}</span>
-                                            <span className="text-[10px] text-gray-500">{Math.round(globalBrightness * 100)}%</span>
+                            <section className="bg-black/60 backdrop-blur-xl p-5 rounded-2xl border border-yellow-900/30 shadow-2xl relative overflow-hidden">
+                                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(234,179,8,0.05)_0%,transparent_70%)] pointer-events-none"></div>
+                                <h3 className="text-yellow-500 font-black text-[10px] uppercase mb-4 tracking-[0.2em] relative z-10">Iluminação Global</h3>
+                                <div className="relative z-10">
+                                        <div className="flex justify-between items-center mb-2 px-1">
+                                            <span className="text-[11px] font-black tracking-widest uppercase text-yellow-400">{globalBrightness >= 1 ? '☀️ Pleno Dia' : globalBrightness <= 0.2 ? '🌑 Escuridão' : '🌅 Crepúsculo'}</span>
+                                            <span className="text-[10px] text-gray-500 font-mono font-bold">{Math.round(globalBrightness * 100)}%</span>
                                         </div>
-                                        <input type="range" min="0" max="1" step="0.05" value={globalBrightness} onChange={(e) => onSetGlobalBrightness && onSetGlobalBrightness(parseFloat(e.target.value))} className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"/>
+                                        <input type="range" min="0" max="1" step="0.05" value={globalBrightness} onChange={(e) => onSetGlobalBrightness && onSetGlobalBrightness(parseFloat(e.target.value))} className="w-full h-2 bg-black border border-white/10 shadow-inner rounded-lg appearance-none cursor-pointer accent-yellow-500"/>
                                 </div>
                             </section>
                             
-                            <section className="mb-6 border-b border-white/5 pb-4 bg-black/20 rounded p-2">
-                                <h3 className="text-rpgText font-mono text-[10px] uppercase mb-3 opacity-50 tracking-widest">Neblina de Guerra</h3>
-                                <div className="flex flex-col gap-3">
-                                        <button onClick={onToggleFogMode} className={`w-full py-2 rounded text-xs font-bold uppercase tracking-wider border transition-all ${isFogMode ? 'bg-yellow-600 border-yellow-400 text-white shadow-sm' : 'bg-gray-800 border-gray-600 text-gray-400 hover:bg-gray-700'}`}>{isFogMode ? '✎ Modo Edição Ativo' : '✎ Editar Neblina'}</button>
+                            <section className="bg-black/60 backdrop-blur-xl p-5 rounded-2xl border border-purple-900/30 shadow-2xl relative overflow-hidden">
+                                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(168,85,247,0.05)_0%,transparent_70%)] pointer-events-none"></div>
+                                <h3 className="text-purple-400 font-black text-[10px] uppercase mb-4 tracking-[0.2em] relative z-10">Neblina de Guerra</h3>
+                                <div className="flex flex-col gap-3 relative z-10">
+                                        <button onClick={onToggleFogMode} className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] border transition-all active:scale-95 ${isFogMode ? 'bg-purple-600 border-purple-400 text-white shadow-[0_0_15px_rgba(147,51,234,0.4)]' : 'bg-black border-white/10 text-gray-400 hover:bg-white/5 hover:text-white'}`}>{isFogMode ? '👁️ Fechar Modo Edição' : '👁️ Editar Neblina'}</button>
                                         
                                         {isFogMode && (
-                                          <div className="flex flex-col gap-2 bg-black/40 p-2 rounded border border-white/10 animate-in fade-in zoom-in-95">
-                                              <div className="flex gap-1 bg-black/40 p-1 rounded border border-white/5">
-                                                  <button onClick={() => onSetFogTool('reveal')} className={`flex-1 py-1.5 text-[10px] uppercase font-bold rounded transition-colors ${fogTool === 'reveal' ? 'bg-green-600 text-white shadow-sm' : 'hover:bg-white/10 text-gray-400'}`}>🔦 Revelar</button>
-                                                  <button onClick={() => onSetFogTool('hide')} className={`flex-1 py-1.5 text-[10px] uppercase font-bold rounded transition-colors ${fogTool === 'hide' ? 'bg-red-600 text-white shadow-sm' : 'hover:bg-white/10 text-gray-400'}`}>☁️ Esconder</button>
+                                          <div className="flex flex-col gap-3 bg-black/80 p-3 rounded-xl border border-white/10 animate-in fade-in zoom-in-95 shadow-inner mt-2">
+                                              <div className="flex gap-2">
+                                                  <button onClick={() => onSetFogTool('reveal')} className={`flex-1 py-2 text-[10px] uppercase tracking-widest font-black rounded-lg transition-colors border ${fogTool === 'reveal' ? 'bg-green-900/40 border-green-500 text-green-300' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`}>🔦 Revelar</button>
+                                                  <button onClick={() => onSetFogTool('hide')} className={`flex-1 py-2 text-[10px] uppercase tracking-widest font-black rounded-lg transition-colors border ${fogTool === 'hide' ? 'bg-red-900/40 border-red-500 text-red-300' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`}>☁️ Esconder</button>
                                               </div>
-                                              <div className="flex gap-1 justify-between">
-                                                  <button onClick={() => onSetFogShape && onSetFogShape('brush')} className={`flex-1 py-1.5 flex flex-col items-center gap-1 rounded text-[10px] transition-all border ${fogShape === 'brush' ? 'bg-white/10 border-white text-white shadow-inner' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Pincel Livre">
-                                                      <Brush size={16} /> Livre
+                                              <div className="flex gap-2 justify-between border-t border-white/5 pt-3">
+                                                  <button onClick={() => onSetFogShape && onSetFogShape('brush')} className={`flex-1 py-2 flex flex-col items-center gap-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all border ${fogShape === 'brush' ? 'bg-white/10 border-white text-white shadow-inner' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Pincel Livre">
+                                                      <Brush size={14} /> Livre
                                                   </button>
-                                                  <button onClick={() => onSetFogShape && onSetFogShape('rect')} className={`flex-1 py-1.5 flex flex-col items-center gap-1 rounded text-[10px] transition-all border ${fogShape === 'rect' ? 'bg-white/10 border-white text-white shadow-inner' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Retângulo">
-                                                      <Square size={16} /> Sala
+                                                  <button onClick={() => onSetFogShape && onSetFogShape('rect')} className={`flex-1 py-2 flex flex-col items-center gap-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all border ${fogShape === 'rect' ? 'bg-white/10 border-white text-white shadow-inner' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Retângulo">
+                                                      <Square size={14} /> Sala
                                                   </button>
-                                                  <button onClick={() => onSetFogShape && onSetFogShape('line')} className={`flex-1 py-1.5 flex flex-col items-center gap-1 rounded text-[10px] transition-all border ${fogShape === 'line' ? 'bg-white/10 border-white text-white shadow-inner' : 'border-transparent text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Linha">
-                                                      <Minus size={16} /> Linha
+                                                  <button onClick={() => onSetFogShape && onSetFogShape('line')} className={`flex-1 py-2 flex flex-col items-center gap-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all border ${fogShape === 'line' ? 'bg-white/10 border-white text-white shadow-inner' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Linha">
+                                                      <Minus size={14} /> Linha
                                                   </button>
                                               </div>
-                                              <p className="text-center text-[9px] text-yellow-500/70 italic mt-1">Arraste no mapa para pintar.</p>
+                                              <p className="text-center text-[9px] text-gray-500 font-serif italic mt-1 border-t border-white/5 pt-2">Arraste sobre o mapa para pintar a névoa.</p>
                                           </div>
                                         )}
 
-                                        <div className="flex gap-2 mt-1"><button onClick={onRevealAll} className="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-[10px] font-bold uppercase text-gray-400 rounded border border-gray-700 transition-colors">Limpar Tudo</button><button onClick={onResetFog} className="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 text-[10px] font-bold uppercase text-gray-400 rounded border border-gray-700 transition-colors">Tudo Preto</button></div>
-                                        <button onClick={onSyncFog} className="w-full py-1.5 mt-1 bg-purple-900/30 hover:bg-purple-600/50 border border-purple-500/30 text-[10px] text-purple-200 uppercase font-bold rounded transition-all flex justify-center items-center gap-2">📡 Sincronizar Jogadores</button>
+                                        <div className="flex gap-2 mt-2">
+                                            <button onClick={onRevealAll} className="flex-1 py-2.5 bg-black hover:bg-white/5 text-[9px] font-black uppercase tracking-widest text-gray-400 hover:text-white rounded-lg border border-white/10 transition-colors">Limpar Tudo</button>
+                                            <button onClick={onResetFog} className="flex-1 py-2.5 bg-black hover:bg-white/5 text-[9px] font-black uppercase tracking-widest text-gray-400 hover:text-white rounded-lg border border-white/10 transition-colors">Tudo Preto</button>
+                                        </div>
+                                        <button onClick={onSyncFog} className="w-full py-3 mt-2 bg-purple-900/30 hover:bg-purple-700/50 border border-purple-500/50 text-[10px] text-purple-100 uppercase tracking-[0.2em] font-black rounded-xl transition-all flex justify-center items-center gap-2 active:scale-95 shadow-[0_0_10px_rgba(168,85,247,0.2)]">📡 Sincronizar Jogadores</button>
                                 </div>
                             </section>
-                            <div className="px-2">
-                                <button onClick={onSaveGame} className="w-full py-2 bg-green-900/40 hover:bg-green-600/60 border border-green-500/30 text-green-200 text-xs font-bold uppercase rounded transition-all shadow-lg mb-2">💾 Salvar Estado do Jogo</button>
-                                <button onClick={onResetView} className="w-full py-2 bg-blue-900/40 hover:bg-blue-600/60 border border-blue-500/30 text-blue-200 text-xs font-bold uppercase rounded transition-all shadow-lg">Recentralizar Câmera 🎯</button>
+                            
+                            <div className="pt-2 pb-6 space-y-3">
+                                <button onClick={onSaveGame} className="w-full py-4 bg-gradient-to-r from-green-900 to-emerald-900 hover:from-green-800 hover:to-emerald-800 border border-green-500/50 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all shadow-[0_0_15px_rgba(16,185,129,0.2)] active:scale-95 flex justify-center items-center gap-2">
+                                    💾 Salvar Estado da Mesa
+                                </button>
+                                <button onClick={onResetView} className="w-full py-3 bg-black hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all active:scale-95">
+                                    Recentralizar Câmera 🎯
+                                </button>
                             </div>
                         </div>
                     )}
 
-                    {/* 👉 BESTIÁRIO ATUALIZADO (Drag and Drop Perfeito) */}
                     {activeTab === 'create' && (
-                        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-6">
                             
-                            <div className="flex gap-2 mb-6">
-                                <button onClick={() => onOpenCreator('player')} className="flex-1 bg-blue-900/50 hover:bg-blue-600 border border-blue-500/30 text-white text-xs font-bold py-3 rounded uppercase tracking-wider transition-all shadow-lg active:scale-95 flex flex-col items-center gap-1">
-                                    <span className="text-xl">🛡️</span> Novo Aliado
+                            <div className="flex gap-2">
+                                <button onClick={() => onOpenCreator('player')} className="flex-1 bg-black/60 backdrop-blur-md hover:bg-blue-900/30 border border-white/10 hover:border-blue-500/50 text-gray-300 hover:text-white text-[10px] font-black py-4 rounded-2xl uppercase tracking-widest transition-all shadow-lg active:scale-95 flex flex-col items-center gap-2">
+                                    <span className="text-2xl filter drop-shadow-md">🛡️</span> Aliado
                                 </button>
-                                <button onClick={() => onOpenCreator('enemy')} className="flex-1 bg-red-900/50 hover:bg-red-600 border border-red-500/30 text-white text-xs font-bold py-3 rounded uppercase tracking-wider transition-all shadow-lg active:scale-95 flex flex-col items-center gap-1">
-                                    <span className="text-xl">⚙️</span> Novo Monstro
+                                <button onClick={() => onOpenCreator('enemy')} className="flex-1 bg-black/60 backdrop-blur-md hover:bg-red-900/30 border border-white/10 hover:border-red-500/50 text-gray-300 hover:text-white text-[10px] font-black py-4 rounded-2xl uppercase tracking-widest transition-all shadow-lg active:scale-95 flex flex-col items-center gap-2">
+                                    <span className="text-2xl filter drop-shadow-md">⚙️</span> Monstro
                                 </button>
                             </div>
 
-                            <div className="mb-6">
+                            <div>
                                 <button 
                                     onClick={onOpenLootGenerator} 
-                                    className="w-full bg-gradient-to-r from-amber-700 to-yellow-600 hover:from-amber-600 hover:to-yellow-500 border border-yellow-400 text-white text-xs font-black py-3 rounded-lg uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(217,119,6,0.3)] active:scale-95 flex items-center justify-center gap-2"
+                                    className="w-full bg-gradient-to-r from-amber-700 to-yellow-600 hover:from-amber-600 hover:to-yellow-500 border border-yellow-400 text-black text-[10px] font-black py-4 rounded-2xl uppercase tracking-[0.2em] transition-all shadow-[0_0_20px_rgba(217,119,6,0.4)] active:scale-95 flex items-center justify-center gap-2"
                                 >
-                                    <Gem size={18} /> Gerar Saque (Loot)
+                                    <Gem size={18} className="text-white" /> Gerar Saque Mágico
                                 </button>
                             </div>
 
-                            <div className="bg-black/40 border border-red-900/30 rounded-xl p-3 shadow-inner">
-                                <h3 className="text-red-500 font-bold text-[10px] uppercase tracking-widest mb-3 flex items-center justify-between border-b border-red-900/30 pb-2">
+                            <div className="bg-black/60 backdrop-blur-xl border border-red-900/30 rounded-2xl p-4 shadow-2xl relative overflow-hidden">
+                                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(239,68,68,0.05)_0%,transparent_70%)] pointer-events-none"></div>
+                                <h3 className="text-red-500 font-black text-[11px] uppercase tracking-[0.2em] mb-4 flex items-center justify-between border-b border-red-900/30 pb-3 relative z-10">
                                     <span>🐉 Bestiário Negro</span>
-                                    <span className="text-gray-500 text-[8px] normal-case">(Clique ou arraste)</span>
+                                    <span className="text-gray-600 text-[8px] tracking-normal">(Arraste para o mapa)</span>
                                 </h3>
 
-                                <div className="mb-3 relative">
-                                    <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                                <div className="mb-4 relative z-10">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                         <Search size={14} className="text-gray-500" />
                                     </div>
                                     <input 
                                         type="text" 
-                                        placeholder="Pesquisar monstro..." 
+                                        placeholder="Invoque pelo nome..." 
                                         value={monsterSearch}
                                         onChange={(e) => setMonsterSearch(e.target.value)}
-                                        className="w-full bg-black/60 border border-red-900/50 rounded-lg py-2 pl-8 pr-2 text-xs text-white outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all placeholder-gray-600"
+                                        className="w-full bg-black/80 border border-white/10 rounded-xl py-3 pl-9 pr-3 text-xs text-white outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all placeholder-gray-600 shadow-inner"
                                     />
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-2 max-h-96 overflow-y-auto custom-scrollbar pr-1">
+                                <div className="grid grid-cols-2 gap-2 max-h-[400px] overflow-y-auto custom-scrollbar pr-1 relative z-10">
                                     {filteredMonsters.length > 0 ? (
                                         filteredMonsters.map((monster, idx) => (
                                             <button 
@@ -851,23 +975,23 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                                 draggable 
                                                 onDragStart={(e) => handleDragStart(e, 'enemy', monster)} 
                                                 onClick={() => handleSelectPreset(monster)} 
-                                                className="flex flex-col items-center bg-black/60 hover:bg-red-900/40 border border-white/5 hover:border-red-500/50 p-2 rounded-lg transition-all group cursor-grab active:cursor-grabbing"
+                                                className="flex flex-col items-center bg-black/50 hover:bg-red-950/40 border border-white/5 hover:border-red-500/50 p-3 rounded-xl transition-all group cursor-grab active:cursor-grabbing shadow-inner"
                                             >
-                                                <div className="w-10 h-10 rounded-full overflow-hidden mb-1.5 border border-white/20 group-hover:border-red-500 shadow-lg">
+                                                <div className="w-12 h-12 rounded-full overflow-hidden mb-2 border-2 border-white/10 group-hover:border-red-500 shadow-[0_0_10px_rgba(0,0,0,0.8)] group-hover:shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all">
                                                     <img src={monster.tokenImage || monster.image} alt={monster.name} className="w-full h-full object-cover" />
                                                 </div>
-                                                <span className="text-[10px] font-bold text-gray-300 group-hover:text-white truncate w-full text-center leading-tight">
+                                                <span className="text-[10px] font-black text-gray-400 group-hover:text-white uppercase tracking-wider truncate w-full text-center mt-1">
                                                     {monster.name}
                                                 </span>
-                                                <div className="flex gap-2 text-[9px] text-gray-500 font-mono mt-0.5">
-                                                    <span className="text-red-400">❤️ {monster.hp}</span>
-                                                    <span className="text-blue-400">🛡️ {monster.ac}</span>
+                                                <div className="flex gap-3 text-[9px] font-bold font-mono mt-1.5 bg-black/60 px-2 py-1 rounded-lg border border-white/5">
+                                                    <span className="text-red-500" title="Pontos de Vida">HP {monster.hp}</span>
+                                                    <span className="text-blue-500" title="Classe de Armadura">CA {monster.ac}</span>
                                                 </div>
                                             </button>
                                         ))
                                     ) : (
-                                        <div className="col-span-2 text-center py-4 text-gray-500 text-xs italic">
-                                            Nenhum monstro encontrado.
+                                        <div className="col-span-2 text-center py-8 text-gray-600 text-xs italic font-serif">
+                                            O bestiário não conhece essa criatura.
                                         </div>
                                     )}
                                 </div>

@@ -605,7 +605,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 return (
                     <div 
                         key={`center-${ent.id}`}
-                        className="absolute pointer-events-none z-[120] transform -translate-x-1/2 -translate-y-1/2 opacity-40"
+                        className="absolute pointer-events-none z-[120] transform -translate-x-1/2 -translate-y-1/2 opacity-0"
                         style={{ left: centerX, top: centerY }}
                     >
                         <div className="relative w-4 h-4">

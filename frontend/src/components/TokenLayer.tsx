@@ -311,20 +311,6 @@ const TokenLayer: React.FC<TokenLayerProps> = ({
                             <span className="absolute -top-6 -right-2 text-2xl animate-pulse drop-shadow-[0_2px_4px_black]">💤</span>
                         </div>
                     )}
-
-                    {entity.type !== 'loot' && entity.classType !== 'Item' && (
-                        <div 
-                            className="absolute pointer-events-none z-[25] flex items-center justify-center"
-                            style={{
-                                left: entity.x * gridSize,
-                                top: entity.y * gridSize,
-                                width: (entity.size || 1) * gridSize,
-                                height: (entity.size || 1) * gridSize,
-                            }}
-                        >
-                            <div className="w-1.5 h-1.5 bg-white/80 rounded-full shadow-[0_0_5px_black]"></div>
-                        </div>
-                    )}
                 </div>
             );
         })}
