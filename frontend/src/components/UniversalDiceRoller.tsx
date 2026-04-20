@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Environment, ContactShadows, Text, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
@@ -268,10 +268,8 @@ const CalibrationTool = ({ onClose }: { onClose: () => void }) => {
 // MOTOR DE FÍSICA NATIVA - ROLAGEM ORGÂNICA PELA MESA
 // ============================================================================
 const stepPhysics = (p: any, dt: number, restHeight: number) => {
-    // Gravidade padrão
     p.vel.y -= 50 * dt; 
     
-    // Atualiza a posição e rotação baseada na velocidade
     p.pos.addScaledVector(p.vel, dt);
     p.rot.x += p.angVel.x * dt;
     p.rot.y += p.angVel.y * dt;
@@ -279,29 +277,18 @@ const stepPhysics = (p: any, dt: number, restHeight: number) => {
 
     let hit = false;
 
-    // COLISÃO COM A MESA (Chão)
     if (p.pos.y < restHeight) {
         p.pos.y = restHeight;
-        
-        // Micro-quique super sutil para parecer realista, não bola de borracha
         p.vel.y *= -0.3; 
-        
-        // Atrito da mesa (faz o dado parar de deslizar e rodopiar aos poucos)
         p.vel.x *= 0.95;  
         p.vel.z *= 0.95;  
         p.angVel.multiplyScalar(0.95); 
         hit = true;
     }
 
-    // PAREDES INVISÍVEIS (Para manter os dados dentro da tela)
-    // Limites Laterais (Esquerda e Direita)
     if (p.pos.x > 8) { p.pos.x = 8; p.vel.x *= -0.6; }
     if (p.pos.x < -8) { p.pos.x = -8; p.vel.x *= -0.6; }
-    
-    // O Muro Superior (Topo do mapa) - Eles batem aqui e param na parte de cima
     if (p.pos.z < -4) { p.pos.z = -4; p.vel.z *= -0.6; }
-    
-    // O Muro Inferior (Embaixo) - Apenas segurança
     if (p.pos.z > 10) { p.pos.z = 10; p.vel.z *= -0.6; }
 
     return hit;
@@ -325,11 +312,10 @@ const Die3D = ({ sides, isRolling, isDisappearing, finalResult, index, diceCount
       timeAccumulator: 0,
       offsetQ: new THREE.Quaternion(),
       scaleMult: 1.0,
-      hasHitGround: false // Controle para tocar o som de rolar na mesa
+      hasHitGround: false 
   });
 
   React.useLayoutEffect(() => {
-      // Selo de Solidez Supremo (Sem dados fantasmas)
       if (materials && materials.Dice) {
           materials.Dice.color.set('#0a0a0a'); 
           materials.Dice.metalness = 0.5;
@@ -360,34 +346,15 @@ const Die3D = ({ sides, isRolling, isDisappearing, finalResult, index, diceCount
           p.stopped = false;
           p.scaleMult = 1.0;
           p.timeAccumulator = 0;
-          p.hasHitGround = false; // Reseta o controlador de som
+          p.hasHitGround = false; 
           
-          // Calcula a posição inicial na base da tela, com espaçamento entre os dados
-          const spacing = 2.5; // Espaço horizontal entre os dados
+          const spacing = 2.5; 
           const startX = (index - (diceCount - 1) / 2) * spacing;
 
-          // Nasce perto da mesa (restHeight + 1.5) e lá no fundo da tela (z = 8)
-          p.pos.set(
-              startX, 
-              restHeight + 1.5, 
-              8 
-          );
-          
-          // O Lançamento Físico: Rola forte pra frente (Z negativo), sem voar demais
-          p.vel.set(
-              (Math.random() - 0.5) * 2, // Desvio lateral minúsculo
-              -2 - Math.random() * 2,    // Força pra bater logo na mesa
-              -15 - Math.random() * 10   // Muita força rasgando a tela pro topo
-          );
-          
+          p.pos.set(startX, restHeight + 1.5, 8);
+          p.vel.set((Math.random() - 0.5) * 2, -2 - Math.random() * 2, -15 - Math.random() * 10);
           p.rot.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-          
-          // Giro insano para dar suspense
-          p.angVel.set(
-              (Math.random() - 0.5) * 25, 
-              (Math.random() - 0.5) * 25, 
-              (Math.random() - 0.5) * 25
-          );
+          p.angVel.set((Math.random() - 0.5) * 25, (Math.random() - 0.5) * 25, (Math.random() - 0.5) * 25);
           
           if (faceMap && finalResult && faceMap[finalResult]) {
               let simP = { pos: p.pos.clone(), vel: p.vel.clone(), rot: p.rot.clone(), angVel: p.angVel.clone() };
@@ -395,7 +362,6 @@ const Die3D = ({ sides, isRolling, isDisappearing, finalResult, index, diceCount
               let steps = 0;
               let simStopped = false;
               
-              // Simulação invisível descobre a face antes do tempo
               while(!simStopped && steps < 800) { 
                   stepPhysics(simP, dt, restHeight);
                   const speed = Math.abs(simP.vel.x) + Math.abs(simP.vel.y) + Math.abs(simP.vel.z) + Math.abs(simP.angVel.x) + Math.abs(simP.angVel.y) + Math.abs(simP.angVel.z);
@@ -444,7 +410,6 @@ const Die3D = ({ sides, isRolling, isDisappearing, finalResult, index, diceCount
     while (p.timeAccumulator >= dt) {
         const hit = stepPhysics(p, dt, restHeight);
         if (hit) {
-            // 🔥 Gatilho de Áudio ao tocar a mesa pela primeira vez 🔥
             if (!p.hasHitGround) {
                 p.hasHitGround = true;
                 spinSound.stop();
@@ -461,7 +426,6 @@ const Die3D = ({ sides, isRolling, isDisappearing, finalResult, index, diceCount
 
         const speed = Math.abs(p.vel.x) + Math.abs(p.vel.y) + Math.abs(p.vel.z) + Math.abs(p.angVel.x) + Math.abs(p.angVel.y) + Math.abs(p.angVel.z);
         
-        // Critério rígido de parada: Só marca como parado quando o dado realmente congelar na mesa
         if (speed < 0.3 && p.pos.y <= restHeight + 0.1) {
             p.stopped = true;
             p.vel.set(0, 0, 0);
@@ -573,7 +537,7 @@ export interface RollBonus { id: string; name: string; value: number; type: 'fla
 
 interface UniversalDiceRollerProps {
   isOpen: boolean;
-  rollId?: number; // 🔥 AGORA DEPENDEMOS DE UM ID DE ROLAGEM ÚNICO 🔥
+  rollId?: number; 
   onClose: () => void; title: string; subtitle: string; difficultyClass: number;
   baseModifier: number; proficiency: number; rollType?: 'normal' | 'advantage' | 'disadvantage';
   extraBonuses?: RollBonus[]; isDamage?: boolean; damageExpression?: string;
@@ -592,10 +556,11 @@ const UniversalDiceRoller: React.FC<UniversalDiceRollerProps> = ({
   const [rollTrigger, setRollTrigger] = useState(0); 
   const [, setStoppedDiceCount] = useState(0);
   const [isDisappearing, setIsDisappearing] = useState(false); 
+  
+  // 👉 TRAVA MESTRA PARA IMPEDIR MÚLTIPLOS SUBMITS NO BOTÃO
+  const [hasSubmitted, setHasSubmitted] = useState(false); 
 
   const rollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Guardamos o último ID que rolamos. Se for diferente, é rolagem nova!
   const lastRollIdRef = useRef<number | undefined>(undefined);
 
   const localIsDamage = isDamage || title.toLowerCase().includes('dano') || title.toLowerCase().includes('cura');
@@ -658,30 +623,25 @@ const UniversalDiceRoller: React.FC<UniversalDiceRollerProps> = ({
       });
   }, [diceCount, results, localIsDamage, rollType, dmgMod, difficultyClass, diceSides]);
 
-  // 🔥 O VIGIA ESTRITO PELO ROLL ID 🔥
   useEffect(() => {
       if (isOpen) {
-          // Se recebemos um ID novo e ele é diferente do anterior, ROLA.
           if (rollId !== undefined && rollId !== lastRollIdRef.current) {
               lastRollIdRef.current = rollId;
-              
+              setHasSubmitted(false); // Libera o botão
               setResults([]);
               setShowTotal(false);
               setIsRolling(false);
               setIsDisappearing(false);
               setStoppedDiceCount(0);
 
-              // Removemos os sons de "spin" daqui. Eles tocam via Física.
               setTimeout(() => {
                   handleRoll();
               }, 300);
 
           } else if (rollId === undefined && results.length === 0 && !isRolling && !showTotal && !isDisappearing) {
-              // Fallback para quando o pai não passar o rollId
               setTimeout(() => { handleRoll(); }, 300);
           }
       } else {
-          // Limpa quando a janela fechar
           if (rollTimeoutRef.current) clearTimeout(rollTimeoutRef.current);
           lastRollIdRef.current = undefined;
           setResults([]);
@@ -690,6 +650,7 @@ const UniversalDiceRoller: React.FC<UniversalDiceRollerProps> = ({
           setIsDisappearing(false);
           setStoppedDiceCount(0);
           setIsCalibrating(false);
+          setHasSubmitted(false);
       }
   }, [isOpen, rollId, handleRoll, results.length, isRolling, showTotal, isDisappearing]);
 
@@ -704,28 +665,30 @@ const UniversalDiceRoller: React.FC<UniversalDiceRollerProps> = ({
 
   const initiateReroll = useCallback((e?: React.MouseEvent) => {
       if (e) e.stopPropagation();
-      if (isDisappearing) return;
+      if (isDisappearing || hasSubmitted) return; // Bloqueia reroll se já clicou
       
       setIsDisappearing(true);
       setShowTotal(false);
       setTimeout(() => {
           setResults([]); 
           setIsDisappearing(false); 
-          // Sem som aqui. A Física cuidará.
           handleRoll(); 
       }, 250);
-  }, [handleRoll, isDisappearing]);
+  }, [handleRoll, isDisappearing, hasSubmitted]);
 
+  // 👉 A FUNÇÃO BLINDADA DO BOTÃO 
   const handleFinalSubmit = useCallback(() => {
-      if (isDisappearing) return; 
+      if (isDisappearing || hasSubmitted) return; // Se já sumiu ou já enviou, ABORTA
+      
+      setHasSubmitted(true); // TRAVA O BOTÃO
       
       let finalD20 = (rollType === 'advantage') ? Math.max(...results) : (rollType === 'disadvantage') ? Math.min(...results) : results[0];
       let total = localIsDamage ? results.reduce((a,b)=>a+b,0) + dmgMod : finalD20 + dmgMod;
       
       initiateClose(); 
-      onComplete(total, total >= difficultyClass, finalD20 === 20, isSecret, results, dmgMod);
+      onComplete(total, total >= difficultyClass, finalD20 === 20 && diceSides === 20, isSecret, results, dmgMod);
       
-  }, [results, dmgMod, difficultyClass, localIsDamage, rollType, isSecret, onComplete, initiateClose, isDisappearing]);
+  }, [results, dmgMod, difficultyClass, localIsDamage, rollType, isSecret, onComplete, initiateClose, isDisappearing, hasSubmitted, diceSides]);
 
   if (!isOpen) return null;
 
@@ -800,15 +763,15 @@ const UniversalDiceRoller: React.FC<UniversalDiceRollerProps> = ({
       {!isDisappearing && (
         <div className="absolute top-6 flex w-full justify-between px-10 pointer-events-auto z-50 animate-in fade-in duration-300">
             <div className="flex gap-4">
-                <button onClick={(e) => { e.stopPropagation(); setIsSecret(!isSecret); }} className={`px-4 py-2 rounded-full border backdrop-blur-md text-[10px] font-black uppercase tracking-widest ${isSecret ? 'bg-purple-900/90 border-purple-500 text-purple-100' : 'bg-black/60 border-white/20 text-gray-300 hover:text-white'}`}>
+                <button onClick={(e) => { e.stopPropagation(); setIsSecret(!isSecret); }} disabled={hasSubmitted} className={`px-4 py-2 rounded-full border backdrop-blur-md text-[10px] font-black uppercase tracking-widest ${isSecret ? 'bg-purple-900/90 border-purple-500 text-purple-100' : 'bg-black/60 border-white/20 text-gray-300 hover:text-white'} ${hasSubmitted ? 'opacity-50' : ''}`}>
                   {isSecret ? <EyeOff size={14} className="inline mr-2" /> : <Eye size={14} className="inline mr-2" />} {isSecret ? 'Secreto' : 'Público'}
                 </button>
                 
-                <button onClick={(e) => { e.stopPropagation(); setIsCalibrating(true); }} className="px-4 py-2 rounded-full border border-amber-500 bg-amber-900/80 text-amber-200 text-[10px] font-black uppercase tracking-widest hover:bg-amber-800">
+                <button onClick={(e) => { e.stopPropagation(); setIsCalibrating(true); }} disabled={hasSubmitted} className={`px-4 py-2 rounded-full border border-amber-500 bg-amber-900/80 text-amber-200 text-[10px] font-black uppercase tracking-widest hover:bg-amber-800 ${hasSubmitted ? 'opacity-50' : ''}`}>
                   <Wrench size={14} className="inline mr-2" /> Mapear Dados
                 </button>
             </div>
-            <button onClick={initiateClose} className="text-white bg-black/50 border border-white/20 hover:bg-red-500 w-10 h-10 rounded-full">✕</button>
+            <button onClick={initiateClose} disabled={hasSubmitted} className="text-white bg-black/50 border border-white/20 hover:bg-red-500 w-10 h-10 rounded-full disabled:opacity-50">✕</button>
         </div>
       )}
 
@@ -867,12 +830,13 @@ const UniversalDiceRoller: React.FC<UniversalDiceRollerProps> = ({
                       </div>
 
                       <div className="flex w-full gap-2 mt-1">
-                        <button onClick={initiateReroll} className="w-10 h-9 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors flex items-center justify-center text-gray-400 hover:text-white">
+                        <button onClick={initiateReroll} disabled={hasSubmitted} className={`w-10 h-9 bg-white/5 border border-white/10 rounded-lg transition-colors flex items-center justify-center text-gray-400 ${hasSubmitted ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10 hover:text-white'}`}>
                           <span className="text-sm">↺</span>
                         </button>
                         
-                        <button onClick={handleFinalSubmit} className={`flex-1 h-9 font-black text-[10px] uppercase tracking-widest rounded-lg transition-all active:scale-95 border ${borderColor} ${buttonGradient}`}>
-                          {buttonText}
+                        {/* BOTÃO DE CONFIRMAR BLINDADO */}
+                        <button onClick={handleFinalSubmit} disabled={hasSubmitted} className={`flex-1 h-9 font-black text-[10px] uppercase tracking-widest rounded-lg transition-all border ${borderColor} ${buttonGradient} ${hasSubmitted ? 'opacity-50 cursor-not-allowed scale-95' : 'active:scale-95'}`}>
+                          {hasSubmitted ? 'PROCESSANDO...' : buttonText}
                         </button>
                       </div>
 

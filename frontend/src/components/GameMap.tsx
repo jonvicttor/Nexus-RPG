@@ -1,15 +1,22 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import CanvasMap, { AoEData } from './CanvasMap'; 
+import React, { useState, useEffect, useRef } from 'react';
+import CanvasMap from './CanvasMap'; 
 import TokenLayer from './TokenLayer';
-import { Entity, Item } from '../App';
+import { Entity, Item, FogRoom, Wall } from '../App';
 import { Keyboard, X } from 'lucide-react'; 
-import socket from '../services/socket'; 
 
 export interface MapPing {
   id: string;
   x: number;
   y: number;
   color: string;
+}
+
+export interface AoEData {
+  type: 'circle' | 'cone' | 'cube';
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
 }
 
 interface GameMapProps {
@@ -19,7 +26,7 @@ interface GameMapProps {
   role: 'DM' | 'PLAYER';
   fogGrid: boolean[][];
   isFogMode: boolean;
-  fogTool: 'reveal' | 'hide';
+  fogTool: string; 
   onFogUpdate: (x: number, y: number, shouldReveal: boolean) => void;
   fogShape?: 'brush' | 'rect' | 'line';
   onFogBulkUpdate?: (cells: {x: number, y: number}[], shouldReveal: boolean) => void;
@@ -48,21 +55,26 @@ interface GameMapProps {
   onContextMenu?: (e: React.MouseEvent, entity: Entity) => void;
   pings?: MapPing[];
   onPing?: (x: number, y: number) => void;
-  
-  // 👉 O CADEADO CHEGOU NO MAPA!
   myCharacterId?: number;
+  fogRooms?: FogRoom[];
+  onAddFogRoomRequest?: (cells: {x: number, y: number}[]) => void;
+  walls?: Wall[];
+  onAddWall?: (wall: Wall) => void;
+  onDeleteWall?: (id: string) => void;
 }
 
 const GameMap: React.FC<GameMapProps> = (props) => {
     const { 
         mapUrl, gridSize = 70, entities, role, fogGrid, isFogMode, fogTool,
         fogShape, onFogBulkUpdate,
-        activeTurnId, onFogUpdate, onMoveToken, onAddToken, onRotateToken,
+        activeTurnId, onMoveToken, onAddToken, onRotateToken,
         onResizeToken, targetEntityIds, attackerId, onTokenDoubleClick,
         onSetTarget, onSetAttacker, onFlipToken, activeAoE, onAoEComplete,
         aoeColor, onSelectEntity, externalOffset, externalScale, onMapChange,
         focusEntity, globalBrightness, onDropItem, onGiveItemToToken,
-        onContextMenu, pings = [], onPing, myCharacterId // 👉 PEGAMOS ELE AQUI
+        onContextMenu, pings = [], onPing, myCharacterId,
+        fogRooms = [], onAddFogRoomRequest,
+        walls = [], onAddWall, onDeleteWall
     } = props;
 
     const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -81,52 +93,38 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     const [isRulerKeyHeld, setIsRulerKeyHeld] = useState(false);
     const isMeasuringMode = useRef<'free' | 'movement' | null>(null);
 
-    const isPanning = useRef(false);
+    const isPanningRef = useRef(false);
     const panStartPos = useRef({ x: 0, y: 0 });
     
     const isMapMouseDown = useRef(false);
     const mapMouseDownPos = useRef({ x: 0, y: 0 });
 
-    const [combatAnimation, setCombatAnimation] = useState<{
-        attackerName: string;
-        targetId: number;
-        attackType: string;
-        id: string; 
-    } | null>(null);
+    const [fogDrawStart, setFogDrawStart] = useState<{x: number, y: number} | null>(null);
+    const [wallDrawStart, setWallDrawStart] = useState<{x: number, y: number} | null>(null);
+    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+    const [aoeStart, setAoeStart] = useState<{x: number, y: number} | null>(null);
+
+    const [combatAnimation, setCombatAnimation] = useState<{ attackerName: string; targetId: number; attackType: string; id: string; } | null>(null);
 
     const scaleRef = useRef(scale);
-    const offsetRef = useRef(offset);
-    
+
     useEffect(() => {
         scaleRef.current = scale;
-        offsetRef.current = offset;
     }, [scale, offset]);
 
     useEffect(() => { targetIdsRef.current = targetEntityIds; }, [targetEntityIds]);
     useEffect(() => { attackerIdRef.current = attackerId; }, [attackerId]);
 
     useEffect(() => {
-        const handleCombatAnimation = (data: any) => {
-            const targetExists = entities.some(e => e.id === data.targetId);
-            if (targetExists) {
-                setCombatAnimation({
-                    attackerName: data.attackerName,
-                    targetId: data.targetId,
-                    attackType: data.attackType,
-                    id: Date.now().toString()
-                });
-
-                setTimeout(() => {
-                    setCombatAnimation(null);
-                }, 1500);
-            }
+        const handleEvent = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            setCombatAnimation(customEvent.detail);
+            setTimeout(() => setCombatAnimation(null), 1500);
         };
-
-        socket.on('triggerCombatAnimation', handleCombatAnimation);
-        return () => {
-            socket.off('triggerCombatAnimation', handleCombatAnimation);
-        };
-    }, [entities]);
+        window.addEventListener('triggerCombatAnimationLocal', handleEvent);
+        return () => window.removeEventListener('triggerCombatAnimationLocal', handleEvent);
+    }, []);
 
     useEffect(() => {
         if (role === 'PLAYER' && externalOffset && externalScale) {
@@ -147,14 +145,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         }
     }, [focusEntity, scale, gridSize]);
 
-    const handleMapTransform = useCallback((newOffset: {x: number, y: number}, newScale: number) => {
-        setOffset(newOffset);
-        setScale(newScale);
-        if (role === 'DM' && onMapChange) {
-            onMapChange(newOffset, newScale);
-        }
-    }, [role, onMapChange]);
-
     useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -163,12 +153,12 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             if (key === 'm' && !isMeasuringMode.current) { 
                 isMeasuringMode.current = 'free'; 
                 setIsRulerKeyHeld(true);
-                isPanning.current = false;
+                isPanningRef.current = false;
             }
             if (key === 'n' && !isMeasuringMode.current) { 
                 isMeasuringMode.current = 'movement'; 
                 setIsRulerKeyHeld(true);
-                isPanning.current = false; 
+                isPanningRef.current = false; 
             }
             
             if (e.key === 'Escape') {
@@ -228,7 +218,11 @@ const GameMap: React.FC<GameMapProps> = (props) => {
 
                 const entity = entities.find(ent => ent.id === primaryTarget);
                 if (entity) {
-                    if (e.shiftKey) onRotateToken(primaryTarget, (entity.rotation || 0) + (e.deltaY > 0 ? 15 : -15));
+                    if (e.shiftKey) {
+                        let newRotation = (entity.rotation || 0) + (e.deltaY > 0 ? 90 : -90);
+                        newRotation = ((newRotation % 360) + 360) % 360; 
+                        onRotateToken(primaryTarget, newRotation);
+                    }
                     if (e.altKey) onResizeToken(primaryTarget, parseFloat(Math.max(0.1, (entity.size || 1) + (e.deltaY > 0 ? -0.1 : 0.1)).toFixed(1)));
                 }
                 return;
@@ -239,10 +233,9 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             const mouseY = e.clientY - rect.top;
 
             const currentScale = scaleRef.current;
-            const currentOffset = offsetRef.current;
 
-            const worldX = (mouseX - currentOffset.x) / currentScale;
-            const worldY = (mouseY - currentOffset.y) / currentScale;
+            const worldX = (mouseX - offset.x) / currentScale;
+            const worldY = (mouseY - offset.y) / currentScale;
 
             const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
             let newScale = currentScale * zoomFactor;
@@ -265,8 +258,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
 
         container.addEventListener('wheel', handleWheel, { passive: false });
         return () => container.removeEventListener('wheel', handleWheel);
-    }, [role, entities, onRotateToken, onResizeToken, onMapChange]);
-
+    }, [role, entities, onRotateToken, onResizeToken, onMapChange, offset.x, offset.y]);
 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault(); 
@@ -303,16 +295,22 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     };
 
     const handleMouseDown = (e: React.MouseEvent) => {
+        const target = e.target as HTMLElement;
+        const isToken = target.closest('.token-layer-container') || target.closest('img') || target.closest('.pointer-events-auto');
         const isToolActive = isFogMode || activeAoE || isMeasuringMode.current !== null || e.altKey;
 
-        if (e.button === 0 || e.button === 1 || e.button === 2) {
+        if (!isToken && (e.button === 1 || e.button === 2)) {
             e.preventDefault();
         }
 
-        if (e.button === 1 || e.button === 2 || (e.button === 0 && !isToolActive)) {
-            isPanning.current = true;
+        if (e.button === 1 || e.button === 2 || (e.button === 0 && !isToolActive && !isToken)) {
+            isPanningRef.current = true;
             panStartPos.current = { x: e.clientX, y: e.clientY };
             if (containerRef.current) containerRef.current.style.cursor = 'grabbing';
+            return;
+        }
+        
+        if (isToken && !isToolActive && e.button === 0) {
             return;
         }
         
@@ -321,14 +319,66 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         isMapMouseDown.current = true;
         mapMouseDownPos.current = { x: e.clientX, y: e.clientY };
 
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const worldX = (mouseX - offset.x) / scale;
+        const worldY = (mouseY - offset.y) / scale;
+
+        if (isFogMode) {
+            if (fogTool === 'wall') {
+                // 👉 LÓGICA DE MAGNETISMO (SNAP) AO COMEÇAR A DESENHAR
+                let startX = worldX / gridSize;
+                let startY = worldY / gridSize;
+                const snapThreshold = 0.25; 
+
+                for (const w of walls) {
+                    if (Math.hypot(startX - w.x1, startY - w.y1) < snapThreshold) { startX = w.x1; startY = w.y1; break; }
+                    if (Math.hypot(startX - w.x2, startY - w.y2) < snapThreshold) { startX = w.x2; startY = w.y2; break; }
+                }
+
+                setWallDrawStart({ x: startX, y: startY });
+                return;
+            } else if (fogTool === 'eraseWall' && onDeleteWall) {
+                const distToSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
+                    const l2 = (x1 - x2) ** 2 + (y1 - y2) ** 2;
+                    if (l2 === 0) return Math.hypot(px - x1, py - y1);
+                    let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+                    t = Math.max(0, Math.min(1, t));
+                    return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+                };
+
+                const clickedX = worldX / gridSize;
+                const clickedY = worldY / gridSize;
+                
+                let wallToDelete = null;
+                let minDist = 0.3; 
+                
+                walls.forEach(w => {
+                    const dist = distToSegment(clickedX, clickedY, w.x1, w.y1, w.x2, w.y2);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        wallToDelete = w.id;
+                    }
+                });
+
+                if (wallToDelete) {
+                    onDeleteWall(wallToDelete);
+                }
+                return;
+            }
+
+            setFogDrawStart({ x: worldX, y: worldY });
+            return;
+        }
+
+        if (activeAoE) {
+            setAoeStart({ x: worldX, y: worldY });
+            return;
+        }
+
         if (isMeasuringMode.current !== null && e.button === 0) { 
-            const rect = containerRef.current?.getBoundingClientRect();
-            if (!rect) return;
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-            
-            const worldX = (mouseX - offset.x) / scale;
-            const worldY = (mouseY - offset.y) / scale;
             const gridCenterPixelX = (Math.floor(worldX / gridSize) * gridSize + (gridSize / 2)) * scale + offset.x;
             const gridCenterPixelY = (Math.floor(worldY / gridSize) * gridSize + (gridSize / 2)) * scale + offset.y;
 
@@ -339,7 +389,9 @@ const GameMap: React.FC<GameMapProps> = (props) => {
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
-        if (isPanning.current) {
+        setMousePos({ x: e.clientX, y: e.clientY });
+
+        if (isPanningRef.current) {
             const dx = e.clientX - panStartPos.current.x;
             const dy = e.clientY - panStartPos.current.y;
             
@@ -355,48 +407,114 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             });
             return;
         }
-
-        if (isMeasuring && rulerStart) {
-            const rect = containerRef.current?.getBoundingClientRect();
-            if (!rect) return;
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-            
-            const dx = mouseX - rulerStart.x;
-            const dy = mouseY - rulerStart.y;
-            const rawDistancePx = Math.hypot(dx, dy);
-            
-            const distSquares = rawDistancePx / (gridSize * scale);
-            const currentMeters = distSquares * 1.5;
-            
-            let finalX = mouseX;
-            let finalY = mouseY;
-            let isCapped = false;
-
-            if (isMeasuringMode.current === 'movement' && currentMeters > 9) {
-                isCapped = true;
-                const maxSquares = 9 / 1.5; 
-                const maxPx = maxSquares * (gridSize * scale);
-                
-                const angle = Math.atan2(dy, dx);
-                finalX = rulerStart.x + Math.cos(angle) * maxPx;
-                finalY = rulerStart.y + Math.sin(angle) * maxPx;
-            }
-
-            setRulerEnd({ 
-                x: finalX, 
-                y: finalY, 
-                distance: isCapped ? 9.0 : currentMeters, 
-                isCapped 
-            });
-        }
     };
 
     const handleMouseUp = (e: React.MouseEvent) => {
-        if (isPanning.current) {
-            isPanning.current = false;
+        if (isPanningRef.current) {
+            isPanningRef.current = false;
             if (containerRef.current) containerRef.current.style.cursor = activeAoE ? 'crosshair' : (isFogMode ? 'cell' : 'grab');
             return;
+        }
+
+        if (isFogMode) {
+            const rect = containerRef.current!.getBoundingClientRect();
+            const endWorldX = (e.clientX - rect.left - offset.x) / scale;
+            const endWorldY = (e.clientY - rect.top - offset.y) / scale;
+
+            if (wallDrawStart && fogTool === 'wall' && onAddWall) {
+                // 👉 LÓGICA DE MAGNETISMO (SNAP) AO TERMINAR DE DESENHAR
+                let endX = endWorldX / gridSize;
+                let endY = endWorldY / gridSize;
+                const snapThreshold = 0.25;
+
+                for (const w of walls) {
+                    if (Math.hypot(endX - w.x1, endY - w.y1) < snapThreshold) { endX = w.x1; endY = w.y1; break; }
+                    if (Math.hypot(endX - w.x2, endY - w.y2) < snapThreshold) { endX = w.x2; endY = w.y2; break; }
+                }
+
+                // Evita criar uma parede microscópica (mesmo ponto de início e fim)
+                if (Math.hypot(endX - wallDrawStart.x, endY - wallDrawStart.y) > 0.05) {
+                    onAddWall({
+                        id: Date.now().toString(),
+                        x1: wallDrawStart.x,
+                        y1: wallDrawStart.y,
+                        x2: endX,
+                        y2: endY
+                    });
+                }
+                setWallDrawStart(null);
+            } 
+            else if (fogDrawStart) {
+                const startGridX = Math.floor(fogDrawStart.x / gridSize);
+                const startGridY = Math.floor(fogDrawStart.y / gridSize);
+                const endGridX = Math.floor(endWorldX / gridSize);
+                const endGridY = Math.floor(endWorldY / gridSize);
+
+                const cellsToUpdate: {x: number, y: number}[] = [];
+
+                if (fogShape === 'rect' || fogTool === 'room') {
+                    const minX = Math.min(startGridX, endGridX);
+                    const maxX = Math.max(startGridX, endGridX);
+                    const minY = Math.min(startGridY, endGridY);
+                    const maxY = Math.max(startGridY, endGridY);
+
+                    if ((maxX - minX) * (maxY - minY) < 5000) {
+                        for (let y = minY; y <= maxY; y++) {
+                            for (let x = minX; x <= maxX; x++) {
+                                cellsToUpdate.push({x, y});
+                            }
+                        }
+                    }
+                } else if (fogShape === 'brush') {
+                     cellsToUpdate.push({x: startGridX, y: startGridY});
+                     cellsToUpdate.push({x: endGridX, y: endGridY});
+                } else if (fogShape === 'line') {
+                      let x0 = startGridX;
+                      let y0 = startGridY;
+                      let x1 = endGridX;
+                      let y1 = endGridY;
+                      
+                      let dx = Math.abs(x1 - x0);
+                      let dy = Math.abs(y1 - y0);
+                      let sx = (x0 < x1) ? 1 : -1;
+                      let sy = (y0 < y1) ? 1 : -1;
+                      let err = dx - dy;
+
+                      let loopSafeguard = 0;
+                      while(loopSafeguard++ < 1000) {
+                          cellsToUpdate.push({x: x0, y: y0});
+                          if ((x0 === x1) && (y0 === y1)) break;
+                          let e2 = 2 * err;
+                          if (e2 > -dy) { err -= dy; x0 += sx; }
+                          if (e2 < dx) { err += dx; y0 += sy; }
+                      }
+                }
+
+                if (cellsToUpdate.length > 0) {
+                    if (String(fogTool) === 'room' && onAddFogRoomRequest) {
+                        onAddFogRoomRequest(cellsToUpdate);
+                    } else if (onFogBulkUpdate && (fogTool === 'reveal' || fogTool === 'hide')) {
+                        onFogBulkUpdate(cellsToUpdate, fogTool === 'reveal');
+                    }
+                }
+                setFogDrawStart(null);
+            }
+        }
+
+        if (aoeStart && activeAoE && onAoEComplete) {
+            const rect = containerRef.current!.getBoundingClientRect();
+            let worldX = (e.clientX - rect.left - offset.x) / scale;
+            let worldY = (e.clientY - rect.top - offset.y) / scale;
+            
+            const dist = Math.hypot(worldX - aoeStart.x, worldY - aoeStart.y);
+            
+            if (dist < 5) {
+                worldX = aoeStart.x + gridSize;
+                worldY = aoeStart.y + gridSize;
+            }
+            
+            onAoEComplete();
+            setAoeStart(null);
         }
 
         if (isMeasuring) {
@@ -423,94 +541,174 @@ const GameMap: React.FC<GameMapProps> = (props) => {
         }
     };
 
-    const handleAoECompleted = (data?: AoEData) => {
-        if (role !== 'DM' || !data) return;
+    const renderDrawingOverlay = () => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return null;
+        
+        const mX = (mousePos.x - rect.left - offset.x) / scale;
+        const mY = (mousePos.y - rect.top - offset.y) / scale;
 
-        const capturedTargets: number[] = [];
+        return (
+            <div className="absolute inset-0 pointer-events-none z-[190]">
+                {/* 1. OVERLAY DE PAREDES LIVRES COM MAGNETISMO VISUAL */}
+                {isFogMode && wallDrawStart && fogTool === 'wall' && (() => {
+                    const startPxX = (wallDrawStart.x * gridSize * scale) + offset.x;
+                    const startPxY = (wallDrawStart.y * gridSize * scale) + offset.y;
+                    
+                    let currentX = mX / gridSize;
+                    let currentY = mY / gridSize;
+                    const snapThreshold = 0.25;
 
-        entities.forEach(ent => {
-            if (ent.classType === 'Item' || ent.type === 'loot' || ent.visible === false) return;
-
-            const sizeInPixels = (ent.size || 1) * gridSize;
-            const entCenterX = (ent.x * gridSize) + (sizeInPixels / 2);
-            const entCenterY = (ent.y * gridSize) + (sizeInPixels / 2);
-
-            let isInside = false;
-
-            if (data.type === 'circle') {
-                const midX = (data.startX + data.endX) / 2;
-                const midY = (data.startY + data.endY) / 2;
-                const radius = Math.hypot(data.endX - data.startX, data.endY - data.startY) / 2;
-                const distance = Math.hypot(entCenterX - midX, entCenterY - midY);
-                if (distance <= radius) isInside = true;
-            } 
-            else if (data.type === 'cube') {
-                const sideX = data.endX - data.startX;
-                const sideY = data.endY - data.startY;
-                const s = Math.max(Math.abs(sideX), Math.abs(sideY));
-                const dirX = sideX >= 0 ? 1 : -1;
-                const dirY = sideY >= 0 ? 1 : -1;
-                
-                const minX = Math.min(data.startX, data.startX + s * dirX);
-                const maxX = Math.max(data.startX, data.startX + s * dirX);
-                const minY = Math.min(data.startY, data.startY + s * dirY);
-                const maxY = Math.max(data.startY, data.startY + s * dirY);
-
-                if (entCenterX >= minX && entCenterX <= maxX && entCenterY >= minY && entCenterY <= maxY) {
-                    isInside = true;
-                }
-            }
-            else if (data.type === 'cone') {
-                const radius = Math.hypot(data.endX - data.startX, data.endY - data.startY);
-                const distanceToTarget = Math.hypot(entCenterX - data.startX, entCenterY - data.startY);
-                
-                if (distanceToTarget <= radius) {
-                    const angleToToken = Math.atan2(entCenterY - data.startY, entCenterX - data.startX);
-                    const angleToMouse = Math.atan2(data.endY - data.startY, data.endX - data.startX);
-                    let angleDiff = angleToToken - angleToMouse;
-                    while (angleDiff <= -Math.PI) angleDiff += Math.PI * 2;
-                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-                    if (Math.abs(angleDiff) <= Math.PI / 6) {
-                        isInside = true;
+                    for (const w of walls) {
+                        if (Math.hypot(currentX - w.x1, currentY - w.y1) < snapThreshold) { currentX = w.x1; currentY = w.y1; break; }
+                        if (Math.hypot(currentX - w.x2, currentY - w.y2) < snapThreshold) { currentX = w.x2; currentY = w.y2; break; }
                     }
-                }
-            }
 
-            if (isInside) capturedTargets.push(ent.id);
-        });
+                    const endPxX = (currentX * gridSize * scale) + offset.x;
+                    const endPxY = (currentY * gridSize * scale) + offset.y;
 
-        if (capturedTargets.length > 0) {
-            onSetTarget(capturedTargets, false); 
-        } else {
-            onSetTarget(null); 
-        }
-    };
+                    return (
+                        <svg className="absolute inset-0 w-full h-full">
+                            <line x1={startPxX} y1={startPxY} x2={endPxX} y2={endPxY} stroke="#ef4444" strokeWidth={4 / scale} strokeLinecap="round" />
+                            {/* Desenha uma pequena bolinha onde a linha vai "grudar" para guiar o mestre */}
+                            <circle cx={endPxX} cy={endPxY} r={5 / scale} fill="white" opacity="0.8" />
+                        </svg>
+                    );
+                })()}
 
-    const renderRulerIntervals = () => {
-        if (!rulerStart || !rulerEnd) return null;
-        
-        const dx = rulerEnd.x - rulerStart.x;
-        const dy = rulerEnd.y - rulerStart.y;
-        const distPx = Math.hypot(dx, dy);
-        
-        const intervalPx = gridSize * scale;
-        const numIntervals = Math.floor(distPx / intervalPx);
-        
-        const nodes = [];
-        for (let i = 1; i <= numIntervals; i++) {
-            const ratio = (i * intervalPx) / distPx;
-            const nodeX = rulerStart.x + (dx * ratio);
-            const nodeY = rulerStart.y + (dy * ratio);
-            
-            nodes.push(
-                <circle 
-                    key={i} cx={nodeX} cy={nodeY} r="3" 
-                    fill={rulerEnd.isCapped ? "#ef4444" : "#eab308"} 
-                    stroke="black" strokeWidth="1"
-                />
-            );
-        }
-        return nodes;
+                {/* 2. OVERLAY DE NEBLINA / CÔMODOS */}
+                {isFogMode && fogDrawStart && fogTool !== 'wall' && fogTool !== 'eraseWall' && (() => {
+                    const startPxX = (fogDrawStart.x * scale) + offset.x;
+                    const startPxY = (fogDrawStart.y * scale) + offset.y;
+                    const endPxX = (mX * scale) + offset.x;
+                    const endPxY = (mY * scale) + offset.y;
+
+                    const width = endPxX - startPxX;
+                    const height = endPxY - startPxY;
+
+                    let strokeColor = "white";
+                    let fillColor = "rgba(255, 255, 255, 0.4)";
+
+                    if (fogTool === 'hide') {
+                        strokeColor = "black";
+                        fillColor = "rgba(0, 0, 0, 0.6)";
+                    } else if (fogTool === 'room') {
+                        strokeColor = "#06b6d4"; 
+                        fillColor = "rgba(6, 182, 212, 0.3)";
+                    }
+
+                    if (fogShape === 'rect' || fogTool === 'room') {
+                        return (
+                            <div 
+                                className="absolute border-[2px]"
+                                style={{ left: Math.min(startPxX, endPxX), top: Math.min(startPxY, endPxY), width: Math.abs(width), height: Math.abs(height), borderColor: strokeColor, backgroundColor: fillColor }} 
+                            />
+                        );
+                    } else {
+                        return (
+                            <svg className="absolute inset-0 w-full h-full">
+                                <line x1={startPxX} y1={startPxY} x2={endPxX} y2={endPxY} stroke={strokeColor} strokeWidth={4} strokeLinecap="round" />
+                            </svg>
+                        );
+                    }
+                })()}
+
+                {/* 3. OVERLAY DE ÁREA DE EFEITO (AoE) */}
+                {aoeStart && activeAoE && (() => {
+                    const startPxX = (aoeStart.x * scale) + offset.x;
+                    const startPxY = (aoeStart.y * scale) + offset.y;
+                    const endPxX = (mX * scale) + offset.x;
+                    const endPxY = (mY * scale) + offset.y;
+
+                    let labelText = "";
+                    let labelX = endPxX;
+                    let labelY = endPxY;
+
+                    const renderAoEShape = () => {
+                        if (activeAoE === 'circle') {
+                            const midX = (startPxX + endPxX) / 2;
+                            const midY = (startPxY + endPxY) / 2;
+                            const radiusPx = Math.hypot(endPxX - startPxX, endPxY - startPxY) / 2;
+                            const radiusMeters = (radiusPx / (gridSize * scale)) * 1.5;
+                            labelText = `Raio: ${radiusMeters.toFixed(1)}m`;
+                            labelX = midX;
+                            labelY = midY - radiusPx - 10;
+                            return <circle cx={midX} cy={midY} r={radiusPx} fill={aoeColor + "33"} stroke={aoeColor} strokeWidth="2" />;
+                        } else if (activeAoE === 'cube') {
+                            const sideX = endPxX - startPxX;
+                            const sideY = endPxY - startPxY;
+                            const s = Math.max(Math.abs(sideX), Math.abs(sideY));
+                            const dirX = sideX >= 0 ? 1 : -1;
+                            const dirY = sideY >= 0 ? 1 : -1;
+                            const sideMeters = (s / (gridSize * scale)) * 1.5;
+                            labelText = `Aresta: ${sideMeters.toFixed(1)}m`;
+                            labelX = startPxX + (s * dirX) / 2;
+                            labelY = Math.min(startPxY, startPxY + s * dirY) - 10;
+                            return <rect x={startPxX} y={startPxY} width={s * dirX} height={s * dirY} fill={aoeColor + "33"} stroke={aoeColor} strokeWidth="2" />;
+                        } else if (activeAoE === 'cone') {
+                            const radiusPx = Math.hypot(endPxX - startPxX, endPxY - startPxY);
+                            const angle = Math.atan2(endPxY - startPxY, endPxX - startPxX);
+                            const startAngle = angle - Math.PI / 6;
+                            const endAngle = angle + Math.PI / 6;
+                            
+                            const x1 = startPxX + radiusPx * Math.cos(startAngle);
+                            const y1 = startPxY + radiusPx * Math.sin(startAngle);
+                            const x2 = startPxX + radiusPx * Math.cos(endAngle);
+                            const y2 = startPxY + radiusPx * Math.sin(endAngle);
+
+                            const distMeters = (radiusPx / (gridSize * scale)) * 1.5;
+                            labelText = `Cone: ${distMeters.toFixed(1)}m`;
+                            labelX = endPxX;
+                            labelY = endPxY - 15;
+
+                            return (
+                                <path 
+                                    d={`M ${startPxX} ${startPxY} L ${x1} ${y1} A ${radiusPx} ${radiusPx} 0 0 1 ${x2} ${y2} Z`} 
+                                    fill={aoeColor + "33"} stroke={aoeColor} strokeWidth="2" 
+                                />
+                            );
+                        }
+                        return null;
+                    };
+
+                    return (
+                        <svg className="absolute inset-0 w-full h-full">
+                            {renderAoEShape()}
+                            <text x={labelX} y={labelY} fill="white" fontSize="14" fontWeight="bold" textAnchor="middle" style={{ textShadow: "0 0 4px black" }}>
+                                {labelText}
+                            </text>
+                        </svg>
+                    );
+                })()}
+
+                {/* 4. OVERLAY DA RÉGUA DE MEDIÇÃO */}
+                {isMeasuring && rulerStart && rulerEnd && (() => {
+                    const dx = rulerEnd.x - rulerStart.x;
+                    const dy = rulerEnd.y - rulerStart.y;
+                    const distPx = Math.hypot(dx, dy);
+                    const intervalPx = gridSize * scale;
+                    const numIntervals = Math.floor(distPx / intervalPx);
+                    
+                    const nodes = [];
+                    for (let i = 1; i <= numIntervals; i++) {
+                        const ratio = (i * intervalPx) / distPx;
+                        nodes.push(
+                            <circle key={`interval-${i}`} cx={rulerStart.x + (dx * ratio)} cy={rulerStart.y + (dy * ratio)} r="3" fill={rulerEnd.isCapped ? "#ef4444" : "#eab308"} stroke="black" strokeWidth="1" />
+                        );
+                    }
+
+                    return (
+                        <svg className="absolute inset-0 w-full h-full">
+                            <line x1={rulerStart.x} y1={rulerStart.y} x2={rulerEnd.x} y2={rulerEnd.y} stroke="#fbbf24" strokeWidth="3" strokeDasharray="10, 5" className="drop-shadow-[0_0_3px_black]"/>
+                            {nodes}
+                            <text x={(rulerStart.x + rulerEnd.x) / 2} y={(rulerStart.y + rulerEnd.y) / 2 - 10} fill="#fbbf24" fontSize="16" fontWeight="bold" textAnchor="middle" style={{ textShadow: "0 0 4px black" }}>
+                                {rulerEnd.distance.toFixed(1)}m
+                            </text>
+                        </svg>
+                    );
+                })()}
+            </div>
+        );
     };
 
     return (
@@ -531,18 +729,13 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 offset={offset}
                 scale={scale}
                 fogGrid={fogGrid}
-                isFogMode={isFogMode}
-                fogTool={fogTool}
-                fogShape={fogShape}
-                onFogBulkUpdate={onFogBulkUpdate}
-                onFogUpdate={onFogUpdate}
-                onMapTransform={handleMapTransform}
-                activeAoE={activeAoE}
-                aoeColor={aoeColor}
-                onAoEComplete={handleAoECompleted}
                 role={role}
                 globalBrightness={globalBrightness}
+                fogRooms={fogRooms}
+                walls={walls}
             />
+
+            {renderDrawingOverlay()}
 
             {pings.map(ping => (
                 <div 
@@ -569,12 +762,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                     <div 
                         key={combatAnimation.id}
                         className="absolute pointer-events-none z-[300] flex items-center justify-center mix-blend-screen"
-                        style={{ 
-                            left: tokenScreenX, 
-                            top: tokenScreenY,
-                            width: tokenSizeInPx,
-                            height: tokenSizeInPx
-                        }}
+                        style={{ left: tokenScreenX, top: tokenScreenY, width: tokenSizeInPx, height: tokenSizeInPx }}
                     >
                         {isMagic ? (
                             <div className="relative w-[150%] h-[150%] animate-in zoom-in duration-300 flex items-center justify-center">
@@ -594,66 +782,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 );
             })()}
 
-            {entities.map(ent => {
-                if (!ent.size || ent.size <= 1 || ent.visible === false) return null;
-                const sizePx = ent.size * gridSize * scale;
-                const tokenScreenX = (ent.x * gridSize * scale) + offset.x;
-                const tokenScreenY = (ent.y * gridSize * scale) + offset.y;
-                const centerX = tokenScreenX + (sizePx / 2);
-                const centerY = tokenScreenY + (sizePx / 2);
-
-                return (
-                    <div 
-                        key={`center-${ent.id}`}
-                        className="absolute pointer-events-none z-[120] transform -translate-x-1/2 -translate-y-1/2 opacity-0"
-                        style={{ left: centerX, top: centerY }}
-                    >
-                        <div className="relative w-4 h-4">
-                            <div className="absolute top-1/2 left-0 w-full h-px bg-white drop-shadow-[0_0_2px_black]"></div>
-                            <div className="absolute left-1/2 top-0 h-full w-px bg-white drop-shadow-[0_0_2px_black]"></div>
-                        </div>
-                    </div>
-                );
-            })}
-
-            {isMeasuring && rulerStart && rulerEnd && (
-                <>
-                    <svg className="absolute inset-0 w-full h-full pointer-events-none z-[150]">
-                        <line 
-                            x1={rulerStart.x} y1={rulerStart.y} 
-                            x2={rulerEnd.x} y2={rulerEnd.y} 
-                            stroke={rulerEnd.isCapped ? "#ef4444" : "#eab308"} 
-                            strokeWidth="3" 
-                            strokeDasharray="8,4" 
-                            className="drop-shadow-[0_0_3px_black] transition-colors"
-                        />
-                        <circle cx={rulerStart.x} cy={rulerStart.y} r="5" fill={rulerEnd.isCapped ? "#ef4444" : "#eab308"} stroke="black" strokeWidth="2"/>
-                        <circle cx={rulerEnd.x} cy={rulerEnd.y} r="6" fill={rulerEnd.isCapped ? "#ef4444" : "#eab308"} stroke="black" strokeWidth="2"/>
-                        {renderRulerIntervals()}
-                    </svg>
-                    <div 
-                        className="absolute z-[160] transform -translate-x-1/2 -translate-y-[150%] pointer-events-none transition-all"
-                        style={{ left: rulerEnd.x, top: rulerEnd.y }}
-                    >
-                        <div className={`px-3 py-1 rounded shadow-lg font-mono font-black text-sm border ${rulerEnd.isCapped ? 'bg-red-950/90 text-red-400 border-red-500' : 'bg-black/90 text-yellow-400 border-yellow-500/50'}`}>
-                            {rulerEnd.distance.toFixed(1)}m
-                        </div>
-                    </div>
-                </>
-            )}
-
-            {isRulerKeyHeld && (
-                <div className="absolute inset-0 z-[145]" />
-            )}
-
-            {isRulerKeyHeld && (
-                <style>{`
-                    .token-layer-container * {
-                        pointer-events: none !important;
-                    }
-                `}</style>
-            )}
-            
             <div className="token-layer-container absolute inset-0 z-[100]" style={{ pointerEvents: isRulerKeyHeld ? 'none' : 'auto' }}>
                 <TokenLayer 
                     entities={entities}
@@ -665,8 +793,6 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                     attackerId={attackerId}
                     targetEntityIds={targetEntityIds}
                     onMoveToken={onMoveToken}
-                    
-                    // 👉 O CADEADO É PASSADO AQUI!
                     myCharacterId={myCharacterId}
                     
                     onSelectToken={(entity: Entity, multi?: boolean) => {
@@ -707,7 +833,7 @@ const GameMap: React.FC<GameMapProps> = (props) => {
             <div className="absolute top-4 right-4 z-[250] flex flex-col items-end gap-3">
                 {isFogMode && (
                     <div className="bg-yellow-900/80 border border-yellow-500 text-yellow-300 text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
-                        Neblina: {fogTool === 'reveal' ? 'REVELAR' : 'ESCONDER'}
+                        Neblina: {String(fogTool).toUpperCase()}
                     </div>
                 )}
                 
@@ -790,13 +916,17 @@ const GameMap: React.FC<GameMapProps> = (props) => {
                 )}
             </div>
 
-            <style>{`
-                @keyframes dash {
-                    to {
-                        stroke-dashoffset: 0;
+            {isRulerKeyHeld && (
+                <div className="absolute inset-0 z-[145]" />
+            )}
+
+            {isRulerKeyHeld && (
+                <style>{`
+                    .token-layer-container * {
+                        pointer-events: none !important;
                     }
-                }
-            `}</style>
+                `}</style>
+            )}
         </div>
     );
 };

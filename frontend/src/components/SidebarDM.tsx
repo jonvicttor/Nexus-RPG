@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Chat, { ChatMessage } from './Chat'; 
-import { Entity, MonsterPreset } from '../App';
+import { Entity, MonsterPreset, FogRoom } from '../App';
 import EditEntityModal from './EditEntityModal';
 import CampaignManager from './CampaignManager';
 import { getLevelFromXP, getNextLevelXP } from '../utils/gameRules';
@@ -9,8 +9,9 @@ import ItemCreator from './ItemCreator';
 import Scratchpad from './Scratchpad'; 
 import Soundboard from './Soundboard';
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
-import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent, Gem, Search, ShieldAlert, Flame, Heart, Sword, ChevronDown, ChevronRight, Activity, Skull } from 'lucide-react';
+import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent, Gem, Search, ShieldAlert, Flame, Heart, Sword, ChevronDown, ChevronRight, Activity, Skull, LayoutGrid, Trash2, BookOpen, BookText } from 'lucide-react';
 import UniversalDiceRoller from './UniversalDiceRoller';
+import socket from '../services/socket'; 
 
 export interface InitiativeItem { id: number; name: string; value: number; }
 
@@ -30,7 +31,7 @@ const INITIAL_MAPS = [
     { name: 'Masmorra', url: '/maps/masmorra.jpg' }
 ];
 
-type SidebarTab = 'combat' | 'map' | 'create' | 'audio' | 'tools' | 'campaign'; 
+type SidebarTab = 'combat' | 'map' | 'create' | 'audio' | 'tools' | 'campaign' | 'rules'; 
 type MainTab = 'tools' | 'chat';
 
 interface SidebarDMProps {
@@ -43,8 +44,8 @@ interface SidebarDMProps {
   onToggleFogMode: () => void;
   onResetFog: () => void;
   onRevealAll: () => void;
-  fogTool: 'reveal' | 'hide';
-  onSetFogTool: (tool: 'reveal' | 'hide') => void;
+  fogTool: 'reveal' | 'hide' | 'room' | 'wall' | 'eraseWall' | string;
+  onSetFogTool: (tool: string) => void;
   fogShape?: 'brush' | 'rect' | 'line';
   onSetFogShape?: (shape: 'brush' | 'rect' | 'line') => void;
   onSyncFog: () => void;
@@ -91,6 +92,9 @@ interface SidebarDMProps {
   onOpenLootGenerator?: () => void; 
   onRequestInitiative?: (targetIds: number[]) => void;
   onRequestCustomRoll?: (targetIds: number[], expression: string, title: string) => void;
+  fogRooms?: FogRoom[];
+  onToggleFogRoom?: (roomId: string, reveal: boolean) => void;
+  onDeleteFogRoom?: (roomId: string) => void;
 }
 
 const AoEColorPicker = ({ selected, onSelect }: { selected: string, onSelect: (c: string) => void }) => {
@@ -102,7 +106,6 @@ const AoEColorPicker = ({ selected, onSelect }: { selected: string, onSelect: (c
     );
 };
 
-// --- COMPONENTE COLLAPSIBLE REFINADO ---
 const CollapsibleSection = ({ title, icon: Icon, children, defaultOpen = false }: { title: string, icon?: any, children: React.ReactNode, defaultOpen?: boolean }) => {
     const [isOpen, setIsOpen] = useState(defaultOpen);
     return (
@@ -406,7 +409,8 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   currentTrack, onPlayMusic, onStopMusic, onPlaySFX, audioVolume, onSetAudioVolume,
   onResetView, onGiveItem, onApplyDamageFromChat,
   onDMRoll, onLongRest, availableItems, availableConditions, onOpenLootGenerator, onRequestInitiative,
-  onRequestCustomRoll 
+  onRequestCustomRoll,
+  fogRooms = [], onToggleFogRoom, onDeleteFogRoom
 }) => {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>('combat');
@@ -424,6 +428,24 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   const [customMapUrl, setCustomMapUrl] = useState('');
   const [previewMap, setPreviewMap] = useState<{url: string, name: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 👉 LÓGICA DA BIBLIOTECA COMPLETA (Todos os Livros)
+  const [booksData, setBooksData] = useState<any>(null);
+  const [activeBookKey, setActiveBookKey] = useState<string>('book-xscreen');
+  const [activeChapterIndex, setActiveChapterIndex] = useState<number>(0);
+
+  const bookNames: Record<string, string> = {
+      'book-xscreen': 'Escudo do Mestre',
+      'book-xphb': 'Livro do Jogador',
+      'book-xdmg': 'Guia do Mestre',
+      'book-xmm': 'Manual dos Monstros'
+  };
+
+  useEffect(() => {
+      socket.on('receiveBooks', (data: any) => setBooksData(data));
+      socket.emit('requestBooks');
+      return () => { socket.off('receiveBooks'); };
+  }, []);
 
   const FULL_MONSTER_LIST = [...MONSTER_LIST, ...(customMonsters || [])];
   
@@ -477,6 +499,75 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
       onAddEntity('enemy', finalName, monster); 
   };
 
+  const render5eEntry = (entry: any, idx: number): React.ReactNode => {
+      if (!entry) return null;
+      if (typeof entry === 'string') {
+          const clean = entry.replace(/\{@[a-z]+\s([^|}]+)(?:\|[^}]+)?\}/gi, '$1');
+          return <p key={idx} className="text-xs text-gray-300 font-serif mb-2 leading-relaxed">{clean}</p>;
+      }
+      if (entry.type === 'section' || entry.type === 'entries') {
+          return (
+              <div key={idx} className="mb-4">
+                  <h4 className="text-amber-500 font-black uppercase text-[10px] tracking-widest border-b border-white/10 pb-1 mb-2">{entry.name}</h4>
+                  {entry.entries?.map((e: any, i: number) => render5eEntry(e, i))}
+              </div>
+          );
+      }
+      if (entry.type === 'table') {
+          return (
+              <div key={idx} className="overflow-x-auto mb-4 border border-white/10 rounded bg-black/40">
+                 <table className="w-full text-left text-xs">
+                   <thead className="bg-black/60 text-amber-500">
+                     <tr>{entry.colLabels?.map((l: string, i: number) => <th key={i} className="p-2 border-b border-white/10">{l.replace(/\{@[a-z]+\s([^|}]+)(?:\|[^}]+)?\}/gi, '$1')}</th>)}</tr>
+                   </thead>
+                   <tbody>
+                     {entry.rows?.map((rowItem: any, rIdx: number) => {
+                         const rowData = Array.isArray(rowItem) ? rowItem : (rowItem.row || []);
+                         return (
+                             <tr key={rIdx} className="border-t border-white/5 hover:bg-white/5">
+                                 {Array.isArray(rowData) && rowData.map((cell, cIdx) => {
+                                     let cellContent = '...';
+                                     if (typeof cell === 'string') {
+                                         cellContent = cell.replace(/\{@[a-z]+\s([^|}]+)(?:\|[^}]+)?\}/gi, '$1');
+                                     } else if (typeof cell === 'number') {
+                                         cellContent = cell.toString();
+                                     } else if (cell && typeof cell === 'object') {
+                                         if (cell.roll) {
+                                             cellContent = cell.roll.exact !== undefined ? cell.roll.exact.toString() : `${cell.roll.min}-${cell.roll.max}`;
+                                         } else if (cell.exact !== undefined) {
+                                             cellContent = cell.exact.toString();
+                                         } else if (cell.entry) {
+                                             cellContent = typeof cell.entry === 'string' ? cell.entry.replace(/\{@[a-z]+\s([^|}]+)(?:\|[^}]+)?\}/gi, '$1') : '...';
+                                         }
+                                     }
+                                     return <td key={cIdx} className="p-2 text-gray-300">{cellContent}</td>;
+                                 })}
+                             </tr>
+                         )
+                     })}
+                   </tbody>
+                 </table>
+              </div>
+          )
+      }
+      if (entry.type === 'list') {
+          return (
+              <ul key={idx} className="list-disc list-inside text-xs text-gray-300 mb-2 pl-2 space-y-1">
+                  {entry.items?.map((item: any, i: number) => <li key={i}>{render5eEntry(item, i)}</li>)}
+              </ul>
+          )
+      }
+      if (entry.type === 'item') {
+          return (
+              <div key={idx} className="mb-2">
+                  <span className="font-bold text-amber-400 text-xs">{entry.name} </span>
+                  {entry.entry ? render5eEntry(entry.entry, 0) : entry.entries?.map((e:any, i:number) => render5eEntry(e, i))}
+              </div>
+          )
+      }
+      return null;
+  };
+
   const attacker = entities.find(e => e.id === attackerId) || null;
   const targets = entities.filter(e => targetEntityIds.includes(e.id));
   const toggleConditionForAll = (cond: string) => { targets.forEach(t => onToggleCondition(t.id, cond)); };
@@ -487,7 +578,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
     <>
       {editingEntity && (<EditEntityModal entity={editingEntity} onSave={onEditEntity} onClose={() => setEditingEntity(null)} />)}
       
-      {/* 🚀 O NOVO ROLADOR UNIVERSAL 🚀 */}
       {isUniversalRollerOpen && (
           <UniversalDiceRoller 
               isOpen={isUniversalRollerOpen}
@@ -572,14 +662,74 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                     <button onClick={() => setActiveTab('campaign')} className={`flex-1 py-2.5 text-center text-lg transition-all ${activeTab === 'campaign' ? 'text-amber-500 bg-white/5' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Campanha">📜</button>
                     <button onClick={() => setActiveTab('create')} className={`flex-1 py-2.5 text-center text-lg transition-all ${activeTab === 'create' ? 'text-amber-500 bg-white/5' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Bestiário">🐉</button>
                     <button onClick={() => setActiveTab('audio')} className={`flex-1 py-2.5 text-center text-lg transition-all ${activeTab === 'audio' ? 'text-amber-500 bg-white/5' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Áudio">🔊</button>
+                    <button onClick={() => setActiveTab('rules')} className={`flex-1 py-2.5 text-center text-lg transition-all ${activeTab === 'rules' ? 'text-amber-500 bg-white/5' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`} title="Biblioteca (Codex 5e)">📖</button>
                 </div>
 
                 <div className="flex-grow overflow-y-auto p-4 custom-scrollbar w-full relative">
                     
+                    {/* 👉 ABA DE LIVROS OFICIAIS (A BIBLIOTECA COMPLETA) */}
+                    {activeTab === 'rules' && (
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-6 h-full flex flex-col">
+                            <div className="bg-black/60 backdrop-blur-xl rounded-2xl shadow-2xl border border-amber-900/30 p-5 relative overflow-hidden flex flex-col flex-1">
+                                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(245,158,11,0.05)_0%,transparent_70%)] pointer-events-none"></div>
+                                
+                                <h3 className="text-amber-500 font-black text-[11px] uppercase tracking-[0.2em] mb-4 flex items-center gap-2 relative z-10 border-b border-amber-900/30 pb-3 shrink-0">
+                                    <BookText size={16} /> Biblioteca Nexus (Codex 5e)
+                                </h3>
+
+                                <div className="relative z-10 flex flex-col flex-1 overflow-hidden">
+                                    {!booksData ? (
+                                        <div className="flex flex-col items-center justify-center py-10 opacity-50">
+                                            <BookOpen size={40} className="mb-4 animate-pulse" />
+                                            <p className="text-gray-400 text-xs italic text-center">Buscando tomos ancestrais no servidor...</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {/* SELETOR DE LIVROS */}
+                                            <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-2 mb-3 shrink-0">
+                                                {Object.keys(booksData).map(bookKey => (
+                                                    <button 
+                                                        key={bookKey}
+                                                        onClick={() => { setActiveBookKey(bookKey); setActiveChapterIndex(0); }}
+                                                        className={`px-3 py-1.5 rounded-lg whitespace-nowrap text-[10px] font-bold uppercase tracking-widest transition-colors border ${activeBookKey === bookKey ? 'bg-amber-600/20 border-amber-500 text-amber-400 shadow-[inset_0_0_10px_rgba(245,158,11,0.2)]' : 'bg-black border-white/10 text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}
+                                                    >
+                                                        {bookNames[bookKey] || bookKey}
+                                                    </button>
+                                                ))}
+                                            </div>
+
+                                            {/* SELETOR DE CAPÍTULOS */}
+                                            {booksData[activeBookKey]?.data && booksData[activeBookKey].data.length > 1 && (
+                                                <div className="mb-4 shrink-0">
+                                                    <select 
+                                                        value={activeChapterIndex} 
+                                                        onChange={(e) => setActiveChapterIndex(Number(e.target.value))}
+                                                        className="w-full bg-black/80 border border-white/10 rounded-lg p-2.5 text-xs text-amber-100 font-bold outline-none focus:border-amber-500 shadow-inner"
+                                                    >
+                                                        {booksData[activeBookKey].data.map((chapter: any, idx: number) => (
+                                                            <option key={idx} value={idx}>{chapter.name || `Capítulo ${idx + 1}`}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
+
+                                            {/* CONTEÚDO DO CAPÍTULO */}
+                                            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-4">
+                                                {booksData[activeBookKey]?.data?.[activeChapterIndex]?.entries?.map((e: any, i: number) => render5eEntry(e, i))}
+                                                {(!booksData[activeBookKey]?.data?.[activeChapterIndex]?.entries) && (
+                                                    <p className="text-gray-500 text-xs italic text-center py-10">Este capítulo está vazio ou não pôde ser lido.</p>
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {activeTab === 'combat' && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-5 pb-10">
                             
-                            {/* Mesa de Combate Premium */}
                             <div className="bg-black/60 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/10 flex flex-col overflow-hidden relative">
                                 <div className="absolute inset-0 pointer-events-none rounded-2xl shadow-[inset_0_0_30px_rgba(245,158,11,0.05)]"></div>
                                 <div className="flex items-center justify-between p-3 border-b border-white/5 bg-gradient-to-r from-amber-900/20 to-transparent relative z-10">
@@ -599,7 +749,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                 </div>
                             </div>
 
-                            {/* Lista de Iniciativa Premium */}
                             <div className="bg-black/60 backdrop-blur-xl border border-amber-900/30 rounded-2xl flex flex-col overflow-hidden relative shadow-2xl">
                                 <div className="flex justify-between items-center p-3 border-b border-amber-900/30 bg-gradient-to-r from-amber-900/10 to-transparent">
                                     <h3 className="text-amber-500 font-black text-[11px] uppercase tracking-[0.2em] flex items-center gap-2">⚡ INICIATIVA</h3>
@@ -615,7 +764,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                                 const ent = entities.find(e => e.id === item.id);
                                                 const hpPercent = ent ? Math.max(0, Math.min(100, (ent.hp / ent.maxHp) * 100)) : 0;
                                                 
-                                                // Cor da bolinha de saúde Premium
                                                 let hpStatusColor = 'bg-gray-500';
                                                 if (hpPercent > 50) hpStatusColor = 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]';
                                                 else if (hpPercent > 20) hpStatusColor = 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.6)]';
@@ -672,7 +820,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                 )}
                             </div>
 
-                            {/* MENUS SANFONA PREMIUM */}
                             <CollapsibleSection title="Entidades no Mapa" icon={Activity}>
                                 <div className="p-2 space-y-2 max-h-[400px] overflow-y-auto custom-scrollbar">
                                     {entities.map((entity) => (<EntityControlRow key={entity.id} entity={entity} onUpdateHP={onUpdateHP} onDeleteEntity={onDeleteEntity} onClickEdit={() => setEditingEntity(entity)} onAddToInit={() => onAddToInitiative(entity)} isTarget={targetEntityIds.includes(entity.id)} isAttacker={attackerId === entity.id} onSetTarget={onSetTarget} onSetAttacker={onSetAttacker} onToggleCondition={onToggleCondition} onAddXP={onAddXP} onToggleVisibility={() => onToggleVisibility(entity.id)} onEditEntity={onEditEntity} />))}
@@ -892,18 +1039,31 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                                   <button onClick={() => onSetFogTool('reveal')} className={`flex-1 py-2 text-[10px] uppercase tracking-widest font-black rounded-lg transition-colors border ${fogTool === 'reveal' ? 'bg-green-900/40 border-green-500 text-green-300' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`}>🔦 Revelar</button>
                                                   <button onClick={() => onSetFogTool('hide')} className={`flex-1 py-2 text-[10px] uppercase tracking-widest font-black rounded-lg transition-colors border ${fogTool === 'hide' ? 'bg-red-900/40 border-red-500 text-red-300' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`}>☁️ Esconder</button>
                                               </div>
+
                                               <div className="flex gap-2 justify-between border-t border-white/5 pt-3">
-                                                  <button onClick={() => onSetFogShape && onSetFogShape('brush')} className={`flex-1 py-2 flex flex-col items-center gap-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all border ${fogShape === 'brush' ? 'bg-white/10 border-white text-white shadow-inner' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Pincel Livre">
+                                                  <button onClick={() => onSetFogTool('wall')} className={`flex-1 py-2 text-[9px] uppercase tracking-widest font-black rounded-lg transition-colors border ${fogTool === 'wall' ? 'bg-orange-900/40 border-orange-500 text-orange-300 shadow-[inset_0_0_10px_rgba(249,115,22,0.3)]' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`}>🧱 Desenhar Parede</button>
+                                                  <button onClick={() => onSetFogTool('eraseWall')} className={`flex-1 py-2 text-[9px] uppercase tracking-widest font-black rounded-lg transition-colors border ${fogTool === 'eraseWall' ? 'bg-red-900/40 border-red-500 text-red-300 shadow-[inset_0_0_10px_rgba(239,68,68,0.3)]' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`}>🔨 Quebrar Parede</button>
+                                              </div>
+                                              
+                                              <div className="flex gap-2 justify-between border-t border-white/5 pt-3">
+                                                  <button onClick={() => { onSetFogShape && onSetFogShape('brush'); if(fogTool === 'room') onSetFogTool('reveal'); }} className={`flex-1 py-2 flex flex-col items-center gap-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all border ${fogShape === 'brush' && fogTool !== 'room' ? 'bg-white/10 border-white text-white shadow-inner' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Pincel Livre">
                                                       <Brush size={14} /> Livre
                                                   </button>
-                                                  <button onClick={() => onSetFogShape && onSetFogShape('rect')} className={`flex-1 py-2 flex flex-col items-center gap-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all border ${fogShape === 'rect' ? 'bg-white/10 border-white text-white shadow-inner' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Retângulo">
-                                                      <Square size={14} /> Sala
+                                                  <button onClick={() => { onSetFogShape && onSetFogShape('rect'); if(fogTool === 'room') onSetFogTool('reveal'); }} className={`flex-1 py-2 flex flex-col items-center gap-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all border ${fogShape === 'rect' && fogTool !== 'room' ? 'bg-white/10 border-white text-white shadow-inner' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Retângulo Simples">
+                                                      <Square size={14} /> Caixa
                                                   </button>
-                                                  <button onClick={() => onSetFogShape && onSetFogShape('line')} className={`flex-1 py-2 flex flex-col items-center gap-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all border ${fogShape === 'line' ? 'bg-white/10 border-white text-white shadow-inner' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Linha">
+                                                  <button onClick={() => { onSetFogShape && onSetFogShape('line'); if(fogTool === 'room') onSetFogTool('reveal'); }} className={`flex-1 py-2 flex flex-col items-center gap-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all border ${fogShape === 'line' && fogTool !== 'room' ? 'bg-white/10 border-white text-white shadow-inner' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Desenhar Linha">
                                                       <Minus size={14} /> Linha
                                                   </button>
+                                                  
+                                                  <button onClick={() => onSetFogTool('room')} className={`flex-1 py-2 flex flex-col items-center gap-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all border ${fogTool === 'room' ? 'bg-cyan-900/40 border-cyan-500 text-cyan-300 shadow-[inset_0_0_10px_rgba(6,182,212,0.3)]' : 'bg-black border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300'}`} title="Demarcar um Novo Cômodo">
+                                                      <LayoutGrid size={14} /> Sala
+                                                  </button>
                                               </div>
-                                              <p className="text-center text-[9px] text-gray-500 font-serif italic mt-1 border-t border-white/5 pt-2">Arraste sobre o mapa para pintar a névoa.</p>
+                                              
+                                              <p className="text-center text-[9px] text-gray-500 font-serif italic mt-1 border-t border-white/5 pt-2">
+                                                  {fogTool === 'room' ? 'Arraste para demarcar um novo Cômodo.' : 'Arraste sobre o mapa para pintar a névoa.'}
+                                              </p>
                                           </div>
                                         )}
 
@@ -913,6 +1073,45 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                         </div>
                                         <button onClick={onSyncFog} className="w-full py-3 mt-2 bg-purple-900/30 hover:bg-purple-700/50 border border-purple-500/50 text-[10px] text-purple-100 uppercase tracking-[0.2em] font-black rounded-xl transition-all flex justify-center items-center gap-2 active:scale-95 shadow-[0_0_10px_rgba(168,85,247,0.2)]">📡 Sincronizar Jogadores</button>
                                 </div>
+                                
+                                {fogRooms.length > 0 && (
+                                    <div className="mt-4 pt-4 border-t border-white/10 relative z-10">
+                                        <h4 className="text-[9px] text-gray-400 uppercase tracking-widest font-bold mb-3 flex items-center justify-between">
+                                            <span>Salas Demarcadas</span>
+                                            <span className="bg-black border border-white/10 px-2 rounded-full">{fogRooms.length}</span>
+                                        </h4>
+                                        <div className="flex flex-col gap-2 max-h-48 overflow-y-auto custom-scrollbar">
+                                            {fogRooms.map(room => (
+                                                <div key={room.id} className="flex items-center justify-between bg-black/60 border border-white/5 p-2 rounded-lg group hover:border-cyan-500/30 transition-colors">
+                                                    <span className="text-xs font-black uppercase tracking-wide text-gray-300 truncate pl-2">{room.name}</span>
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        <button 
+                                                            onClick={() => onToggleFogRoom && onToggleFogRoom(room.id, true)} 
+                                                            className="px-3 py-1.5 bg-green-900/30 hover:bg-green-800/50 text-green-400 rounded transition-colors text-[9px] font-black uppercase tracking-wider"
+                                                            title="Revelar Sala"
+                                                        >
+                                                            Revelar
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => onToggleFogRoom && onToggleFogRoom(room.id, false)} 
+                                                            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded transition-colors text-[9px] font-black uppercase tracking-wider"
+                                                            title="Ocultar Sala"
+                                                        >
+                                                            Ocultar
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => onDeleteFogRoom && onDeleteFogRoom(room.id)} 
+                                                            className="p-1.5 hover:bg-red-900/50 text-gray-500 hover:text-red-400 rounded transition-colors"
+                                                            title="Deletar Marcação"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </section>
                             
                             <div className="pt-2 pb-6 space-y-3">

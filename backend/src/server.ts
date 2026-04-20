@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import { Server } from 'socket.io';
 import fs from 'fs';
 import path from 'path';
-import { MonsterImporter, NexusMonster } from './utils/MonsterImporter'; 
+import { MonsterImporter } from './utils/MonsterImporter';
 import { ClassImporter } from './utils/ClassImporter'; 
 import { SpellImporter } from './utils/SpellImporter'; 
 import { ItemImporter } from './utils/ItemImporter'; 
@@ -29,7 +29,7 @@ function loadJsonSafely(subPath: string) {
     const fullPath = path.join(DATA_DIR, subPath);
     if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
         try { return JSON.parse(fs.readFileSync(fullPath, 'utf8')); } 
-        catch (e) {}
+        catch (e) { console.error(`Erro ao parsear ${subPath}`); }
     }
     return null;
 }
@@ -49,11 +49,22 @@ function loadDirectory(dirName: string, targetKey: string) {
     return combinedData;
 }
 
-// 👉 MAGIA DE FUSÃO ATUALIZADA: Puxando Classes + Subclasses + Habilidades!
+// 👉 MAGIA NOVA: Carregando os Tomos e o Escudo do Mestre
+function loadBooks() {
+    const books: any = {};
+    const files = ['book-xdmg.json', 'book-xmm.json', 'book-xphb.json', 'book-xscreen.json'];
+    files.forEach(f => {
+        const data = loadJsonSafely(f);
+        if (data) books[f.replace('.json', '')] = data;
+    });
+    console.log(`📚 Tomos carregados: ${Object.keys(books).join(', ')}`);
+    return books;
+}
+
 function loadClassesWithSubclasses() {
     let allClasses: any[] = [];
     let allSubclasses: any[] = [];
-    let allFeatures: any[] = []; // O segredo que faltava
+    let allFeatures: any[] = []; 
     const dirPath = path.join(DATA_DIR, 'class');
     
     if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
@@ -80,12 +91,11 @@ function loadClassesWithSubclasses() {
 
 const RAW_CLASSES = loadClassesWithSubclasses();
 const FULL_CLASSES = RAW_CLASSES.length > 0 ? RAW_CLASSES : ClassImporter.loadClasses();
-
-// 👉 CORREÇÃO VITAL: Deixando os monstros e itens passarem pelos Importers para ficarem leves!
 const FULL_BESTIARY = MonsterImporter.loadBestiary();
 const FULL_SPELLS = SpellImporter.loadSpells();
 const FULL_ITEMS = ItemImporter.loadItems(); 
 const FULL_RACES = RaceImporter.loadRaces();
+const FULL_BOOKS = loadBooks(); // Carrega os Livros JSON
 
 let RAW_BACKGROUNDS = loadDirectory('backgrounds', 'background');
 if (RAW_BACKGROUNDS.length === 0) {
@@ -156,15 +166,16 @@ const autoSaveRoom = (roomId: string) => {
 io.on('connection', (socket) => {
   console.log('🔌 Nova conexão:', socket.id);
 
-  // 👉 GARANTIA DE ENVIO: Adicionado availableSpells: FULL_SPELLS nos dois envios
   socket.emit('compendiumSync', { availableClasses: FULL_CLASSES, availableRaces: FULL_RACES, availableBackgrounds: FULL_BACKGROUNDS, availableFeats: FULL_FEATS, availableSpells: FULL_SPELLS });
   
   socket.on('requestCompendium', () => { 
       socket.emit('compendiumSync', { availableClasses: FULL_CLASSES, availableRaces: FULL_RACES, availableBackgrounds: FULL_BACKGROUNDS, availableFeats: FULL_FEATS, availableSpells: FULL_SPELLS }); 
   });
 
-  socket.emit('compendiumSync', { availableClasses: FULL_CLASSES, availableRaces: FULL_RACES, availableBackgrounds: FULL_BACKGROUNDS, availableFeats: FULL_FEATS, availableSpells: FULL_SPELLS });
-  socket.on('requestCompendium', () => { socket.emit('compendiumSync', { availableClasses: FULL_CLASSES, availableRaces: FULL_RACES, availableBackgrounds: FULL_BACKGROUNDS, availableFeats: FULL_FEATS, availableSpells: FULL_SPELLS }); });
+  // 👉 Rota que envia os Livros da 5e (DM Screen e etc) para a interface do Mestre
+  socket.on('requestBooks', () => {
+      socket.emit('receiveBooks', FULL_BOOKS);
+  });
 
   socket.on('joinRoom', (roomId: string) => { socket.join(roomId); socket.emit('gameStateSync', getRoomState(roomId)); });
   socket.on('checkExistingCharacter', (data: any) => {

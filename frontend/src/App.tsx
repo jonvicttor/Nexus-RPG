@@ -8,10 +8,7 @@ import LoginScreen from './components/LoginScreen';
 import Lobby from './components/Lobby'; 
 import { ChatMessage } from './components/Chat';
 import EditEntityModal from './components/EditEntityModal';
-
-// 👉 MAGIA NOVA: Invocando o Universal Dice Roller
 import UniversalDiceRoller, { RollBonus } from './components/UniversalDiceRoller'; 
-
 import { getLevelFromXP } from './utils/gameRules';
 import MobilePlayerSheet from './components/MobilePlayerSheet'; 
 import CharacterSheetFloating from './components/CharacterSheetFloating'; 
@@ -43,24 +40,9 @@ export interface Entity {
   dmNotes?: string;
   customActions?: any[]; 
   details?: {
-    background?: string;
-    alignment?: string;
-    faith?: string;
-    lifestyle?: string;
-    personalityTraits?: string;
-    ideals?: string;
-    bonds?: string;
-    flaws?: string;
-    backgroundDesc?: string;
-    physical?: {
-      age?: string;
-      gender?: string;
-      height?: string;
-      weight?: string;
-      eyes?: string;
-      skin?: string;
-      hair?: string;
-    };
+    background?: string; alignment?: string; faith?: string; lifestyle?: string; personalityTraits?: string;
+    ideals?: string; bonds?: string; flaws?: string; backgroundDesc?: string;
+    physical?: { age?: string; gender?: string; height?: string; weight?: string; eyes?: string; skin?: string; hair?: string; };
     [key: string]: any;
   };
 }
@@ -75,18 +57,30 @@ export interface MapPing {
 }
 
 export interface QueuedRoll {
-  title: string;
-  subtitle: string;
-  mod: number;
-  dc: number;
-  entityId: number | null;
-  targetName: string;
-  isDamage?: boolean;          
-  damageExpression?: string;  
-  isCustomNoDamage?: boolean; 
-  damageType?: string; 
+  title: string; subtitle: string; mod: number; dc: number; entityId: number | null; targetName: string;
+  isDamage?: boolean; damageExpression?: string; isCustomNoDamage?: boolean; damageType?: string; 
 }
 
+export interface FogRoom {
+  id: string; name: string; cells: { x: number, y: number }[];
+}
+
+export interface Wall {
+  id: string; x1: number; y1: number; x2: number; y2: number;
+}
+
+const getLineIntersection = (p0x: number, p0y: number, p1x: number, p1y: number, p2x: number, p2y: number, p3x: number, p3y: number) => {
+    const s1x = p1x - p0x; const s1y = p1y - p0y;
+    const s2x = p3x - p2x; const s2y = p3y - p2y;
+    const denom = -s2x * s1y + s1x * s2y;
+    if (denom === 0) return null; 
+    const s = (-s1y * (p0x - p2x) + s1x * (p0y - p2y)) / denom;
+    const t = ( s2x * (p0y - p2y) - s2y * (p0x - p2x)) / denom;
+    if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+        return { x: p0x + (t * s1x), y: p0y + (t * s1y) };
+    }
+    return null;
+};
 
 const InitiativeModal = ({ entity, onClose, onConfirm }: { entity: Entity, onClose: () => void, onConfirm: (val: number) => void }) => {
   const [manualValue, setManualValue] = useState('');
@@ -151,12 +145,10 @@ const DamageOverlay = ({ data, onComplete }: { data: any, onComplete: () => void
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(220,38,38,0.2)_0%,transparent_70%)] pointer-events-none"></div>
-            
             <div className="flex flex-col items-center gap-6 relative z-10">
                 <h2 className="text-red-500 font-black tracking-[0.3em] uppercase text-xl drop-shadow-[0_0_10px_rgba(220,38,38,0.8)]">
                     {locked ? 'Impacto!' : 'Calculando Dano...'}
                 </h2>
-                
                 <div className="text-white text-lg bg-black/60 px-6 py-2 rounded-full border border-red-500/30 flex flex-col items-center gap-1 shadow-lg">
                     <span>🎯 Alvo: <span className="font-bold text-red-400">{data.targetName}</span></span>
                     {data.damageType && (
@@ -165,7 +157,6 @@ const DamageOverlay = ({ data, onComplete }: { data: any, onComplete: () => void
                         </span>
                     )}
                 </div>
-
                 {data.rolls && (
                     <div className="flex gap-4 items-center">
                         {currentRolls.map((val, idx) => (
@@ -178,7 +169,6 @@ const DamageOverlay = ({ data, onComplete }: { data: any, onComplete: () => void
                         )}
                     </div>
                 )}
-
                 {locked && (
                     <div className="animate-in zoom-in spin-in-12 duration-300 flex flex-col items-center mt-6">
                         <span className={`text-[10rem] leading-none font-black text-transparent bg-clip-text drop-shadow-[0_10px_20px_rgba(220,38,38,0.8)] ${data.damageModifier === 'immune' ? 'bg-gradient-to-b from-gray-400 to-gray-600' : data.damageModifier === 'resistant' ? 'bg-gradient-to-b from-blue-300 to-blue-600' : 'bg-gradient-to-b from-white via-red-500 to-red-950'}`} style={{ fontFamily: '"Cinzel Decorative", serif' }}>
@@ -220,9 +210,14 @@ function App() {
 
   const [entities, setEntities] = useState<Entity[]>([]);
   const [fogGrid, setFogGrid] = useState<boolean[][]>(createInitialFog());
+  
+  const [walls, setWalls] = useState<Wall[]>([]); 
+  
   const [isFogMode, setIsFogMode] = useState(false);
-  const [fogTool, setFogTool] = useState<'reveal' | 'hide'>('reveal'); 
+  const [fogTool, setFogTool] = useState<string>('reveal'); 
   const [fogShape, setFogShape] = useState<'brush' | 'rect' | 'line'>('brush'); 
+  const [fogRooms, setFogRooms] = useState<FogRoom[]>([]);
+  const [pendingRoomCells, setPendingRoomCells] = useState<{x: number, y: number}[] | null>(null);
 
   const [currentMap, setCurrentMap] = useState('/maps/floresta.jpg');
   const [initiativeList, setInitiativeList] = useState<InitiativeItem[]>([]);
@@ -236,10 +231,10 @@ function App() {
   const [statusSelectionId, setStatusSelectionId] = useState<number | null>(null);
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
 
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, entity: Entity } | null>(null);
   const [activeCharacterSheetId, setActiveCharacterSheetId] = useState<number | null>(null);
 
   const [customMonsters, setCustomMonsters] = useState<MonsterPreset[]>([]); 
-  
   const [availableClasses, setAvailableClasses] = useState<any[]>([]); 
   const [availableSpells, setAvailableSpells] = useState<any[]>([]); 
   const [availableItems, setAvailableItems] = useState<any[]>([]); 
@@ -261,23 +256,12 @@ function App() {
   const [damageOverlayData, setDamageOverlayData] = useState<any>(null);
 
   const [rollQueue, setRollQueue] = useState<QueuedRoll[]>([]);
-  
   const [diceRollId, setDiceRollId] = useState(0);
 
   const [diceContext, setDiceContext] = useState({
-      title: 'Teste Geral',
-      subtitle: 'Sorte',
-      dc: 15,
-      mod: 0,   
-      prof: 0,  
-      bonuses: [] as RollBonus[], 
-      rollType: 'normal' as 'normal' | 'advantage' | 'disadvantage',
-      entityId: null as number | null,
-      targetName: '',
-      isDamage: false,
-      damageExpression: '1d20',
-      isCustomNoDamage: false,
-      damageType: 'Físico' 
+      title: 'Teste Geral', subtitle: 'Sorte', dc: 15, mod: 0, prof: 0, bonuses: [] as RollBonus[], 
+      rollType: 'normal' as 'normal' | 'advantage' | 'disadvantage', entityId: null as number | null,
+      targetName: '', isDamage: false, damageExpression: '1d20', isCustomNoDamage: false, damageType: 'Físico' 
   });
 
   const [currentTrack, setCurrentTrack] = useState<string | null>(null);
@@ -289,7 +273,6 @@ function App() {
 
   const ignoreNextDiceSound = useRef(false);
 
-  // 🔥 TECLA ESC PARA LIMPAR SELEÇÃO (MAPA/ALVOS/ATACANTE) 🔥
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
           if (e.key === 'Escape') {
@@ -298,6 +281,8 @@ function App() {
               setStatusSelectionId(null);
               setActiveAoE(null);
               setActiveCharacterSheetId(null);
+              setContextMenu(null);
+              setPendingRoomCells(null);
           }
       };
       window.addEventListener('keydown', handleKeyDown);
@@ -305,22 +290,24 @@ function App() {
   }, []);
 
   useEffect(() => {
+      const closeMenu = () => setContextMenu(null);
+      window.addEventListener('click', closeMenu);
+      return () => window.removeEventListener('click', closeMenu);
+  }, []);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, entity: Entity) => {
+      e.preventDefault();
+      setContextMenu({ x: e.clientX, y: e.clientY, entity });
+  }, []);
+
+  useEffect(() => {
       if (rollQueue.length > 0 && !showBgDice) {
           const nextRoll = rollQueue[0];
           setDiceContext({
-              title: nextRoll.title,
-              subtitle: nextRoll.subtitle,
-              dc: nextRoll.dc,
-              mod: nextRoll.mod,
-              prof: 0,
-              bonuses: [],
-              rollType: 'normal',
-              entityId: nextRoll.entityId,
-              targetName: nextRoll.targetName,
-              isDamage: nextRoll.isDamage || false,
-              damageExpression: nextRoll.damageExpression || '1d20',
-              isCustomNoDamage: nextRoll.isCustomNoDamage || false,
-              damageType: nextRoll.damageType || 'Físico' 
+              title: nextRoll.title, subtitle: nextRoll.subtitle, dc: nextRoll.dc, mod: nextRoll.mod, prof: 0,
+              bonuses: [], rollType: 'normal', entityId: nextRoll.entityId, targetName: nextRoll.targetName,
+              isDamage: nextRoll.isDamage || false, damageExpression: nextRoll.damageExpression || '1d20',
+              isCustomNoDamage: nextRoll.isCustomNoDamage || false, damageType: nextRoll.damageType || 'Físico' 
           });
           setDiceRollId(prev => prev + 1); 
           setShowBgDice(true);
@@ -332,17 +319,11 @@ function App() {
         if (data.availableClasses) setAvailableClasses(data.availableClasses);
         if (data.availableRaces) setAvailableRaces(data.availableRaces);
     };
-
     socket.on('compendiumSync', handleCompendiumSync);
     socket.emit('requestCompendium');
-    
     const handleConnect = () => socket.emit('requestCompendium');
     socket.on('connect', handleConnect);
-
-    return () => { 
-        socket.off('compendiumSync', handleCompendiumSync); 
-        socket.off('connect', handleConnect);
-    };
+    return () => { socket.off('compendiumSync', handleCompendiumSync); socket.off('connect', handleConnect); };
   }, []);
 
   const getCenterGridPosition = useCallback(() => {
@@ -355,14 +336,8 @@ function App() {
   }, [mapOffset, mapScale]);
 
   useEffect(() => {
-    if (toastMsg && !toastMsg.sender) {
-        const timer = setTimeout(() => { setToastMsg(null); }, 4500); 
-        return () => clearTimeout(timer);
-    }
-    if (toastMsg && toastMsg.sender) {
-        const timer = setTimeout(() => setToastMsg(null), 10000);
-        return () => clearTimeout(timer);
-    }
+    if (toastMsg && !toastMsg.sender) { const timer = setTimeout(() => { setToastMsg(null); }, 4500); return () => clearTimeout(timer); }
+    if (toastMsg && toastMsg.sender) { const timer = setTimeout(() => setToastMsg(null), 10000); return () => clearTimeout(timer); }
   }, [toastMsg]);
 
   useEffect(() => {
@@ -372,9 +347,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-      if (privateChatTarget && chatEndRef.current) {
-          chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-      }
+      if (privateChatTarget && chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, privateChatTarget]);
 
   useEffect(() => {
@@ -449,6 +422,9 @@ function App() {
     socket.on('gameStateSync', (gameState: any) => {
       if (gameState.entities) setEntities(gameState.entities);
       if (gameState.fogGrid) setFogGrid(gameState.fogGrid);
+      
+      if (gameState.walls) setWalls(gameState.walls);
+      
       if (gameState.currentMap) setCurrentMap(gameState.currentMap);
       if (gameState.initiativeList) setInitiativeList(gameState.initiativeList);
       if (gameState.activeTurnId) setActiveTurnId(gameState.activeTurnId);
@@ -456,6 +432,7 @@ function App() {
       if (gameState.customMonsters) setCustomMonsters(gameState.customMonsters);
       if (gameState.globalBrightness !== undefined) setGlobalBrightness(gameState.globalBrightness);
       if (gameState.currentTrack) handlePlayMusic(gameState.currentTrack, false);
+      if (gameState.fogRooms) setFogRooms(gameState.fogRooms);
       
       if (gameState.availableClasses) setAvailableClasses(gameState.availableClasses);
       if (gameState.availableSpells) setAvailableSpells(gameState.availableSpells);
@@ -464,42 +441,33 @@ function App() {
       if (gameState.availableConditions) setAvailableConditions(gameState.availableConditions); 
     });
 
-    socket.on('notification', (data: any) => { 
-        setToastMsg({ text: data.message, id: Date.now() });
-    });
-
-    socket.on('gameStarted', () => {
-        setGamePhase('GAME');
-        addLog({ text: "A aventura começou! O Mestre abriu os portões.", type: 'info', sender: 'Sistema' });
-    });
-
-    socket.on('newDiceResult', () => {
-        if (!ignoreNextDiceSound.current) {
-            playSound('dado');
+    socket.on('fogGridSynced', (data: any) => { 
+        setFogGrid(data.grid); 
+        if (data.walls !== undefined) {
+            setWalls(data.walls);
         }
     });
+
+    socket.on('wallsUpdated', (data: any) => { if(data.walls) setWalls(data.walls); });
+    socket.on('fogRoomsUpdated', (data: any) => { if(data.rooms) setFogRooms(data.rooms); });
+    socket.on('notification', (data: any) => { setToastMsg({ text: data.message, id: Date.now() }); });
+    socket.on('gameStarted', () => { setGamePhase('GAME'); addLog({ text: "A aventura começou! O Mestre abriu os portões.", type: 'info', sender: 'Sistema' }); });
+    socket.on('newDiceResult', () => { if (!ignoreNextDiceSound.current) { playSound('dado'); } });
     
     socket.on('chatMessage', (data: any) => {
         const msg = data.message;
-        
         if (msg.isWhisper) {
             const myName = role === 'DM' ? 'MESTRE' : playerName;
             const isSender = msg.sender.toLowerCase() === myName.toLowerCase();
             const isTarget = msg.whisperTarget?.toLowerCase() === myName.toLowerCase() || (role === 'DM' && msg.whisperTarget?.toLowerCase() === 'mestre');
             const amIDM = role === 'DM'; 
-            
             if (!isSender && !isTarget && !amIDM) return; 
-
             if (isTarget && !isSender) {
                 setToastMsg({ text: `🤫 Mensagem de ${msg.sender}. Clique aqui para ler!`, id: Date.now(), sender: msg.sender });
                 playSound('notificacao'); 
             }
         }
-
-        setChatMessages(prev => {
-            if (prev.some(m => m.id === msg.id)) return prev;
-            return [...prev, msg];
-        });
+        setChatMessages(prev => { if (prev.some(m => m.id === msg.id)) return prev; return [...prev, msg]; });
     });
 
     socket.on('playMusic', (data: any) => handlePlayMusic(data.trackId, false));
@@ -512,25 +480,20 @@ function App() {
     socket.on('entityDeleted', (data: any) => { 
         setEntities(prev => {
             const deletedEnt = prev.find(e => e.id === data.entityId);
-            
             if (role === 'PLAYER' && deletedEnt && deletedEnt.name.toLowerCase() === playerName.toLowerCase() && deletedEnt.type === 'player') {
                 localStorage.removeItem('nexus_last_char'); 
                 setToastMsg({ text: "Sua ficha foi removida da mesa pelo Mestre.", id: Date.now() });
-                
-                setTimeout(() => {
-                    window.location.reload();
-                }, 3000);
+                setTimeout(() => { window.location.reload(); }, 3000);
             }
             return prev.filter(ent => ent.id !== data.entityId);
         }); 
-        
         setStatusSelectionId(prev => prev === data.entityId ? null : prev); 
         setAttackerId(prev => prev === data.entityId ? null : prev); 
     });
 
-    socket.on('mapChanged', (data: any) => { setCurrentMap(data.mapUrl); setFogGrid(data.fogGrid); });
+    socket.on('mapChanged', (data: any) => { setCurrentMap(data.mapUrl); setFogGrid(data.fogGrid); setWalls([]); });
     socket.on('fogUpdated', (data: any) => { setFogGrid(prev => { if (!prev || !prev[data.y]) return prev; const newGrid = prev.map(row => [...row]); newGrid[data.y][data.x] = data.shouldReveal; return newGrid; }); });
-    socket.on('fogGridSynced', (data: any) => setFogGrid(data.grid));
+    
     socket.on('initiativeUpdated', (data: any) => { setInitiativeList(data.list); setActiveTurnId(data.activeTurnId); });
     socket.on('triggerAudio', (data: any) => { if (data.trackId === 'suspense') handlePlayMusic('suspense', false); });
     socket.on('mapStateUpdated', (data: any) => { if (role === 'PLAYER') { setMapOffset(data.offset); setMapScale(data.scale); } });
@@ -539,22 +502,14 @@ function App() {
     socket.on('dmRequestRoll', (data: any) => {
         if (role === 'PLAYER') {
             setEntities(currentEntities => {
-                const myChar = currentEntities.find(e => e.name === playerName && e.id === data.targetId);
-                const isMyChar = myChar || currentEntities.some(e => e.id === data.targetId && e.type === 'player' && e.name === playerName);
-                
+                const myChar = currentEntities.find(e => e.name.toLowerCase() === playerName.toLowerCase() && e.id === data.targetId);
+                const isMyChar = myChar || currentEntities.some(e => e.id === data.targetId && e.type === 'player' && e.name.toLowerCase() === playerName.toLowerCase());
                 if (isMyChar) {
                     const charName = myChar ? myChar.name : playerName;
                     const charId = myChar ? myChar.id : data.targetId;
-                    
                     setRollQueue(prev => [...prev, {
-                        title: data.skillName,
-                        subtitle: `Exigido pelo Mestre`,
-                        mod: data.mod,
-                        dc: data.dc,
-                        entityId: charId,
-                        targetName: charName,
-                        isDamage: data.isDamage || false,
-                        damageExpression: data.damageExpression || '1d20',
+                        title: data.skillName, subtitle: `Exigido pelo Mestre`, mod: data.mod, dc: data.dc, entityId: charId,
+                        targetName: charName, isDamage: data.isDamage || false, damageExpression: data.damageExpression || '1d20',
                         isCustomNoDamage: data.isCustomNoDamage || false
                     }]);
                     playSound('notificacao');
@@ -573,7 +528,7 @@ function App() {
       socket.off('mapChanged'); socket.off('fogUpdated'); socket.off('fogGridSynced'); socket.off('initiativeUpdated'); 
       socket.off('triggerAudio'); socket.off('mapStateUpdated'); socket.off('globalBrightnessUpdated'); socket.off('dmRequestRoll');
       socket.off('playMusic'); socket.off('stopMusic'); socket.off('playSFX'); socket.off('mapPinged'); 
-      socket.off('gameStarted');
+      socket.off('gameStarted'); socket.off('fogRoomsUpdated'); socket.off('wallsUpdated');
     };
   }, [isLoggedIn, addLog, role, playerName, handlePlayMusic, handleStopMusic, handlePlaySFX, playSound]); 
 
@@ -583,16 +538,13 @@ function App() {
           data.loot.forEach((item: any, index: number) => {
               createEntity('loot', `Saque: ${item.name}`, pos.x + (index % 3), pos.y + Math.floor(index / 3), {
                   inventory: [{ ...item, id: Date.now().toString() + index, quantity: 1, isEquipped: false }],
-                  image: item.image || '/tokens/loot.png', 
-                  classType: 'Item',
-                  size: 0.8
+                  image: item.image || '/tokens/loot.png', classType: 'Item', size: 0.8
               });
           });
           addLog({ text: `💰 O Mestre materializou ${data.loot.length} tesouro(s) no mapa!`, type: 'info', sender: 'Sistema' });
           setShowLootGenerator(false);
           handlePlaySFX('dado', true);
       };
-
       socket.on('randomLootGenerated', handleLootGenerated);
       return () => { socket.off('randomLootGenerated', handleLootGenerated); };
   }, [getCenterGridPosition, createEntity, addLog, handlePlaySFX]);
@@ -613,49 +565,29 @@ function App() {
   const handleRequestInitiative = (targetIds: number[]) => {
       const dmQueue: QueuedRoll[] = [];
       let playerPushed = false;
-
       targetIds.forEach(id => {
           const ent = entities.find(e => e.id === id);
           if (!ent) return;
           const dexMod = ent.stats ? Math.floor((ent.stats.dex - 10) / 2) : 0;
-          
           if (ent.type === 'player') {
               socket.emit('dmRequestRoll', { roomId, targetId: id, skillName: 'Iniciativa', mod: dexMod, dc: 0 });
               playerPushed = true;
           } else {
-              dmQueue.push({
-                  title: 'Iniciativa',
-                  subtitle: `Teste para ${ent.name}`,
-                  mod: dexMod,
-                  dc: 0,
-                  entityId: id,
-                  targetName: ent.name
-              });
+              dmQueue.push({ title: 'Iniciativa', subtitle: `Teste para ${ent.name}`, mod: dexMod, dc: 0, entityId: id, targetName: ent.name });
           }
       });
-
-      if (playerPushed) {
-          addLog({ text: `⚔️ O Mestre exigiu que os aventureiros selecionados rolem suas Iniciativas!`, type: 'info', sender: 'Sistema' });
-      }
-
-      if (dmQueue.length > 0) {
-          setRollQueue(prev => [...prev, ...dmQueue]);
-      }
+      if (playerPushed) addLog({ text: `⚔️ O Mestre exigiu que os aventureiros selecionados rolem suas Iniciativas!`, type: 'info', sender: 'Sistema' });
+      if (dmQueue.length > 0) setRollQueue(prev => [...prev, ...dmQueue]);
       setTargetEntityIds([]);
   };
 
   const handleRequestCustomRoll = (targetIds: number[], expression: string, title: string) => {
       if (targetIds.length === 0) {
-           setRollQueue(prev => [...prev, {
-               title: title, subtitle: 'Rolagem Customizada', dc: 0, mod: 0, entityId: null, targetName: 'Mestre', 
-               isDamage: true, damageExpression: expression, isCustomNoDamage: true 
-           }]);
+           setRollQueue(prev => [...prev, { title: title, subtitle: 'Rolagem Customizada', dc: 0, mod: 0, entityId: null, targetName: 'Mestre', isDamage: true, damageExpression: expression, isCustomNoDamage: true }]);
            return;
       }
-      
       let playerPushed = false;
       const dmQueue: QueuedRoll[] = [];
-
       targetIds.forEach(id => {
            const ent = entities.find(e => e.id === id);
            if (!ent) return;
@@ -663,20 +595,11 @@ function App() {
                socket.emit('dmRequestRoll', { roomId, targetId: id, skillName: title, mod: 0, dc: 0, isDamage: true, damageExpression: expression, isCustomNoDamage: true });
                playerPushed = true;
            } else {
-               dmQueue.push({
-                   title: title, subtitle: `Rolagem para ${ent.name}`, dc: 0, mod: 0, entityId: id, targetName: ent.name, 
-                   isDamage: true, damageExpression: expression, isCustomNoDamage: true
-               });
+               dmQueue.push({ title: title, subtitle: `Rolagem para ${ent.name}`, dc: 0, mod: 0, entityId: id, targetName: ent.name, isDamage: true, damageExpression: expression, isCustomNoDamage: true });
            }
       });
-
-      if (playerPushed) {
-           addLog({ text: `⚔️ O Mestre exigiu uma rolagem de **${expression}** (${title})!`, type: 'info', sender: 'Sistema' });
-      }
-
-      if (dmQueue.length > 0) {
-          setRollQueue(prev => [...prev, ...dmQueue]);
-      }
+      if (playerPushed) addLog({ text: `⚔️ O Mestre exigiu uma rolagem de **${expression}** (${title})!`, type: 'info', sender: 'Sistema' });
+      if (dmQueue.length > 0) setRollQueue(prev => [...prev, ...dmQueue]);
       setTargetEntityIds([]);
   };
   
@@ -687,20 +610,9 @@ function App() {
   const handleApplyDamageFromChat = (targetId: number, damageExpression: string) => {
         const target = entities.find(e => e.id === targetId);
         if (!target) return;
-
         const rollMatch = damageExpression.match(/^(\d+)d(\d+)(\+(\d+))?$/i);
-
         if (rollMatch) {
-            setRollQueue(prev => [...prev, {
-                title: `Dano em ${target.name}`,
-                subtitle: damageExpression,
-                dc: 0,
-                mod: 0, 
-                entityId: targetId,
-                targetName: target.name,
-                isDamage: true,
-                damageExpression: damageExpression
-            }]);
+            setRollQueue(prev => [...prev, { title: `Dano em ${target.name}`, subtitle: damageExpression, dc: 0, mod: 0, entityId: targetId, targetName: target.name, isDamage: true, damageExpression: damageExpression }]);
         } else { 
             const totalDano = parseInt(damageExpression) || 0; 
             if (totalDano > 0) {
@@ -721,81 +633,61 @@ function App() {
           if (!diceContext.isCustomNoDamage && diceContext.entityId) {
               const target = entities.find(e => e.id === diceContext.entityId);
               let finalDamage = total;
-              let dmgModifierInfo = 'normal'; 
+              let dmgModifierInfo = 'normal';
 
               if (target && diceContext.damageType) {
                   const dType = diceContext.damageType.toLowerCase();
                   const targetDataStr = JSON.stringify(target).toLowerCase();
-
                   if (target.immunities?.some(i => i.toLowerCase().includes(dType)) || targetDataStr.includes(`imune a ${dType}`) || targetDataStr.includes(`imunidade a ${dType}`)) {
-                      finalDamage = 0;
-                      dmgModifierInfo = 'immune';
-                  } 
-                  else if (target.vulnerabilities?.some(v => v.toLowerCase().includes(dType)) || targetDataStr.includes(`vulnerável a ${dType}`) || targetDataStr.includes(`vulnerabilidade a ${dType}`)) {
-                      finalDamage = total * 2;
-                      dmgModifierInfo = 'vulnerable';
-                  }
-                  else if (target.resistances?.some(r => r.toLowerCase().includes(dType)) || targetDataStr.includes(`resistente a ${dType}`) || targetDataStr.includes(`resistência a ${dType}`)) {
-                      finalDamage = Math.floor(total / 2);
-                      dmgModifierInfo = 'resistant';
+                      finalDamage = 0; dmgModifierInfo = 'immune';
+                  } else if (target.vulnerabilities?.some(v => v.toLowerCase().includes(dType)) || targetDataStr.includes(`vulnerável a ${dType}`) || targetDataStr.includes(`vulnerabilidade a ${dType}`)) {
+                      finalDamage = total * 2; dmgModifierInfo = 'vulnerable';
+                  } else if (target.resistances?.some(r => r.toLowerCase().includes(dType)) || targetDataStr.includes(`resistente a ${dType}`) || targetDataStr.includes(`resistência a ${dType}`)) {
+                      finalDamage = Math.floor(total / 2); dmgModifierInfo = 'resistant';
                   }
               }
 
-              if (finalDamage > 0) {
-                  handleUpdateHP(diceContext.entityId, -finalDamage); 
-              }
+              if (finalDamage > 0) handleUpdateHP(diceContext.entityId, -finalDamage);
 
               let narrativeText = `⚔️ **DANO APLICADO:** Rolou ${diceContext.damageExpression} ${rollString}${modStr} = **${total} de Dano ${diceContext.damageType}** no ${diceContext.targetName}!`;
-              
               if (dmgModifierInfo === 'immune') narrativeText = `🛡️ **IMUNIDADE:** ${diceContext.targetName} é imune a ${diceContext.damageType}! Sofreu 0 de dano.`;
               if (dmgModifierInfo === 'resistant') narrativeText = `🛡️ **RESISTÊNCIA:** ${diceContext.targetName} resistiu ao dano ${diceContext.damageType}! Sofreu apenas **${finalDamage}** de dano.`;
               if (dmgModifierInfo === 'vulnerable') narrativeText = `🩸 **VULNERABILIDADE:** ${diceContext.targetName} é vulnerável a ${diceContext.damageType}! Sofreu cruéis **${finalDamage}** de dano!`;
 
               addLog({ text: narrativeText, type: 'damage', sender: 'Sistema' });
-              
               setDamageOverlayData({ rolls: null, sides: 1, mod: finalMod, total: finalDamage, targetName: diceContext.targetName, damageType: diceContext.damageType, damageModifier: dmgModifierInfo });
-              setTimeout(() => {
-                  setShowBgDice(false);
-                  setRollQueue(prev => prev.slice(1));
-              }, 2000);
+              
+              setRollQueue(prev => prev.slice(1));
           } else {
               const publicText = `🎲 **${senderName}** rolou ${diceContext.title} (${diceContext.damageExpression}):\n🎯 Resultado: ${rollString}${modStr} = **${total}**`;
               if (isSecret) addLog({ text: `👁️ (Secreto) ` + publicText, type: 'roll', sender: senderName, isSecret: true, secretContent: `👁️ (Secreto) ` + publicText } as any);
               else { addLog({ text: publicText, type: 'roll', sender: senderName } as any); socket.emit('rollDice', { sides: 20, result: total, roomId, user: senderName }); }
-              setTimeout(() => { setShowBgDice(false); setRollQueue(prev => prev.slice(1)); }, 2000);
+              
+              setRollQueue(prev => prev.slice(1));
           }
           return;
       }
 
       let resultMsg = isCritical ? (total >= 20 ? "CRÍTICO! ⚔️" : "FALHA CRÍTICA! 💀") : (isSuccess ? "SUCESSO! ✅" : "FALHA ❌");
-      let isAttackHit = false; 
-      let targetIdForDamage: number | null = null; 
-      let targetInfoMsg = "";
-      let finalDamageExpression = diceContext.damageExpression || "";
-      let finalDamageType = diceContext.damageType || "Físico";
-
+      let isAttackHit = false; let targetIdForDamage: number | null = null; let targetInfoMsg = "";
+      let finalDamageExpression = diceContext.damageExpression || ""; let finalDamageType = diceContext.damageType || "Físico";
       const isAttack = diceContext.title.toLowerCase().includes("ataque");
 
       if (isAttack) {
-          const attacker = role === 'DM' && attackerId ? entities.find(e => e.id === attackerId) : entities.find(e => e.name === playerName);
+          const attacker = role === 'DM' && attackerId ? entities.find(e => e.id === attackerId) : entities.find(e => e.name.toLowerCase() === playerName.toLowerCase());
           const weaponName = diceContext.title.replace(/Ataque:\s*/i, '').trim();
           const weapon = attacker?.inventory?.find(i => i.name.toLowerCase() === weaponName.toLowerCase());
 
           if (weapon && !finalDamageExpression) {
-              let baseDmg = weapon.stats?.damage || '1d4';
-              let dmgMod = 0;
-              
+              let baseDmg = weapon.stats?.damage || '1d4'; let dmgMod = 0;
               if (attacker && attacker.stats) {
-                  const strMod = Math.floor((attacker.stats.str - 10) / 2);
-                  const dexMod = Math.floor((attacker.stats.dex - 10) / 2);
+                  const strMod = Math.floor((attacker.stats.str - 10) / 2); const dexMod = Math.floor((attacker.stats.dex - 10) / 2);
                   const isFinesseOrRanged = weapon.stats?.properties?.some(p => p.toLowerCase().includes('finesse') || p.toLowerCase().includes('distância') || p.toLowerCase().includes('ranged')) || weaponName.toLowerCase().includes('arco') || weaponName.toLowerCase().includes('besta') || weaponName.toLowerCase().includes('adaga') || weaponName.toLowerCase().includes('rapieira');
                   dmgMod = isFinesseOrRanged ? Math.max(strMod, dexMod) : strMod;
               }
-
               const dmgMatch = baseDmg.match(/^(\d+)d(\d+)/i);
               if (dmgMatch) {
-                  const count = parseInt(dmgMatch[1]);
-                  const sides = parseInt(dmgMatch[2]);
+                  const count = parseInt(dmgMatch[1]); const sides = parseInt(dmgMatch[2]);
                   const rollsCount = (isCritical && total >= 20) ? count * 2 : count;
                   finalDamageExpression = `${rollsCount}d${sides}${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''}`;
               }
@@ -808,22 +700,15 @@ function App() {
               const target = entities.find(e => e.id === targetEntityIds[0]);
               if (target) {
                   if (total >= target.ac || (isCritical && total >= 20)) { 
-                      resultMsg = `**ACERTOU!** ⚔️`; 
-                      isAttackHit = true; 
-                      targetIdForDamage = target.id;
-                      targetInfoMsg = `\n🎯 *${target.name}* recebeu o golpe!`;
+                      resultMsg = `**ACERTOU!** ⚔️`; isAttackHit = true; targetIdForDamage = target.id; targetInfoMsg = `\n🎯 *${target.name}* recebeu o golpe!`;
                       socket.emit('triggerCombatAnimation', { roomId, attackerName: senderName, targetId: target.id, attackType: diceContext.title.includes('Mágico') ? 'magia' : 'fisico' });
                       handlePlaySFX('sword', true);
                   } else { 
-                      resultMsg = `**ERROU!** 🛡️`; 
-                      targetInfoMsg = `\n💨 *${target.name}* defendeu.`; 
-                      handlePlaySFX('dado', true);
+                      resultMsg = `**ERROU!** 🛡️`; targetInfoMsg = `\n💨 *${target.name}* defendeu.`; handlePlaySFX('dado', true);
                   }
               }
           } else {
-              resultMsg = `**Ataque Rolado** ⚔️`;
-              targetInfoMsg = `\n*(⚠️ Selecione um alvo para o Dano Automático funcionar!)*`;
-              handlePlaySFX('sword', true);
+              resultMsg = `**Ataque Rolado** ⚔️`; targetInfoMsg = `\n*(⚠️ Selecione um alvo para o Dano Automático funcionar!)*`; handlePlaySFX('sword', true);
           }
       }
 
@@ -839,7 +724,6 @@ function App() {
       }
 
       const publicText = `🎲 **${senderName}** rolou ${diceContext.title}:\n🎯 Resultado: **${total}** - ${resultMsg}${targetInfoMsg}`;
-
       if (isSecret) {
           const secretText = `👁️ (Secreto) ` + publicText;
           addLog({ text: role === 'DM' ? secretText : `🎲 **${senderName}** rolou dados misteriosamente...`, type: 'roll', sender: senderName, isSecret: true, secretContent: secretText, targetId: targetIdForDamage, isHit: isAttackHit, damage: finalDamageExpression } as any);
@@ -850,23 +734,15 @@ function App() {
           socket.emit('rollDice', { sides: 20, result: total, roomId, user: senderName });
       }
 
-      setTimeout(() => {
-          setShowBgDice(false);
-          setRollQueue(prev => prev.slice(1));
-
-          if (isAttackHit && finalDamageExpression && targetIdForDamage) {
-              const target = entities.find(e => e.id === targetIdForDamage);
-              setTimeout(() => {
-                  setRollQueue(prev => [...prev, {
-                      title: `Dano: ${diceContext.title}`,
-                      subtitle: `Em ${target?.name || 'Alvo'}`,
-                      dc: 0, mod: 0, entityId: targetIdForDamage, targetName: target?.name || 'Alvo',
-                      isDamage: true, damageExpression: finalDamageExpression,
-                      damageType: finalDamageType
-                  }]);
-              }, 500); 
-          }
-      }, 2000);
+      setRollQueue(prev => prev.slice(1));
+      
+      if (isAttackHit && finalDamageExpression && targetIdForDamage) {
+          const target = entities.find(e => e.id === targetIdForDamage);
+          setRollQueue(prev => [...prev, {
+              title: `Dano: ${diceContext.title}`, subtitle: `Em ${target?.name || 'Alvo'}`, dc: 0, mod: 0, entityId: targetIdForDamage, targetName: target?.name || 'Alvo',
+              isDamage: true, damageExpression: finalDamageExpression, damageType: finalDamageType
+          }]);
+      }
   };
 
   const openDiceRoller = () => { setRollQueue(prev => [...prev, { title: 'Rolagem Livre', subtitle: 'Sorte', dc: 10, mod: 0, entityId: null, targetName: '' }]); };
@@ -893,43 +769,32 @@ function App() {
       setEntities(prev => {
           const updatedEntities = prev.map(ent => {
               if (ent.type !== 'player') return ent; 
-
               let updates: Partial<Entity> = { hp: ent.maxHp };
-
               if (ent.spellSlots) {
                   const restoredSlots: Record<number, { max: number, used: number }> = {};
-                  Object.entries(ent.spellSlots).forEach(([level, slotData]) => {
-                      restoredSlots[parseInt(level)] = { max: slotData.max, used: 0 };
-                  });
+                  Object.entries(ent.spellSlots).forEach(([level, slotData]) => { restoredSlots[parseInt(level)] = { max: slotData.max, used: 0 }; });
                   updates.spellSlots = restoredSlots;
               }
-
               socket.emit('updateEntityStatus', { entityId: ent.id, updates, roomId });
               return { ...ent, ...updates };
           });
           return updatedEntities;
       });
-
       handlePlaySFX('campfire', true);
       addLog({ text: "🏕️ **O grupo montou acampamento.** Vocês recuperaram todo o HP e seus espaços de magia através de um longo descanso.", type: 'info', sender: 'Mestre' });
   };
 
   const handleSendMessage = (text: string) => {
       const senderName = role === 'DM' ? 'MESTRE' : playerName;
-      
       const spellMatch = text.match(/conjurou (\*\*o truque\*\* )?\*\*([^*]+)\*\*/i);
       if (spellMatch) {
-          if (targetEntityIds.length > 0) {
-              socket.emit('triggerCombatAnimation', { roomId, attackerName: senderName, targetId: targetEntityIds[0], attackType: 'magia' });
-          }
+          if (targetEntityIds.length > 0) socket.emit('triggerCombatAnimation', { roomId, attackerName: senderName, targetId: targetEntityIds[0], attackType: 'magia' });
           handlePlaySFX('magic', true);
       }
-
       const whisperMatch = text.match(/^\/w\s+"([^"]+)"\s+(.+)$/i) || text.match(/^\/w\s+([^\s]+)\s+(.+)$/i);
       if (whisperMatch) {
           const whisperTarget = whisperMatch[1]; const whisperText = whisperMatch[2];
-          addLog({ text: whisperText, type: 'chat', sender: senderName, isWhisper: true, whisperTarget: whisperTarget });
-          return;
+          addLog({ text: whisperText, type: 'chat', sender: senderName, isWhisper: true, whisperTarget: whisperTarget }); return;
       }
       const rollMatch = text.match(/^\/r\s+(\d+)d(\d+)(\+(\d+))?$/i);
       if (rollMatch) {
@@ -955,15 +820,10 @@ function App() {
           const newInv = (ent.inventory || []).filter(i => i.id !== item.id); socket.emit('updateEntityStatus', { entityId: sourceId, updates: { inventory: newInv }, roomId }); return { ...ent, inventory: newInv };
       }));
       const lootEntity: Entity = { 
-          id: Date.now(), name: item.name, hp: 1, maxHp: 1, ac: 0, x: x, y: y, 
-          type: 'loot', color: '#fbbf24', image: item.image, size: 0.6, conditions: [], 
-          stats: { str:0, dex:0, con:0, int:0, wis:0, cha:0 }, 
-          visible: true, inventory: [item], level: 0, classType: 'Item' 
+          id: Date.now(), name: item.name, hp: 1, maxHp: 1, ac: 0, x: x, y: y, type: 'loot', color: '#fbbf24', image: item.image, size: 0.6, conditions: [], stats: { str:0, dex:0, con:0, int:0, wis:0, cha:0 }, visible: true, inventory: [item], level: 0, classType: 'Item' 
       };
-      setEntities(prev => [...prev, lootEntity]); 
-      socket.emit('createEntity', { entity: lootEntity, roomId }); 
-      addLog({ text: `🎒 ${item.name} foi jogado no chão!`, type: 'info', sender: 'Sistema' }); 
-      handlePlaySFX('dado', true); 
+      setEntities(prev => [...prev, lootEntity]); socket.emit('createEntity', { entity: lootEntity, roomId }); 
+      addLog({ text: `🎒 ${item.name} foi jogado no chão!`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true); 
   };
 
   const handleGiveItemToToken = (item: Item, sourceId: number, targetId: number) => {
@@ -976,7 +836,7 @@ function App() {
   };
 
   const handlePlayerDropItem = (itemId: string) => {
-      const myEntity = entities.find(e => e.name === playerName && e.type === 'player');
+      const myEntity = entities.find(e => e.name.toLowerCase() === playerName.toLowerCase() && e.type === 'player');
       if (!myEntity) return;
       const itemToDrop = myEntity.inventory?.find(i => i.id === itemId);
       if (!itemToDrop) return;
@@ -985,43 +845,24 @@ function App() {
 
   const handlePickUpLoot = (lootEntity: Entity) => {
       let receiver: Entity | undefined;
-      if (role === 'PLAYER') { 
-          receiver = entities.find(e => e.name === playerName && e.type === 'player'); 
-      } else { 
-          if (targetEntityIds.length > 0) receiver = entities.find(e => e.id === targetEntityIds[0]); 
-      }
+      if (role === 'PLAYER') { receiver = entities.find(e => e.name.toLowerCase() === playerName.toLowerCase() && e.type === 'player'); } 
+      else { if (targetEntityIds.length > 0) receiver = entities.find(e => e.id === targetEntityIds[0]); }
       
-      if (!receiver) { 
-          setToastMsg({ text: role === 'DM' ? "Selecione um token (Alvo vermelho) para entregar o item." : "Você não tem um personagem para pegar isso.", id: Date.now() }); 
-          return; 
-      }
+      if (!receiver) { setToastMsg({ text: role === 'DM' ? "Selecione um token (Alvo vermelho) para entregar o item." : "Você não tem um personagem para pegar isso.", id: Date.now() }); return; }
 
       const item = lootEntity.inventory && lootEntity.inventory[0]; 
-      if (!item) { 
-          handleDeleteEntity(lootEntity.id); 
-          return; 
-      }
+      if (!item) { handleDeleteEntity(lootEntity.id); return; }
 
-      let updates: Partial<Entity> = {};
-      let logMsg = '';
+      let updates: Partial<Entity> = {}; let logMsg = '';
 
       if (item.stats?.isTreasure && item.stats.coins) {
           const currentCoins = receiver.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
           const incCoins = item.stats.coins;
-          
-          updates.coins = {
-              cp: currentCoins.cp + (incCoins.cp || 0),
-              sp: currentCoins.sp + (incCoins.sp || 0),
-              ep: currentCoins.ep || 0,
-              gp: currentCoins.gp + (incCoins.gp || 0),
-              pp: currentCoins.pp || 0
-          };
-          
+          updates.coins = { cp: currentCoins.cp + (incCoins.cp || 0), sp: currentCoins.sp + (incCoins.sp || 0), ep: currentCoins.ep || 0, gp: currentCoins.gp + (incCoins.gp || 0), pp: currentCoins.pp || 0 };
           const coinStrs = [];
           if (incCoins.gp > 0) coinStrs.push(`${incCoins.gp} PO`);
           if (incCoins.sp > 0) coinStrs.push(`${incCoins.sp} PP`);
           if (incCoins.cp > 0) coinStrs.push(`${incCoins.cp} PC`);
-          
           logMsg = `💰 **${receiver.name}** recolheu **${item.name}** (${coinStrs.join(', ')}).`;
       } else {
           updates.inventory = [...(receiver.inventory || []), item];
@@ -1030,11 +871,8 @@ function App() {
 
       setEntities(prev => prev.map(ent => ent.id === receiver!.id ? { ...ent, ...updates } : ent)); 
       socket.emit('updateEntityStatus', { entityId: receiver.id, updates, roomId });
-      
-      handleDeleteEntity(lootEntity.id); 
-      setStatusSelectionId(null); 
-      addLog({ text: logMsg, type: 'info', sender: 'Sistema' }); 
-      handlePlaySFX('dado', true); 
+      handleDeleteEntity(lootEntity.id); setStatusSelectionId(null); 
+      addLog({ text: logMsg, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true); 
   };
 
   const handleAddEntity = (type: 'enemy' | 'player', name: string, customStats?: MonsterPreset) => { 
@@ -1048,26 +886,98 @@ function App() {
   };
 
   const handleUpdatePosition = (id: number, newX: number, newY: number) => {
-    let shouldSyncFog = false; let newFogGrid = [...fogGrid.map(row => [...row])];
-    setEntities(prev => {
-        return prev.map(ent => {
-            if (ent.id === id) {
-                const updatedEnt = { ...ent, x: newX, y: newY };
-                if (updatedEnt.type === 'player' && updatedEnt.visionRadius && updatedEnt.visionRadius > 0) {
-                     const radius = updatedEnt.visionRadius; const startY = Math.max(0, Math.floor(newY - radius)); const endY = Math.min(newFogGrid.length - 1, Math.ceil(newY + radius)); const startX = Math.max(0, Math.floor(newX - radius)); const endX = Math.min(newFogGrid[0].length - 1, Math.ceil(newX + radius));
-                     for (let y = startY; y <= endY; y++) { for (let x = startX; x <= endX; x++) { const distance = Math.sqrt(Math.pow(x - newX, 2) + Math.pow(y - newY, 2)); if (distance <= radius && newFogGrid[y][x] === false) { newFogGrid[y][x] = true; shouldSyncFog = true; } } }
+    if (!fogGrid || fogGrid.length === 0 || !fogGrid[0]) {
+        setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, x: newX, y: newY } : ent));
+        socket.emit('updateEntityPosition', { entityId: id, x: newX, y: newY, roomId });
+        return;
+    }
+
+    let shouldSyncFog = false; 
+    let newFogGrid = fogGrid.map(row => [...row]);
+    
+    const targetEnt = entities.find(e => e.id === id);
+    
+    if (targetEnt && targetEnt.type === 'player' && targetEnt.visionRadius && targetEnt.visionRadius > 0) {
+        const radius = targetEnt.visionRadius; 
+        
+        const sX = newX + (targetEnt.size || 1) / 2;
+        const sY = newY + (targetEnt.size || 1) / 2;
+        
+        const tokenAngleRad = ((targetEnt.rotation || 0) + 90) * (Math.PI / 180);
+
+        const minX = Math.max(0, Math.floor(sX - radius)); 
+        const maxX = Math.min(newFogGrid[0].length - 1, Math.ceil(sX + radius)); 
+        const minY = Math.max(0, Math.floor(sY - radius)); 
+        const maxY = Math.min(newFogGrid.length - 1, Math.ceil(sY + radius));
+        
+        const perimeter: {x: number, y: number}[] = [];
+        for (let x = minX; x <= maxX; x++) { perimeter.push({x, y: minY}); perimeter.push({x, y: maxY}); }
+        for (let y = minY + 1; y < maxY; y++) { perimeter.push({x: minX, y}); perimeter.push({x: maxX, y}); }
+
+        perimeter.forEach(target => {
+            const tX = target.x + 0.5;
+            const tY = target.y + 0.5;
+            
+            const rayAngle = Math.atan2(tY - sY, tX - sX);
+            let angleDiff = rayAngle - tokenAngleRad;
+            
+            while (angleDiff <= -Math.PI) angleDiff += Math.PI * 2;
+            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+            
+            if (Math.abs(angleDiff) > (Math.PI / 2) + 0.05) return; 
+
+            let closestInt = { x: tX, y: tY, dist: radius };
+            
+            walls.forEach(wall => {
+                const int = getLineIntersection(sX, sY, tX, tY, wall.x1, wall.y1, wall.x2, wall.y2);
+                if (int) {
+                    const dist = Math.hypot(int.x - sX, int.y - sY);
+                    if (dist < closestInt.dist) {
+                        closestInt = { x: int.x, y: int.y, dist };
+                    }
                 }
-                return updatedEnt;
+            });
+
+            let x0 = Math.floor(sX); let y0 = Math.floor(sY);
+            let x1 = Math.floor(closestInt.x); let y1 = Math.floor(closestInt.y);
+            let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+            let sx = (x0 < x1) ? 1 : -1, sy = (y0 < y1) ? 1 : -1;
+            let err = dx - dy;
+
+            let loopSafeguard = 0;
+            while (loopSafeguard++ < 150) { 
+                if (y0 >= 0 && y0 < newFogGrid.length && x0 >= 0 && x0 < newFogGrid[0].length) {
+                    if (newFogGrid[y0][x0] === false) {
+                        newFogGrid[y0][x0] = true;
+                        shouldSyncFog = true;
+                    }
+                } else { break; }
+
+                if (x0 === x1 && y0 === y1) break;
+                let e2 = 2 * err;
+                if (e2 > -dy) { err -= dy; x0 += sx; }
+                if (e2 < dx) { err += dx; y0 += sy; }
             }
-            return ent;
         });
-    });
+    }
+
+    setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, x: newX, y: newY } : ent));
     socket.emit('updateEntityPosition', { entityId: id, x: newX, y: newY, roomId });
-    if (shouldSyncFog) { setFogGrid(newFogGrid); socket.emit('syncFogGrid', { grid: newFogGrid, roomId }); }
+    
+    if (shouldSyncFog) { 
+        setFogGrid(newFogGrid); 
+        socket.emit('syncFogGrid', { grid: newFogGrid, roomId, walls }); 
+    }
   };
 
   const handleRotateToken = (id: number, angle: number) => { setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, rotation: angle } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { rotation: angle }, roomId }); };
-  const handleResizeToken = (id: number, size: number) => { setEntities(prev => prev.map(ent => { if (ent.id !== id) return ent; const newVisible = ent.visible === undefined ? false : !ent.visible; if (role === 'DM') addLog({ text: newVisible ? `👁️ ${ent.name} revelou-se!` : `👻 ${ent.name} desapareceu nas sombras.`, type: 'info', sender: 'Sistema' }, false); socket.emit('updateEntityStatus', { entityId: id, updates: { visible: newVisible }, roomId }); return { ...ent, visible: newVisible }; })); };
+  const handleResizeToken = (id: number, size: number) => { 
+      setEntities(prev => prev.map(ent => { 
+          if (ent.id !== id) return ent; 
+          socket.emit('updateEntityStatus', { entityId: id, updates: { size: size }, roomId }); 
+          return { ...ent, size: size }; 
+      })); 
+  }; 
   const handleFlipToken = (id: number) => { const ent = entities.find(e => e.id === id); if (!ent) return; const newMirrored = !ent.mirrored; setEntities(prev => prev.map(e => e.id === id ? { ...e, mirrored: newMirrored } : e)); socket.emit('updateEntityStatus', { entityId: id, updates: { mirrored: newMirrored }, roomId }); };
   const handleToggleCondition = (id: number, condition: string) => { setEntities(prev => prev.map(ent => { if (ent.id !== id) return ent; const hasCondition = ent.conditions.includes(condition); const newConditions = hasCondition ? ent.conditions.filter(c => c !== condition) : [...ent.conditions, condition]; if (!hasCondition) addLog({ text: `${ent.name} recebeu condição: ${condition}`, type: 'info', sender: 'Sistema' }); socket.emit('updateEntityStatus', { entityId: id, updates: { conditions: newConditions }, roomId }); return { ...ent, conditions: newConditions }; })); };
   const handleToggleVisibility = (id: number) => { setEntities(prev => prev.map(ent => { if (ent.id !== id) return ent; const newVisible = ent.visible === undefined ? false : !ent.visible; if (role === 'DM') addLog({ text: newVisible ? `👁️ ${ent.name} revelou-se!` : `👻 ${ent.name} desapareceu nas sombras.`, type: 'info', sender: 'Sistema' }, false); socket.emit('updateEntityStatus', { entityId: id, updates: { visible: newVisible }, roomId }); return { ...ent, visible: newVisible }; })); };
@@ -1083,12 +993,52 @@ function App() {
 
   const handleFogUpdate = (x: number, y: number, shouldReveal: boolean) => { if (role !== 'DM') return; setFogGrid(prev => { const newGrid = prev.map(row => [...row]); if (newGrid[y]) newGrid[y][x] = shouldReveal; return newGrid; }); socket.emit('updateFog', { x, y, shouldReveal, roomId }); };
   const handleFogBulkUpdate = (cells: {x: number, y: number}[], shouldReveal: boolean) => { if (role !== 'DM') return; setFogGrid(prev => { const newGrid = prev.map(row => [...row]); cells.forEach(cell => { if (newGrid[cell.y] && newGrid[cell.y][cell.x] !== undefined) { newGrid[cell.y][cell.x] = shouldReveal; } }); socket.emit('syncFogGrid', { grid: newGrid, roomId }); return newGrid; }); };
+
+  const handleAddWall = (wall: Wall) => {
+      const newWalls = [...walls, wall];
+      setWalls(newWalls);
+      socket.emit('updateWalls', { roomId, walls: newWalls }); 
+      socket.emit('syncFogGrid', { grid: fogGrid, roomId, walls: newWalls }); 
+  };
+
+  const handleDeleteWall = (wallId: string) => {
+      const newWalls = walls.filter(w => w.id !== wallId);
+      setWalls(newWalls);
+      socket.emit('updateWalls', { roomId, walls: newWalls });
+      socket.emit('syncFogGrid', { grid: fogGrid, roomId, walls: newWalls });
+  };
+
   const handleResetFog = () => { const newGrid = createInitialFog(); setFogGrid(newGrid); socket.emit('syncFogGrid', { grid: newGrid, roomId }); };
   const handleRevealAll = () => { const newGrid = fogGrid.map(row => row.map(() => true)); setFogGrid(newGrid); socket.emit('syncFogGrid', { grid: newGrid, roomId }); };
   const handleSyncFog = () => { socket.emit('syncFogGrid', { grid: fogGrid, roomId }); };
-  const handleChangeMap = (mapUrl: string) => { setCurrentMap(mapUrl); setFogGrid(createInitialFog()); socket.emit('changeMap', { mapUrl, roomId }); };
-  const handleSaveGame = () => { socket.emit('saveGame', { roomId, entities, fogGrid, currentMap, initiativeList, activeTurnId, chatMessages, customMonsters, globalBrightness, currentTrack }); addLog({ text: "O Mestre salvou o estado da mesa no servidor.", type: 'info', sender: 'Sistema' }); };
+  const handleChangeMap = (mapUrl: string) => { setCurrentMap(mapUrl); setFogGrid(createInitialFog()); setWalls([]); socket.emit('changeMap', { mapUrl, roomId }); };
+  
+  const handleSaveGame = () => { 
+      socket.emit('saveGame', { roomId, entities, fogGrid, walls, fogRooms, currentMap, initiativeList, activeTurnId, chatMessages, customMonsters, globalBrightness, currentTrack }); 
+      addLog({ text: "O Mestre salvou o estado da mesa no servidor.", type: 'info', sender: 'Sistema' }); 
+  };
+  
   const handleUpdateGlobalBrightness = (val: number) => { setGlobalBrightness(val); socket.emit('updateGlobalBrightness', { brightness: val, roomId }); };
+
+  const handleAddFogRoom = (name: string, cells: {x: number, y: number}[]) => {
+      const newRoom: FogRoom = { id: Date.now().toString(), name, cells };
+      const updatedRooms = [...fogRooms, newRoom];
+      setFogRooms(updatedRooms);
+      socket.emit('updateFogRooms', { roomId, rooms: updatedRooms });
+  };
+
+  const handleDeleteFogRoom = (roomIdToDel: string) => {
+      const updatedRooms = fogRooms.filter(r => r.id !== roomIdToDel);
+      setFogRooms(updatedRooms);
+      socket.emit('updateFogRooms', { roomId, rooms: updatedRooms }); 
+  };
+
+  const handleToggleFogRoom = (roomIdToToggle: string, reveal: boolean) => {
+      const room = fogRooms.find(r => r.id === roomIdToToggle);
+      if (room) {
+          handleFogBulkUpdate(room.cells, reveal);
+      }
+  };
 
   const handleAddToInitiative = (entity: Entity) => { if (initiativeList.find(i => i.id === entity.id)) return; setInitModalEntity(entity); };
   
@@ -1099,11 +1049,7 @@ function App() {
       setInitiativeList(newList); 
       const newActive = activeTurnId === null ? initModalEntity.id : activeTurnId; 
       setActiveTurnId(newActive); 
-      
-      if (activeTurnId === null && newList.length > 0) {
-          setAttackerId(newList[0].id);
-      }
-      
+      if (activeTurnId === null && newList.length > 0) setAttackerId(newList[0].id);
       socket.emit('updateInitiative', { list: newList, activeTurnId: newActive, roomId }); 
       addLog({ text: `${initModalEntity.name} rolou Iniciativa: ${val}`, type: 'info', sender: 'Sistema' }); 
       handlePlaySFX('dado', true); 
@@ -1114,21 +1060,14 @@ function App() {
   const handleNextTurn = () => { 
       if (initiativeList.length === 0) return; 
       const nextId = initiativeList[(initiativeList.findIndex(i => i.id === activeTurnId) + 1) % initiativeList.length].id; 
-      
-      setActiveTurnId(nextId); 
-      setAttackerId(nextId);
-      setTargetEntityIds([]); 
-      
+      setActiveTurnId(nextId); setAttackerId(nextId); setTargetEntityIds([]); 
       socket.emit('updateInitiative', { list: initiativeList, activeTurnId: nextId, roomId }); 
       const nextEntity = initiativeList.find(i => i.id === nextId); 
       if(nextEntity) addLog({ text: `Turno de: ${nextEntity.name}`, type: 'info', sender: 'Sistema' }); 
   };
   
   const handleClearInitiative = () => { 
-      setInitiativeList([]); 
-      setActiveTurnId(null); 
-      setAttackerId(null);
-      setTargetEntityIds([]);
+      setInitiativeList([]); setActiveTurnId(null); setAttackerId(null); setTargetEntityIds([]);
       socket.emit('updateInitiative', { list: [], activeTurnId: null, roomId }); 
   };
 
@@ -1139,34 +1078,23 @@ function App() {
       if (Array.isArray(id)) { setTargetEntityIds(multiSelect ? Array.from(new Set([...targetEntityIds, ...id])) : id); return; } 
       setTargetEntityIds(multiSelect ? (targetEntityIds.includes(id) ? targetEntityIds.filter(tid => tid !== id) : [...targetEntityIds, id]) : [id]); 
   };
-  
-  // 👉 1. REMOVIDO BLOQUEIO DO JOGADOR NO handleSetAttacker 👈
   const handleSetAttacker = (id: number | null) => { setAttackerId(id); };
 
   const handleLogin = (selectedRole: 'DM' | 'PLAYER', name: string, charData?: any) => { 
       const sessionRoomId = charData?.roomId || 'mesa-do-victor';
       setRoomId(sessionRoomId);
-
-      setRole(selectedRole); 
-      setPlayerName(name); 
-      setIsLoggedIn(true); 
-      setGamePhase('LOBBY'); 
+      setRole(selectedRole); setPlayerName(name); setIsLoggedIn(true); setGamePhase('LOBBY'); 
       socket.emit('joinRoom', sessionRoomId); 
       
       if (selectedRole === 'PLAYER' && charData) { 
           setTimeout(() => { 
               setEntities(prev => { 
                   const existing = prev.find(e => e.name.toLowerCase() === name.toLowerCase() && e.type === 'player');
-                  
                   if (!existing) { 
                       const newEntity: Entity = { id: charData.id || Date.now(), name, hp: charData.hp, maxHp: charData.maxHp, ac: charData.ac, x: 8, y: 6, rotation: charData.rotation || 0, mirrored: charData.mirrored || false, conditions: charData.conditions || [], color: '#3b82f6', type: 'player', image: charData.image, tokenImage: charData.tokenImage || charData.image, stats: charData.stats, classType: charData.classType, visionRadius: charData.visionRadius || 9, size: charData.size || 2, xp: charData.xp || 0, level: charData.level || 1, inventory: charData.inventory || [], race: charData.race || 'Humano', visible: charData.visible !== false, proficiencies: charData.proficiencies || {}, deathSaves: charData.deathSaves || { successes: 0, failures: 0 }, inspiration: charData.inspiration || false, spellSlots: charData.spellSlots || {}, spells: charData.spells || [], coins: charData.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 }, details: charData.details || {} }; 
-                      socket.emit('createEntity', { entity: newEntity, roomId: sessionRoomId }); 
-                      return [...prev, newEntity]; 
+                      socket.emit('createEntity', { entity: newEntity, roomId: sessionRoomId }); return [...prev, newEntity]; 
                   } else {
-                      if (charData.id && charData.id !== existing.id) {
-                          charData.id = existing.id;
-                          localStorage.setItem('nexus_last_char', JSON.stringify(charData));
-                      }
+                      if (charData.id && charData.id !== existing.id) { charData.id = existing.id; localStorage.setItem('nexus_last_char', JSON.stringify(charData)); }
                   }
                   return prev; 
               }); 
@@ -1174,56 +1102,40 @@ function App() {
       } 
   };
   
-  const handleStartGame = () => { 
-      socket.emit('startGame', { roomId }); 
-  };
+  const handleStartGame = () => { socket.emit('startGame', { roomId }); };
 
   const selectedStatusEntity = statusSelectionId ? entities.find(e => e.id === statusSelectionId) : null;
   let modalPosition = { top: 0, left: 0 };
   
   if (selectedStatusEntity) { 
-      const canvasOffsetX = (windowSize.w - CANVAS_WIDTH) / 2; 
-      const canvasOffsetY = (windowSize.h - CANVAS_HEIGHT) / 2; 
+      const canvasOffsetX = (windowSize.w - CANVAS_WIDTH) / 2; const canvasOffsetY = (windowSize.h - CANVAS_HEIGHT) / 2; 
       const tokenPixelX = (selectedStatusEntity.x * GRID_SIZE * mapScale) + mapOffset.x + canvasOffsetX; 
       const tokenPixelY = (selectedStatusEntity.y * GRID_SIZE * mapScale) + mapOffset.y + canvasOffsetY; 
       
-      const SIDEBAR_WIDTH = 420; 
-      const MODAL_WIDTH = 260;
-      const MODAL_HEIGHT = 320;
-
+      const SIDEBAR_WIDTH = 420; const MODAL_WIDTH = 260; const MODAL_HEIGHT = 320;
       modalPosition.left = tokenPixelX + ((selectedStatusEntity.size || 1) * GRID_SIZE * mapScale) + 20;
       modalPosition.top = tokenPixelY;
 
-      if (modalPosition.left + MODAL_WIDTH > windowSize.w - SIDEBAR_WIDTH) {
-          modalPosition.left = tokenPixelX - MODAL_WIDTH - 20;
-      }
-
+      if (modalPosition.left + MODAL_WIDTH > windowSize.w - SIDEBAR_WIDTH) modalPosition.left = tokenPixelX - MODAL_WIDTH - 20;
       if (modalPosition.left < 10) modalPosition.left = 10;
-      if (modalPosition.top + MODAL_HEIGHT > windowSize.h - 20) {
-          modalPosition.top = windowSize.h - MODAL_HEIGHT - 20;
-      }
+      if (modalPosition.top + MODAL_HEIGHT > windowSize.h - 20) modalPosition.top = windowSize.h - MODAL_HEIGHT - 20;
       if (modalPosition.top < 20) modalPosition.top = 20;
   }
 
   if (!isLoggedIn) return <LoginScreen onLogin={handleLogin} availableClasses={availableClasses} availableRaces={availableRaces} />;
-  
   if (gamePhase === 'LOBBY') return <Lobby availableCharacters={entities.filter(e => e.type === 'player')} onStartGame={handleStartGame} myPlayerName={playerName} roomCode={roomId} />;
 
   const isMobilePlayer = role === 'PLAYER' && windowSize.w <= 1024;
-  const myCharacter = isMobilePlayer ? entities.find(e => e.name === playerName && e.type === 'player') : null;
+  const myCharacter = isMobilePlayer ? entities.find(e => e.name.toLowerCase() === playerName.toLowerCase() && e.type === 'player') : null;
 
   const myName = role === 'DM' ? 'MESTRE' : playerName;
   const publicChatMessages = chatMessages.filter(msg => !msg.isWhisper);
   const privateMessages = chatMessages.filter(msg => {
       if (!msg.isWhisper || !privateChatTarget) return false;
-      const sender = msg.sender.toLowerCase();
-      const target = msg.whisperTarget?.toLowerCase() || '';
-      const me = myName.toLowerCase();
-      const partner = privateChatTarget.toLowerCase();
-      
+      const sender = msg.sender.toLowerCase(); const target = msg.whisperTarget?.toLowerCase() || '';
+      const me = myName.toLowerCase(); const partner = privateChatTarget.toLowerCase();
       const targetIsMe = target === me || (role === 'DM' && target === 'mestre');
       const targetIsPartner = target === partner || (role === 'DM' && partner === 'mestre');
-
       return (sender === me && targetIsPartner) || (sender === partner && targetIsMe);
   });
 
@@ -1239,9 +1151,29 @@ function App() {
         </div>
       )}
 
-      {damageOverlayData && (
-          <DamageOverlay data={damageOverlayData} onComplete={() => setDamageOverlayData(null)} />
+      {pendingRoomCells && (
+          <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in">
+              <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const input = e.currentTarget.elements.namedItem('roomName') as HTMLInputElement;
+                  handleAddFogRoom(input.value || 'Novo Cômodo', pendingRoomCells);
+                  setPendingRoomCells(null);
+                  setFogTool('reveal'); 
+              }} className="bg-gray-900 border border-cyan-500/50 p-6 rounded-xl shadow-2xl w-80">
+                  <h3 className="text-cyan-400 font-black tracking-widest uppercase mb-4 text-sm text-center">Criar Zona de Neblina</h3>
+                  <p className="text-xs text-gray-400 mb-4 text-center">A área foi demarcada. Dê um nome para este cômodo para facilitar a revelação na Sidebar.</p>
+                  
+                  <input name="roomName" autoFocus placeholder="Ex: Sala do Trono, Corredor..." className="w-full mb-6 p-3 bg-black/50 border border-white/10 rounded text-white outline-none focus:border-cyan-500 transition-colors" required />
+                  
+                  <div className="flex justify-between gap-3">
+                      <button type="button" onClick={() => { setPendingRoomCells(null); setFogTool('reveal'); }} className="flex-1 bg-white/5 hover:bg-white/10 text-gray-300 py-2 rounded font-bold transition-colors">Cancelar</button>
+                      <button type="submit" className="flex-1 bg-cyan-700 hover:bg-cyan-600 text-white py-2 rounded font-bold transition-colors shadow-[0_0_15px_rgba(6,182,212,0.4)]">Criar Sala</button>
+                  </div>
+              </form>
+          </div>
       )}
+
+      {damageOverlayData && ( <DamageOverlay data={damageOverlayData} onComplete={() => setDamageOverlayData(null)} /> )}
 
       {privateChatTarget && (
           <div className="fixed bottom-4 right-[450px] z-[300] w-80 bg-gray-900 border border-pink-500/50 rounded-t-xl rounded-bl-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10">
@@ -1275,7 +1207,6 @@ function App() {
       )}
 
       {initModalEntity && (<InitiativeModal entity={initModalEntity} onClose={() => setInitModalEntity(null)} onConfirm={handleSubmitInitiative} />)}
-      
       {editingEntity && (<EditEntityModal entity={editingEntity} onSave={(id, updates) => { handleEditEntity(id, updates); setEditingEntity(null); }} onClose={() => setEditingEntity(null)} availableClasses={availableClasses} availableRaces={availableRaces} />)}
       
       {activeCharacterSheetId && entities.find(e => e.id === activeCharacterSheetId) && (
@@ -1301,56 +1232,28 @@ function App() {
       )}
       
       <UniversalDiceRoller 
-        isOpen={showBgDice} 
-        rollId={diceRollId} 
-        onClose={() => setShowBgDice(false)} 
-        title={diceContext.title} 
-        subtitle={diceContext.subtitle} 
-        difficultyClass={diceContext.dc} 
-        baseModifier={diceContext.mod || 0} 
-        proficiency={diceContext.prof || 0} 
-        rollType={diceContext.rollType || 'normal'} 
-        extraBonuses={diceContext.bonuses}
-        isDamage={diceContext.isDamage}
-        damageExpression={diceContext.damageExpression}
-        onComplete={handleDiceComplete} 
+        isOpen={showBgDice} rollId={diceRollId} onClose={() => setShowBgDice(false)} title={diceContext.title} subtitle={diceContext.subtitle} 
+        difficultyClass={diceContext.dc} baseModifier={diceContext.mod || 0} proficiency={diceContext.prof || 0} rollType={diceContext.rollType || 'normal'} 
+        extraBonuses={diceContext.bonuses} isDamage={diceContext.isDamage} damageExpression={diceContext.damageExpression} onComplete={handleDiceComplete} 
       />
 
       {isMobilePlayer && myCharacter ? (
           <MobilePlayerSheet 
-              character={myCharacter} 
-              onUpdateHP={handleUpdateHP} 
-              onRollAttribute={handleAttributeRoll} 
-              onOpenDiceRoller={openDiceRoller} 
-              onUpdateCharacter={handleEditEntity} 
-              chatMessages={publicChatMessages}
-              onSendMessage={handleSendMessage}
-              onApplyDamageFromChat={handleApplyDamageFromChat}
-              onDropItem={handlePlayerDropItem} 
-              availableSpells={availableSpells} 
+              character={myCharacter} onUpdateHP={handleUpdateHP} onRollAttribute={handleAttributeRoll} onOpenDiceRoller={openDiceRoller} 
+              onUpdateCharacter={handleEditEntity} chatMessages={publicChatMessages} onSendMessage={handleSendMessage}
+              onApplyDamageFromChat={handleApplyDamageFromChat} onDropItem={handlePlayerDropItem} availableSpells={availableSpells} 
           />
       ) : (
           <>
             {selectedStatusEntity && (
-                <div 
-                    className="fixed z-[500] bg-gradient-to-b from-slate-900/98 to-black border border-amber-500/40 p-4 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.9)] text-amber-50 w-64 backdrop-blur-2xl animate-in fade-in zoom-in duration-200 font-sans pointer-events-auto" 
-                    style={{ top: modalPosition.top, left: modalPosition.left }}
-                >
+                <div className="fixed z-[500] bg-gradient-to-b from-slate-900/98 to-black border border-amber-500/40 p-4 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.9)] text-amber-50 w-64 backdrop-blur-2xl animate-in fade-in zoom-in duration-200 font-sans pointer-events-auto" style={{ top: modalPosition.top, left: modalPosition.left }}>
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-amber-500/50 to-transparent"></div>
                     <div className="flex justify-between items-center mb-3 relative z-10">
                         <h3 className="text-[10px] font-black tracking-[0.2em] text-amber-500 uppercase flex items-center gap-2">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
                             {selectedStatusEntity.type === 'loot' || selectedStatusEntity.classType === 'Item' ? 'Tesouro' : 'Status'}
                         </h3>
-                        <button 
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setStatusSelectionId(null);
-                            }} 
-                            className="w-6 h-6 flex items-center justify-center rounded-full bg-white/5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-all border border-white/10"
-                        >
-                            ✕
-                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); setStatusSelectionId(null); }} className="w-6 h-6 flex items-center justify-center rounded-full bg-white/5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-all border border-white/10">✕</button>
                     </div>
                     
                     {selectedStatusEntity.type === 'loot' || selectedStatusEntity.classType === 'Item' ? (
@@ -1359,23 +1262,15 @@ function App() {
                                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(217,119,6,0.3)_0%,transparent_70%)] group-hover:scale-110 transition-transform duration-500"></div>
                                 {selectedStatusEntity.image ? (
                                     <img src={selectedStatusEntity.image} alt="Item" className="w-16 h-16 object-contain relative z-10 drop-shadow-[0_5px_10px_rgba(0,0,0,0.5)]" />
-                                ) : (
-                                    <span className="text-4xl relative z-10">🎁</span>
-                                )}
+                                ) : ( <span className="text-4xl relative z-10">🎁</span> )}
                             </div>
                             <h2 className="text-sm font-black text-amber-100 text-center uppercase tracking-tight">{selectedStatusEntity.name}</h2>
-                            <button onClick={() => handlePickUpLoot(selectedStatusEntity)} className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-black font-black uppercase text-[10px] rounded-lg transition-all active:scale-95 border border-amber-400/50 shadow-lg">
-                                Recolher Saque
-                            </button>
+                            <button onClick={() => handlePickUpLoot(selectedStatusEntity)} className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-black font-black uppercase text-[10px] rounded-lg transition-all active:scale-95 border border-amber-400/50 shadow-lg">Recolher Saque</button>
                         </div>
                     ) : (
                         <>
                             <div className="flex gap-3 mb-4 items-center">
-                                <div onClick={() => {
-                                    if (role === 'DM' || (role === 'PLAYER' && selectedStatusEntity.name === playerName)) {
-                                        setActiveCharacterSheetId(selectedStatusEntity.id);
-                                    }
-                                }} className={`w-14 h-14 rounded-lg border-2 border-cyan-400/50 overflow-hidden shrink-0 relative ${(role === 'DM' || (role === 'PLAYER' && selectedStatusEntity.name === playerName)) ? 'cursor-pointer hover:border-cyan-400' : ''}`}>
+                                <div onClick={() => { if (role === 'DM' || (role === 'PLAYER' && selectedStatusEntity.name === playerName)) { setActiveCharacterSheetId(selectedStatusEntity.id); } }} className={`w-14 h-14 rounded-lg border-2 border-cyan-400/50 overflow-hidden shrink-0 relative ${(role === 'DM' || (role === 'PLAYER' && selectedStatusEntity.name === playerName)) ? 'cursor-pointer hover:border-cyan-400' : ''}`}>
                                     {selectedStatusEntity.image ? <img src={selectedStatusEntity.tokenImage || selectedStatusEntity.image} alt={selectedStatusEntity.name} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-cyan-900" />}
                                 </div>
                                 <div className="overflow-hidden">
@@ -1386,8 +1281,7 @@ function App() {
                             <div className="space-y-3">
                                 <div>
                                     <div className="flex justify-between text-[9px] font-black mb-1 uppercase tracking-widest text-cyan-500">
-                                        <span>Integridade</span>
-                                        <span>{selectedStatusEntity.hp}/{selectedStatusEntity.maxHp}</span>
+                                        <span>Integridade</span><span>{selectedStatusEntity.hp}/{selectedStatusEntity.maxHp}</span>
                                     </div>
                                     <div className="w-full h-2 bg-gray-950 rounded-full border border-white/5 overflow-hidden">
                                         <div className="h-full bg-gradient-to-r from-cyan-600 to-blue-500 transition-all duration-500" style={{ width: `${(selectedStatusEntity.hp / selectedStatusEntity.maxHp) * 100}%` }}></div>
@@ -1407,17 +1301,10 @@ function App() {
                                     </div>
                                 )}
                             </div>
-
                             {role === 'DM' && (
                                 <div className="mt-3 border-t border-white/10 pt-3">
                                     <span className="text-[9px] font-black text-purple-400 uppercase tracking-widest mb-1 block">👁️ Anotações Secretas</span>
-                                    <textarea
-                                        className="w-full bg-black/60 border border-purple-500/30 rounded p-2 text-xs text-purple-100 placeholder-purple-900/50 outline-none focus:border-purple-500 resize-none custom-scrollbar"
-                                        rows={3}
-                                        placeholder="Somente o Mestre pode ler e editar isso..."
-                                        defaultValue={selectedStatusEntity.dmNotes || ''}
-                                        onBlur={(e) => handleEditEntity(selectedStatusEntity.id, { dmNotes: e.target.value })}
-                                    />
+                                    <textarea className="w-full bg-black/60 border border-purple-500/30 rounded p-2 text-xs text-purple-100 placeholder-purple-900/50 outline-none focus:border-purple-500 resize-none custom-scrollbar" rows={3} placeholder="Somente o Mestre pode ler e editar isso..." defaultValue={selectedStatusEntity.dmNotes || ''} onBlur={(e) => handleEditEntity(selectedStatusEntity.id, { dmNotes: e.target.value })} />
                                 </div>
                             )}
                         </>
@@ -1438,22 +1325,23 @@ function App() {
                     onDropItem={handleDropLootOnMap} onGiveItemToToken={handleGiveItemToToken} 
                     pings={pings} onPing={handlePingMap}
                     
-                    myCharacterId={entities.find(e => e.name === playerName)?.id}
+                    myCharacterId={entities.find(e => e.name.toLowerCase() === playerName.toLowerCase() && e.type === 'player')?.id}
+                    
+                    onContextMenu={handleContextMenu}
+                    fogRooms={fogRooms}
+                    onAddFogRoomRequest={(cells) => setPendingRoomCells(cells)}
 
-                    // 👉 2. MAPEANDO OS CLIQUES NO MAPA CORRETAMENTE 👈
+                    walls={walls}
+                    onAddWall={handleAddWall}
+                    onDeleteWall={handleDeleteWall}
+
                     onSelectEntity={(entity: any) => { 
-                        if (entity.classType === 'Item' || String(entity.type) === 'loot') {
-                            setStatusSelectionId(entity.id); 
-                        } else {
-                            handleSetAttacker(entity.id); // 1 Clique = Atacante
-                        }
+                        if (entity.classType === 'Item' || String(entity.type) === 'loot') { setStatusSelectionId(entity.id); } 
+                        else { handleSetAttacker(entity.id); }
                     }} 
                     onTokenDoubleClick={(entity: any) => { 
-                        if (entity.classType === 'Item' || String(entity.type) === 'loot') {
-                            setStatusSelectionId(entity.id); 
-                        } else {
-                            handleSetTarget(entity.id, false); // 2 Cliques = Alvo
-                        }
+                        if (entity.classType === 'Item' || String(entity.type) === 'loot') { setStatusSelectionId(entity.id); } 
+                        else { handleSetTarget(entity.id, false); }
                     }} 
                 />
                 
@@ -1467,30 +1355,18 @@ function App() {
                 )}
             </main>
 
-            {/* SE FOR JOGADOR: Mostra a Barra Lateral Direita */}
-                {role === 'PLAYER' && (
-                <aside className="w-auto h-full flex flex-col flex-shrink-0 border-l border-rpgAccent/20 bg-rpgPanel shadow-2xl z-[140]">
-                    <SidebarPlayer 
-                        entities={entities} 
-                        myCharacterName={playerName} 
-                        myCharacterId={entities.find(e => e.name === playerName)?.id || 0} 
-                        initiativeList={initiativeList} 
-                        activeTurnId={activeTurnId} 
-                        chatMessages={publicChatMessages} 
-                        onSendMessage={handleSendMessage} 
-                        onRollAttribute={handleAttributeRoll} 
-                        onUpdateCharacter={handleEditEntity} 
-                        
-                        // 👉 4. ABRINDO A FICHA PELO AVATAR DA SIDEBAR 👈
-                        onSelectEntity={(entity: any) => { setActiveCharacterSheetId(entity.id); }} 
-                        
-                        onApplyDamageFromChat={handleApplyDamageFromChat} 
-                        availableSpells={availableSpells} 
-                    /> 
-                </aside>
-                )}
+            {role === 'PLAYER' && (
+            <aside className="w-auto h-full flex flex-col flex-shrink-0 border-l border-rpgAccent/20 bg-rpgPanel shadow-2xl z-[140]">
+                <SidebarPlayer 
+                    entities={entities} myCharacterName={playerName} myCharacterId={entities.find(e => e.name.toLowerCase() === playerName.toLowerCase() && e.type === 'player')?.id || 0} 
+                    initiativeList={initiativeList} activeTurnId={activeTurnId} chatMessages={publicChatMessages} 
+                    onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} 
+                    onSelectEntity={(entity: any) => { setActiveCharacterSheetId(entity.id); }} 
+                    onApplyDamageFromChat={handleApplyDamageFromChat} availableSpells={availableSpells} 
+                /> 
+            </aside>
+            )}
 
-            {/* SE FOR MESTRE: Injeta o Escudo (Barra Inferior) diretamente sobre a tela sem espremer o mapa */}
             {role === 'DM' && (
                <SidebarDM 
                   entities={entities} onUpdateHP={handleUpdateHP} onAddEntity={handleAddEntity} onDeleteEntity={handleDeleteEntity} onEditEntity={handleEditEntity} 
@@ -1504,9 +1380,50 @@ function App() {
                   onOpenLootGenerator={() => setShowLootGenerator(true)}
                   onRequestInitiative={handleRequestInitiative}
                   onRequestCustomRoll={handleRequestCustomRoll}
+                  fogRooms={fogRooms}
+                  onToggleFogRoom={handleToggleFogRoom}
+                  onDeleteFogRoom={handleDeleteFogRoom}
                   /> 
             )}
           </>
+      )}
+
+      {contextMenu && (
+          <div
+              className="fixed z-[1000] bg-gray-900 border border-cyan-500/30 rounded-lg shadow-2xl py-2 w-56 animate-in fade-in zoom-in-95 duration-100 backdrop-blur-md"
+              style={{ top: contextMenu.y, left: contextMenu.x }}
+              onClick={(e) => e.stopPropagation()}
+          >
+              <div className="px-3 py-1 mb-1 border-b border-white/10 text-[10px] font-black text-cyan-400 uppercase tracking-widest truncate">
+                  {contextMenu.entity.name}
+              </div>
+              
+              {role === 'DM' && (
+                  <>
+                      <button className="w-full text-left px-4 py-2 hover:bg-white/10 text-sm text-gray-200 transition-colors flex items-center gap-2" onClick={() => { setEditingEntity(contextMenu.entity); setContextMenu(null); }}>
+                          ✏️ Editar Entidade
+                      </button>
+                      <button className="w-full text-left px-4 py-2 hover:bg-white/10 text-sm text-gray-200 transition-colors flex items-center gap-2" onClick={() => { handleToggleVisibility(contextMenu.entity.id); setContextMenu(null); }}>
+                          {contextMenu.entity.visible === false ? '👁️ Revelar aos Jogadores' : '👻 Esconder nas Sombras'}
+                      </button>
+                      <button className="w-full text-left px-4 py-2 hover:bg-white/10 text-sm text-gray-200 transition-colors flex items-center gap-2" onClick={() => { handleFlipToken(contextMenu.entity.id); setContextMenu(null); }}>
+                          🔄 Espelhar Token
+                      </button>
+                      <button className="w-full text-left px-4 py-2 hover:bg-white/10 text-sm text-gray-200 transition-colors flex items-center gap-2" onClick={() => { handleRequestInitiative([contextMenu.entity.id]); setContextMenu(null); }}>
+                          ⚡ Pedir Iniciativa
+                      </button>
+                      <div className="my-1 border-t border-white/10"></div>
+                      <button className="w-full text-left px-4 py-2 hover:bg-red-500/20 text-sm text-red-400 transition-colors flex items-center gap-2" onClick={() => { handleDeleteEntity(contextMenu.entity.id); setContextMenu(null); }}>
+                          💀 Remover do Mapa
+                      </button>
+                  </>
+              )}
+              {role === 'PLAYER' && contextMenu.entity.type === 'player' && contextMenu.entity.name.toLowerCase() === playerName.toLowerCase() && (
+                  <button className="w-full text-left px-4 py-2 hover:bg-white/10 text-sm text-gray-200 transition-colors flex items-center gap-2" onClick={() => { setEditingEntity(contextMenu.entity); setContextMenu(null); }}>
+                      ✏️ Editar Personagem
+                  </button>
+              )}
+          </div>
       )}
 
       {showLootGenerator && (
