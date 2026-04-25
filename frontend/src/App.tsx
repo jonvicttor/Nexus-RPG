@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import socket from './services/socket';
+import React, { useState, useEffect, useRef, useCallback } from 'react';import socket from './services/socket';
 import { Howl } from 'howler';
 import GameMap from './components/GameMap'; 
 import SidebarDM, { InitiativeItem } from './components/SidebarDM';
@@ -13,6 +12,7 @@ import { getLevelFromXP } from './utils/gameRules';
 import MobilePlayerSheet from './components/MobilePlayerSheet'; 
 import CharacterSheetFloating from './components/CharacterSheetFloating'; 
 import LootGeneratorModal from './components/LootGeneratorModal';
+import { AlertTriangle } from 'lucide-react';
 
 const GRID_SIZE = 70; 
 const CANVAS_WIDTH = 1920; 
@@ -58,7 +58,7 @@ export interface MapPing {
 
 export interface QueuedRoll {
   title: string; subtitle: string; mod: number; dc: number; entityId: number | null; targetName: string;
-  isDamage?: boolean; damageExpression?: string; isCustomNoDamage?: boolean; damageType?: string; 
+  isDamage?: boolean; damageExpression?: string; isCustomNoDamage?: boolean; damageType?: string; rollType?: 'normal' | 'advantage' | 'disadvantage';
 }
 
 export interface FogRoom {
@@ -240,6 +240,8 @@ function App() {
   const [availableItems, setAvailableItems] = useState<any[]>([]); 
   const [availableRaces, setAvailableRaces] = useState<any[]>([]); 
   const [availableConditions, setAvailableConditions] = useState<any[]>([]); 
+  
+  const [availableRules, setAvailableRules] = useState<{actions: any[], conditions: any[]}>({ actions: [], conditions: [] });
 
   const [globalBrightness, setGlobalBrightness] = useState(1);              
 
@@ -258,6 +260,8 @@ function App() {
   const [rollQueue, setRollQueue] = useState<QueuedRoll[]>([]);
   const [diceRollId, setDiceRollId] = useState(0);
 
+  const [playerSkillRequests, setPlayerSkillRequests] = useState<{ playerId: number, playerName: string, skillName: string, mod: number }[]>([]);
+
   const [diceContext, setDiceContext] = useState({
       title: 'Teste Geral', subtitle: 'Sorte', dc: 15, mod: 0, prof: 0, bonuses: [] as RollBonus[], 
       rollType: 'normal' as 'normal' | 'advantage' | 'disadvantage', entityId: null as number | null,
@@ -271,7 +275,29 @@ function App() {
   const [pings, setPings] = useState<MapPing[]>([]);
   const [toastMsg, setToastMsg] = useState<{text: string, id: number, sender?: string} | null>(null);
 
-  const ignoreNextDiceSound = useRef(false);
+  // 👉 AQUI A MÁGICA: Buscar o compêndio imediatamente (Independente de estar logado)
+  useEffect(() => {
+      const handleCompendiumSync = (data: any) => {
+          if (data.availableClasses) setAvailableClasses(data.availableClasses);
+          if (data.availableRaces) setAvailableRaces(data.availableRaces);
+          if (data.availableRules) setAvailableRules(data.availableRules);
+          if (data.availableSpells) setAvailableSpells(data.availableSpells);
+          if (data.availableItems) setAvailableItems(data.availableItems);
+          if (data.availableConditions) setAvailableConditions(data.availableConditions);
+      };
+      
+      socket.on('compendiumSync', handleCompendiumSync);
+      const handleConnect = () => socket.emit('requestCompendium');
+      socket.on('connect', handleConnect);
+      
+      // Solicita imediatamente caso já tenha conectado
+      socket.emit('requestCompendium');
+
+      return () => {
+          socket.off('compendiumSync', handleCompendiumSync);
+          socket.off('connect', handleConnect);
+      };
+  }, []);
 
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
@@ -305,7 +331,7 @@ function App() {
           const nextRoll = rollQueue[0];
           setDiceContext({
               title: nextRoll.title, subtitle: nextRoll.subtitle, dc: nextRoll.dc, mod: nextRoll.mod, prof: 0,
-              bonuses: [], rollType: 'normal', entityId: nextRoll.entityId, targetName: nextRoll.targetName,
+              bonuses: [], rollType: nextRoll.rollType || 'normal', entityId: nextRoll.entityId, targetName: nextRoll.targetName,
               isDamage: nextRoll.isDamage || false, damageExpression: nextRoll.damageExpression || '1d20',
               isCustomNoDamage: nextRoll.isCustomNoDamage || false, damageType: nextRoll.damageType || 'Físico' 
           });
@@ -313,18 +339,6 @@ function App() {
           setShowBgDice(true);
       }
   }, [rollQueue, showBgDice]);
-
-  useEffect(() => {
-    const handleCompendiumSync = (data: any) => {
-        if (data.availableClasses) setAvailableClasses(data.availableClasses);
-        if (data.availableRaces) setAvailableRaces(data.availableRaces);
-    };
-    socket.on('compendiumSync', handleCompendiumSync);
-    socket.emit('requestCompendium');
-    const handleConnect = () => socket.emit('requestCompendium');
-    socket.on('connect', handleConnect);
-    return () => { socket.off('compendiumSync', handleCompendiumSync); socket.off('connect', handleConnect); };
-  }, []);
 
   const getCenterGridPosition = useCallback(() => {
     const centerPixelX = (CANVAS_WIDTH / 2) - mapOffset.x;
@@ -422,9 +436,7 @@ function App() {
     socket.on('gameStateSync', (gameState: any) => {
       if (gameState.entities) setEntities(gameState.entities);
       if (gameState.fogGrid) setFogGrid(gameState.fogGrid);
-      
       if (gameState.walls) setWalls(gameState.walls);
-      
       if (gameState.currentMap) setCurrentMap(gameState.currentMap);
       if (gameState.initiativeList) setInitiativeList(gameState.initiativeList);
       if (gameState.activeTurnId) setActiveTurnId(gameState.activeTurnId);
@@ -433,12 +445,6 @@ function App() {
       if (gameState.globalBrightness !== undefined) setGlobalBrightness(gameState.globalBrightness);
       if (gameState.currentTrack) handlePlayMusic(gameState.currentTrack, false);
       if (gameState.fogRooms) setFogRooms(gameState.fogRooms);
-      
-      if (gameState.availableClasses) setAvailableClasses(gameState.availableClasses);
-      if (gameState.availableSpells) setAvailableSpells(gameState.availableSpells);
-      if (gameState.availableItems) setAvailableItems(gameState.availableItems);
-      if (gameState.availableRaces) setAvailableRaces(gameState.availableRaces);
-      if (gameState.availableConditions) setAvailableConditions(gameState.availableConditions); 
     });
 
     socket.on('fogGridSynced', (data: any) => { 
@@ -448,11 +454,16 @@ function App() {
         }
     });
 
+    socket.on('newDiceResult', (data: any) => { 
+        const myName = role === 'DM' ? 'Mestre' : playerName;
+        if (data && data.user === myName) return; 
+        playSound('dado'); 
+    });
+
     socket.on('wallsUpdated', (data: any) => { if(data.walls) setWalls(data.walls); });
     socket.on('fogRoomsUpdated', (data: any) => { if(data.rooms) setFogRooms(data.rooms); });
     socket.on('notification', (data: any) => { setToastMsg({ text: data.message, id: Date.now() }); });
     socket.on('gameStarted', () => { setGamePhase('GAME'); addLog({ text: "A aventura começou! O Mestre abriu os portões.", type: 'info', sender: 'Sistema' }); });
-    socket.on('newDiceResult', () => { if (!ignoreNextDiceSound.current) { playSound('dado'); } });
     
     socket.on('chatMessage', (data: any) => {
         const msg = data.message;
@@ -520,6 +531,14 @@ function App() {
         }
     });
 
+    // 👉 MAGIA NOVA: RECEBER PEDIDO DE TESTE DO JOGADOR (Só Mestre reage)
+    socket.on('player_roll_requested', (data: any) => {
+        if (role === 'DM') {
+            setPlayerSkillRequests(prev => [...prev, data]);
+            playSound('notificacao');
+        }
+    });
+
     socket.on('mapPinged', (data: { ping: MapPing }) => { setPings(prev => [...prev, data.ping]); handlePlaySFX('ping', false); setTimeout(() => { setPings(prev => prev.filter(p => p.id !== data.ping.id)); }, 2500); });
 
     return () => {
@@ -529,6 +548,7 @@ function App() {
       socket.off('triggerAudio'); socket.off('mapStateUpdated'); socket.off('globalBrightnessUpdated'); socket.off('dmRequestRoll');
       socket.off('playMusic'); socket.off('stopMusic'); socket.off('playSFX'); socket.off('mapPinged'); 
       socket.off('gameStarted'); socket.off('fogRoomsUpdated'); socket.off('wallsUpdated');
+      socket.off('player_roll_requested');
     };
   }, [isLoggedIn, addLog, role, playerName, handlePlayMusic, handleStopMusic, handlePlaySFX, playSound]); 
 
@@ -562,23 +582,22 @@ function App() {
       socket.emit('dmRequestRoll', { roomId, targetId, skillName, mod, dc }); 
   };
 
-  const handleRequestInitiative = (targetIds: number[]) => {
-      const dmQueue: QueuedRoll[] = [];
-      let playerPushed = false;
-      targetIds.forEach(id => {
-          const ent = entities.find(e => e.id === id);
-          if (!ent) return;
-          const dexMod = ent.stats ? Math.floor((ent.stats.dex - 10) / 2) : 0;
-          if (ent.type === 'player') {
-              socket.emit('dmRequestRoll', { roomId, targetId: id, skillName: 'Iniciativa', mod: dexMod, dc: 0 });
-              playerPushed = true;
-          } else {
-              dmQueue.push({ title: 'Iniciativa', subtitle: `Teste para ${ent.name}`, mod: dexMod, dc: 0, entityId: id, targetName: ent.name });
-          }
-      });
-      if (playerPushed) addLog({ text: `⚔️ O Mestre exigiu que os aventureiros selecionados rolem suas Iniciativas!`, type: 'info', sender: 'Sistema' });
-      if (dmQueue.length > 0) setRollQueue(prev => [...prev, ...dmQueue]);
-      setTargetEntityIds([]);
+  const handleStartCombat = (combatantIds: number[]) => {
+      socket.emit('start_combat', { roomId, combatants: combatantIds });
+      setTargetEntityIds([]); 
+  };
+
+  const handleNextTurn = () => { 
+      socket.emit('next_turn', { roomId }); 
+  };
+
+  // 👉 MAGIA NOVA: Envia o pedido para o mestre
+  const handlePlayerRequestSkill = (skillName: string, mod: number) => {
+      const myChar = entities.find(e => e.name.toLowerCase() === playerName.toLowerCase() && e.type === 'player');
+      if (myChar) {
+          socket.emit('player_request_roll', { roomId, playerId: myChar.id, playerName: myChar.name, skillName, mod });
+          addLog({ text: `✋ **${myChar.name}** quer rolar **${skillName}**. Aguardando Mestre...`, type: 'info', sender: 'Sistema' });
+      }
   };
 
   const handleRequestCustomRoll = (targetIds: number[], expression: string, title: string) => {
@@ -603,8 +622,8 @@ function App() {
       setTargetEntityIds([]);
   };
   
-  const handleAttributeRoll = (charName: string, attrName: string, mod: number, damageExpr?: string, damageType?: string) => { 
-      setRollQueue(prev => [...prev, { title: attrName, subtitle: `Ação de Combate`, dc: 10, mod, entityId: null, targetName: charName, damageExpression: damageExpr, damageType: damageType || 'Físico' }]);
+  const handleAttributeRoll = (charName: string, attrName: string, mod: number, damageExpr?: string, damageType?: string, rollType: 'normal'|'advantage'|'disadvantage' = 'normal') => { 
+      setRollQueue(prev => [...prev, { title: attrName, subtitle: `Ação de Combate`, dc: 10, mod, entityId: null, targetName: charName, damageExpression: damageExpr, damageType: damageType || 'Físico', rollType }]);
   };
 
   const handleApplyDamageFromChat = (targetId: number, damageExpression: string) => {
@@ -616,8 +635,18 @@ function App() {
         } else { 
             const totalDano = parseInt(damageExpression) || 0; 
             if (totalDano > 0) {
-                handleUpdateHP(targetId, -totalDano); 
-                addLog({ text: `⚔️ **DANO APLICADO:** ${totalDano} de Dano Fixo no ${target.name}!`, type: 'damage', sender: 'Sistema' });
+                const attacker = entities.find(e => e.id === attackerId) || entities.find(e => e.type === 'player' && e.name.toLowerCase() === playerName.toLowerCase());
+                if (attacker) {
+                    socket.emit('request_attack', {
+                        roomId,
+                        atacanteId: attacker.id,
+                        alvoId: target.id,
+                        nomeAtaque: "Dano Fixo",
+                        rolagemAtaque: 0,
+                        rolagemDano: totalDano,
+                        tipoDano: "Físico"
+                    });
+                }
                 setDamageOverlayData({ rolls: null, mod: 0, total: totalDano, targetName: target.name });
             }
         }
@@ -625,6 +654,17 @@ function App() {
 
   const handleDiceComplete = (total: number, isSuccess: boolean, isCritical: boolean, isSecret: boolean, finalRolls?: number[], finalMod?: number) => {
       const senderName = role === 'DM' ? 'Mestre' : playerName;
+
+      // 👉 MAGIA NOVA: Aplicar Buff de Furtividade
+      if (diceContext.title === 'Furtividade (Esconder-se)' && isSuccess && diceContext.entityId) {
+          const ent = entities.find(e => e.id === diceContext.entityId);
+          if (ent && !ent.conditions.includes('Furtivo')) {
+              const newConditions = [...ent.conditions, 'Furtivo'];
+              setEntities(prev => prev.map(e => e.id === ent.id ? { ...e, conditions: newConditions } : e));
+              socket.emit('updateEntityStatus', { entityId: ent.id, updates: { conditions: newConditions }, roomId });
+              addLog({ text: `🥷 **${ent.name}** desapareceu nas sombras... (Vantagem adquirida!)`, type: 'info', sender: 'Sistema' });
+          }
+      }
 
       if (diceContext.isDamage) {
           const rollString = finalRolls ? `[${finalRolls.join(', ')}]` : '';
@@ -647,21 +687,30 @@ function App() {
                   }
               }
 
-              if (finalDamage > 0) handleUpdateHP(diceContext.entityId, -finalDamage);
+              const attacker = entities.find(e => e.id === attackerId) || entities.find(e => e.type === 'player' && e.name.toLowerCase() === playerName.toLowerCase());
+              
+              if (attacker && target) {
+                  socket.emit('request_attack', {
+                      roomId,
+                      atacanteId: attacker.id,
+                      alvoId: target.id,
+                      nomeAtaque: diceContext.title.replace('Dano: ', '').replace('Ataque: ', '').trim(),
+                      rolagemAtaque: 0, 
+                      rolagemDano: finalDamage,
+                      tipoDano: diceContext.damageType
+                  });
+              }
 
-              let narrativeText = `⚔️ **DANO APLICADO:** Rolou ${diceContext.damageExpression} ${rollString}${modStr} = **${total} de Dano ${diceContext.damageType}** no ${diceContext.targetName}!`;
-              if (dmgModifierInfo === 'immune') narrativeText = `🛡️ **IMUNIDADE:** ${diceContext.targetName} é imune a ${diceContext.damageType}! Sofreu 0 de dano.`;
-              if (dmgModifierInfo === 'resistant') narrativeText = `🛡️ **RESISTÊNCIA:** ${diceContext.targetName} resistiu ao dano ${diceContext.damageType}! Sofreu apenas **${finalDamage}** de dano.`;
-              if (dmgModifierInfo === 'vulnerable') narrativeText = `🩸 **VULNERABILIDADE:** ${diceContext.targetName} é vulnerável a ${diceContext.damageType}! Sofreu cruéis **${finalDamage}** de dano!`;
-
-              addLog({ text: narrativeText, type: 'damage', sender: 'Sistema' });
               setDamageOverlayData({ rolls: null, sides: 1, mod: finalMod, total: finalDamage, targetName: diceContext.targetName, damageType: diceContext.damageType, damageModifier: dmgModifierInfo });
               
               setRollQueue(prev => prev.slice(1));
           } else {
               const publicText = `🎲 **${senderName}** rolou ${diceContext.title} (${diceContext.damageExpression}):\n🎯 Resultado: ${rollString}${modStr} = **${total}**`;
               if (isSecret) addLog({ text: `👁️ (Secreto) ` + publicText, type: 'roll', sender: senderName, isSecret: true, secretContent: `👁️ (Secreto) ` + publicText } as any);
-              else { addLog({ text: publicText, type: 'roll', sender: senderName } as any); socket.emit('rollDice', { sides: 20, result: total, roomId, user: senderName }); }
+              else { 
+                  addLog({ text: publicText, type: 'roll', sender: senderName } as any); 
+                  socket.emit('rollDice', { sides: 20, result: total, roomId, user: senderName }); 
+              }
               
               setRollQueue(prev => prev.slice(1));
           }
@@ -669,46 +718,33 @@ function App() {
       }
 
       let resultMsg = isCritical ? (total >= 20 ? "CRÍTICO! ⚔️" : "FALHA CRÍTICA! 💀") : (isSuccess ? "SUCESSO! ✅" : "FALHA ❌");
-      let isAttackHit = false; let targetIdForDamage: number | null = null; let targetInfoMsg = "";
-      let finalDamageExpression = diceContext.damageExpression || ""; let finalDamageType = diceContext.damageType || "Físico";
+      let targetInfoMsg = "";
       const isAttack = diceContext.title.toLowerCase().includes("ataque");
 
       if (isAttack) {
-          const attacker = role === 'DM' && attackerId ? entities.find(e => e.id === attackerId) : entities.find(e => e.name.toLowerCase() === playerName.toLowerCase());
-          const weaponName = diceContext.title.replace(/Ataque:\s*/i, '').trim();
-          const weapon = attacker?.inventory?.find(i => i.name.toLowerCase() === weaponName.toLowerCase());
-
-          if (weapon && !finalDamageExpression) {
-              let baseDmg = weapon.stats?.damage || '1d4'; let dmgMod = 0;
-              if (attacker && attacker.stats) {
-                  const strMod = Math.floor((attacker.stats.str - 10) / 2); const dexMod = Math.floor((attacker.stats.dex - 10) / 2);
-                  const isFinesseOrRanged = weapon.stats?.properties?.some(p => p.toLowerCase().includes('finesse') || p.toLowerCase().includes('distância') || p.toLowerCase().includes('ranged')) || weaponName.toLowerCase().includes('arco') || weaponName.toLowerCase().includes('besta') || weaponName.toLowerCase().includes('adaga') || weaponName.toLowerCase().includes('rapieira');
-                  dmgMod = isFinesseOrRanged ? Math.max(strMod, dexMod) : strMod;
-              }
-              const dmgMatch = baseDmg.match(/^(\d+)d(\d+)/i);
-              if (dmgMatch) {
-                  const count = parseInt(dmgMatch[1]); const sides = parseInt(dmgMatch[2]);
-                  const rollsCount = (isCritical && total >= 20) ? count * 2 : count;
-                  finalDamageExpression = `${rollsCount}d${sides}${dmgMod !== 0 ? (dmgMod > 0 ? '+'+dmgMod : dmgMod) : ''}`;
-              }
-          } else if (isCritical && total >= 20 && finalDamageExpression) {
-               const dmgMatch = finalDamageExpression.match(/^(\d+)d(\d+)(.*)/i);
-               if(dmgMatch) finalDamageExpression = `${parseInt(dmgMatch[1]) * 2}d${dmgMatch[2]}${dmgMatch[3]}`;
-          }
-
           if (targetEntityIds.length > 0) {
               const target = entities.find(e => e.id === targetEntityIds[0]);
               if (target) {
                   if (total >= target.ac || (isCritical && total >= 20)) { 
-                      resultMsg = `**ACERTOU!** ⚔️`; isAttackHit = true; targetIdForDamage = target.id; targetInfoMsg = `\n🎯 *${target.name}* recebeu o golpe!`;
+                      resultMsg = `**ACERTOU!** ⚔️`; targetInfoMsg = `\n🎯 *${target.name}* (CA ${target.ac}) foi atingido!`;
                       socket.emit('triggerCombatAnimation', { roomId, attackerName: senderName, targetId: target.id, attackType: diceContext.title.includes('Mágico') ? 'magia' : 'fisico' });
                       handlePlaySFX('sword', true);
                   } else { 
-                      resultMsg = `**ERROU!** 🛡️`; targetInfoMsg = `\n💨 *${target.name}* defendeu.`; handlePlaySFX('dado', true);
+                      resultMsg = `**ERROU!** 🛡️`; targetInfoMsg = `\n💨 *${target.name}* defendeu.`; 
                   }
               }
           } else {
               resultMsg = `**Ataque Rolado** ⚔️`; targetInfoMsg = `\n*(⚠️ Selecione um alvo para o Dano Automático funcionar!)*`; handlePlaySFX('sword', true);
+          }
+
+          // Retirar furtividade ao atacar
+          if (diceContext.entityId) {
+             const ent = entities.find(e => e.id === diceContext.entityId);
+             if (ent && ent.conditions.includes('Furtivo')) {
+                 const newConds = ent.conditions.filter(c => c !== 'Furtivo');
+                 setEntities(prev => prev.map(e => e.id === ent.id ? { ...e, conditions: newConds } : e));
+                 socket.emit('updateEntityStatus', { entityId: ent.id, updates: { conditions: newConds }, roomId });
+             }
           }
       }
 
@@ -726,23 +762,13 @@ function App() {
       const publicText = `🎲 **${senderName}** rolou ${diceContext.title}:\n🎯 Resultado: **${total}** - ${resultMsg}${targetInfoMsg}`;
       if (isSecret) {
           const secretText = `👁️ (Secreto) ` + publicText;
-          addLog({ text: role === 'DM' ? secretText : `🎲 **${senderName}** rolou dados misteriosamente...`, type: 'roll', sender: senderName, isSecret: true, secretContent: secretText, targetId: targetIdForDamage, isHit: isAttackHit, damage: finalDamageExpression } as any);
+          addLog({ text: role === 'DM' ? secretText : `🎲 **${senderName}** rolou dados misteriosamente...`, type: 'roll', sender: senderName, isSecret: true, secretContent: secretText } as any);
       } else {
-          addLog({ text: publicText, type: 'roll', sender: senderName, targetId: targetIdForDamage, isHit: isAttackHit, damage: finalDamageExpression } as any);
-          ignoreNextDiceSound.current = true;
-          setTimeout(() => { ignoreNextDiceSound.current = false; }, 2000);
+          addLog({ text: publicText, type: 'roll', sender: senderName } as any);
           socket.emit('rollDice', { sides: 20, result: total, roomId, user: senderName });
       }
 
       setRollQueue(prev => prev.slice(1));
-      
-      if (isAttackHit && finalDamageExpression && targetIdForDamage) {
-          const target = entities.find(e => e.id === targetIdForDamage);
-          setRollQueue(prev => [...prev, {
-              title: `Dano: ${diceContext.title}`, subtitle: `Em ${target?.name || 'Alvo'}`, dc: 0, mod: 0, entityId: targetIdForDamage, targetName: target?.name || 'Alvo',
-              isDamage: true, damageExpression: finalDamageExpression, damageType: finalDamageType
-          }]);
-      }
   };
 
   const openDiceRoller = () => { setRollQueue(prev => [...prev, { title: 'Rolagem Livre', subtitle: 'Sorte', dc: 10, mod: 0, entityId: null, targetName: '' }]); };
@@ -760,9 +786,31 @@ function App() {
 
   const handleUpdateHP = (id: number, change: number) => {
     const entity = entities.find(e => e.id === id); if (!entity) return;
-    const newHp = Math.min(entity.maxHp, Math.max(0, entity.hp + change));
-    if (entity.hp > 0 && newHp <= 0) addLog({ text: `☠️ **${entity.name} caiu inconsciente!**`, type: 'damage', sender: 'Sistema' });
-    setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, hp: newHp } : ent)); socket.emit('updateEntityStatus', { entityId: id, updates: { hp: newHp }, roomId });
+    
+    let remainingDamage = change < 0 ? Math.abs(change) : 0;
+    let healAmount = change > 0 ? change : 0;
+    let newTemp = entity.details?.tempHp || 0;
+    let currentHp = entity.hp;
+
+    if (remainingDamage > 0) {
+        if (newTemp > 0) {
+            if (newTemp >= remainingDamage) {
+                newTemp -= remainingDamage;
+                remainingDamage = 0;
+            } else {
+                remainingDamage -= newTemp;
+                newTemp = 0;
+            }
+        }
+        currentHp = Math.max(0, currentHp - remainingDamage);
+    } else if (healAmount > 0) {
+        currentHp = Math.min(entity.maxHp, currentHp + healAmount);
+    }
+
+    if (entity.hp > 0 && currentHp <= 0) addLog({ text: `☠️ **${entity.name} caiu inconsciente!**`, type: 'damage', sender: 'Sistema' });
+    
+    setEntities(prev => prev.map(ent => ent.id === id ? { ...ent, hp: currentHp, details: { ...ent.details, tempHp: newTemp } } : ent)); 
+    socket.emit('updateEntityStatus', { entityId: id, updates: { hp: currentHp, details: { ...entity.details, tempHp: newTemp } }, roomId });
   };
 
   const handleLongRest = () => {
@@ -775,6 +823,7 @@ function App() {
                   Object.entries(ent.spellSlots).forEach(([level, slotData]) => { restoredSlots[parseInt(level)] = { max: slotData.max, used: 0 }; });
                   updates.spellSlots = restoredSlots;
               }
+              updates.details = { ...ent.details, tempHp: 0, exhaustion: Math.max(0, (ent.details?.exhaustion || 0) - 1) };
               socket.emit('updateEntityStatus', { entityId: ent.id, updates, roomId });
               return { ...ent, ...updates };
           });
@@ -802,7 +851,6 @@ function App() {
         for(let i=0; i<count; i++) { const val = Math.floor(Math.random() * sides) + 1; rolls.push(val); sum += val; }
         const total = sum + mod; const rollString = `[${rolls.join(', ')}]` + (mod > 0 ? ` + ${mod}` : '');
         addLog({ text: `🎲 Rolou ${count}d${sides}${mod ? '+'+mod : ''}: ${rollString} = **${total}**`, type: 'roll', sender: senderName });
-        handlePlaySFX('dado', true);
       } else { addLog({ text: text, type: 'chat', sender: senderName }); }
   };
 
@@ -823,7 +871,7 @@ function App() {
           id: Date.now(), name: item.name, hp: 1, maxHp: 1, ac: 0, x: x, y: y, type: 'loot', color: '#fbbf24', image: item.image, size: 0.6, conditions: [], stats: { str:0, dex:0, con:0, int:0, wis:0, cha:0 }, visible: true, inventory: [item], level: 0, classType: 'Item' 
       };
       setEntities(prev => [...prev, lootEntity]); socket.emit('createEntity', { entity: lootEntity, roomId }); 
-      addLog({ text: `🎒 ${item.name} foi jogado no chão!`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true); 
+      addLog({ text: `🎒 ${item.name} foi jogado no chão!`, type: 'info', sender: 'Sistema' }); 
   };
 
   const handleGiveItemToToken = (item: Item, sourceId: number, targetId: number) => {
@@ -832,7 +880,7 @@ function App() {
       const sourceInv = (sourceEntity.inventory || []).filter(i => i.id !== item.id); const targetInv = [...(targetEntity.inventory || []), { ...item, isEquipped: false }]; 
       setEntities(prev => prev.map(ent => { if (ent.id === sourceId) return { ...ent, inventory: sourceInv }; if (ent.id === targetId) return { ...ent, inventory: targetInv }; return ent; }));
       socket.emit('updateEntityStatus', { entityId: sourceId, updates: { inventory: sourceInv }, roomId }); socket.emit('updateEntityStatus', { entityId: targetId, updates: { inventory: targetInv }, roomId });
-      addLog({ text: `🤝 **${sourceEntity.name}** deu **${item.name}** para **${targetEntity.name}**.`, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true);
+      addLog({ text: `🤝 **${sourceEntity.name}** deu **${item.name}** para **${targetEntity.name}**.`, type: 'info', sender: 'Sistema' }); 
   };
 
   const handlePlayerDropItem = (itemId: string) => {
@@ -872,7 +920,7 @@ function App() {
       setEntities(prev => prev.map(ent => ent.id === receiver!.id ? { ...ent, ...updates } : ent)); 
       socket.emit('updateEntityStatus', { entityId: receiver.id, updates, roomId });
       handleDeleteEntity(lootEntity.id); setStatusSelectionId(null); 
-      addLog({ text: logMsg, type: 'info', sender: 'Sistema' }); handlePlaySFX('dado', true); 
+      addLog({ text: logMsg, type: 'info', sender: 'Sistema' }); 
   };
 
   const handleAddEntity = (type: 'enemy' | 'player', name: string, customStats?: MonsterPreset) => { 
@@ -1057,15 +1105,6 @@ function App() {
   };
   const handleRemoveFromInitiative = (id: number) => { const newList = initiativeList.filter(i => i.id !== id); setInitiativeList(newList); socket.emit('updateInitiative', { list: newList, activeTurnId, roomId }); };
   
-  const handleNextTurn = () => { 
-      if (initiativeList.length === 0) return; 
-      const nextId = initiativeList[(initiativeList.findIndex(i => i.id === activeTurnId) + 1) % initiativeList.length].id; 
-      setActiveTurnId(nextId); setAttackerId(nextId); setTargetEntityIds([]); 
-      socket.emit('updateInitiative', { list: initiativeList, activeTurnId: nextId, roomId }); 
-      const nextEntity = initiativeList.find(i => i.id === nextId); 
-      if(nextEntity) addLog({ text: `Turno de: ${nextEntity.name}`, type: 'info', sender: 'Sistema' }); 
-  };
-  
   const handleClearInitiative = () => { 
       setInitiativeList([]); setActiveTurnId(null); setAttackerId(null); setTargetEntityIds([]);
       socket.emit('updateInitiative', { list: [], activeTurnId: null, roomId }); 
@@ -1245,6 +1284,40 @@ function App() {
           />
       ) : (
           <>
+            {/* 👉 MAGIA NOVA: Card Flutuante para o Mestre com os Pedidos dos Jogadores */}
+            <div className="fixed top-20 right-[440px] z-[500] flex flex-col gap-3 pointer-events-auto">
+                {playerSkillRequests.map((req, idx) => (
+                    <div key={idx} className="bg-[#15151a] border border-purple-500/50 p-4 rounded-xl shadow-2xl w-72 animate-in slide-in-from-right duration-300">
+                        <div className="flex justify-between items-center border-b border-purple-900/50 pb-2 mb-3">
+                            <span className="text-[10px] text-purple-400 font-black uppercase tracking-widest flex items-center gap-2">
+                                <AlertTriangle size={14}/> Pedido de Teste
+                            </span>
+                            <button onClick={() => setPlayerSkillRequests(prev => prev.filter((_, i) => i !== idx))} className="text-gray-500 hover:text-white transition-colors">✕</button>
+                        </div>
+                        <p className="text-sm text-gray-300 mb-1">O jogador <strong className="text-white">{req.playerName}</strong> quer rolar:</p>
+                        <p className="text-lg font-serif text-purple-300 mb-4 text-center border bg-black/40 py-2 border-white/5 rounded-lg">{req.skillName}</p>
+                        
+                        <div className="flex gap-2">
+                            <button onClick={() => {
+                                handleDmRequestRoll(req.playerId, req.skillName, req.mod, 10);
+                                setPlayerSkillRequests(prev => prev.filter((_, i) => i !== idx));
+                            }} className="flex-1 bg-purple-700 hover:bg-purple-600 text-white font-bold text-[10px] py-2 rounded shadow-sm transition-colors uppercase tracking-widest">
+                                Aprovar Rolo Livre
+                            </button>
+                            <button onClick={() => {
+                                const dc = parseInt(window.prompt("Defina a Dificuldade (CD) para este teste:", "15") || "0");
+                                if (dc > 0) {
+                                    handleDmRequestRoll(req.playerId, req.skillName, req.mod, dc);
+                                    setPlayerSkillRequests(prev => prev.filter((_, i) => i !== idx));
+                                }
+                            }} className="flex-1 bg-amber-700 hover:bg-amber-600 text-white font-bold text-[10px] py-2 rounded shadow-sm transition-colors uppercase tracking-widest">
+                                Definir CD
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
             {selectedStatusEntity && (
                 <div className="fixed z-[500] bg-gradient-to-b from-slate-900/98 to-black border border-amber-500/40 p-4 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.9)] text-amber-50 w-64 backdrop-blur-2xl animate-in fade-in zoom-in duration-200 font-sans pointer-events-auto" style={{ top: modalPosition.top, left: modalPosition.left }}>
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-amber-500/50 to-transparent"></div>
@@ -1363,6 +1436,10 @@ function App() {
                     onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} 
                     onSelectEntity={(entity: any) => { setActiveCharacterSheetId(entity.id); }} 
                     onApplyDamageFromChat={handleApplyDamageFromChat} availableSpells={availableSpells} 
+                    actionsData={availableRules.actions}
+                    conditionsData={availableRules.conditions}
+                    onNextTurn={handleNextTurn}
+                    onPlayerRequestSkill={handlePlayerRequestSkill}
                 /> 
             </aside>
             )}
@@ -1373,16 +1450,17 @@ function App() {
                   isFogMode={isFogMode} onToggleFogMode={() => setIsFogMode(!isFogMode)} fogTool={fogTool} onSetFogTool={setFogTool} 
                   fogShape={fogShape} onSetFogShape={setFogShape}
                   onSyncFog={handleSyncFog} onResetFog={handleResetFog} onRevealAll={handleRevealAll} onSaveGame={handleSaveGame} onChangeMap={handleChangeMap} 
-                  initiativeList={initiativeList} activeTurnId={activeTurnId} onAddToInitiative={handleAddToInitiative} onRemoveFromInitiative={handleRemoveFromInitiative} onNextTurn={handleNextTurn} onClearInitiative={handleClearInitiative} onSortInitiative={handleSortInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget} onToggleCondition={handleToggleCondition} onSetAttacker={handleSetAttacker} activeAoE={activeAoE} onSetAoE={setActiveAoE} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} aoeColor={aoeColor} onSetAoEColor={setAoEColor} onOpenCreator={(type) => { }} onAddXP={handleAddXP} customMonsters={customMonsters} globalBrightness={globalBrightness} onSetGlobalBrightness={handleUpdateGlobalBrightness} onRequestRoll={handleDmRequestRoll} onToggleVisibility={handleToggleVisibility} currentTrack={currentTrack} onPlayMusic={handlePlayMusic} onStopMusic={handleStopMusic} onPlaySFX={handlePlaySFX} audioVolume={audioVolume} onSetAudioVolume={setAudioVolume} onResetView={handleResetView} onGiveItem={handleGiveItem} onApplyDamageFromChat={handleApplyDamageFromChat} onDMRoll={handleDMRoll} 
+                  initiativeList={initiativeList} activeTurnId={activeTurnId} onAddToInitiative={handleAddToInitiative} onRemoveFromInitiative={handleRemoveFromInitiative} onNextTurn={handleNextTurn} onClearInitiative={handleClearInitiative} onSortInitiative={handleSortInitiative} targetEntityIds={targetEntityIds} attackerId={attackerId} onSetTarget={handleSetTarget} onToggleCondition={handleToggleCondition} onSetAttacker={handleSetAttacker} activeAoE={activeAoE} onSetAoE={setActiveAoE} chatMessages={publicChatMessages} onSendMessage={handleSendMessage} aoeColor={aoeColor} onSetAoEColor={setAoEColor} onOpenCreator={(type: 'player' | 'enemy') => { }} onAddXP={handleAddXP} customMonsters={customMonsters} globalBrightness={globalBrightness} onSetGlobalBrightness={handleUpdateGlobalBrightness} onRequestRoll={handleDmRequestRoll} onToggleVisibility={handleToggleVisibility} currentTrack={currentTrack} onPlayMusic={handlePlayMusic} onStopMusic={handleStopMusic} onPlaySFX={handlePlaySFX} audioVolume={audioVolume} onSetAudioVolume={setAudioVolume} onResetView={handleResetView} onGiveItem={handleGiveItem} onApplyDamageFromChat={handleApplyDamageFromChat} onDMRoll={handleDMRoll} 
                   onLongRest={handleLongRest} 
                   availableItems={availableItems} 
                   availableConditions={availableConditions}
                   onOpenLootGenerator={() => setShowLootGenerator(true)}
-                  onRequestInitiative={handleRequestInitiative}
+                  onStartCombat={handleStartCombat}
                   onRequestCustomRoll={handleRequestCustomRoll}
                   fogRooms={fogRooms}
                   onToggleFogRoom={handleToggleFogRoom}
                   onDeleteFogRoom={handleDeleteFogRoom}
+                  conditionsData={availableRules.conditions}
                   /> 
             )}
           </>
@@ -1408,9 +1486,6 @@ function App() {
                       </button>
                       <button className="w-full text-left px-4 py-2 hover:bg-white/10 text-sm text-gray-200 transition-colors flex items-center gap-2" onClick={() => { handleFlipToken(contextMenu.entity.id); setContextMenu(null); }}>
                           🔄 Espelhar Token
-                      </button>
-                      <button className="w-full text-left px-4 py-2 hover:bg-white/10 text-sm text-gray-200 transition-colors flex items-center gap-2" onClick={() => { handleRequestInitiative([contextMenu.entity.id]); setContextMenu(null); }}>
-                          ⚡ Pedir Iniciativa
                       </button>
                       <div className="my-1 border-t border-white/10"></div>
                       <button className="w-full text-left px-4 py-2 hover:bg-red-500/20 text-sm text-red-400 transition-colors flex items-center gap-2" onClick={() => { handleDeleteEntity(contextMenu.entity.id); setContextMenu(null); }}>

@@ -8,6 +8,7 @@ import { SpellImporter } from './utils/SpellImporter';
 import { ItemImporter } from './utils/ItemImporter'; 
 import { RaceImporter } from './utils/RaceImporter';
 import { LootGenerator } from './utils/LootGenerator'; 
+import { RulesImporter } from './utils/RulesImporter';
 
 const fastify = Fastify();
 const PORT = Number(process.env.PORT) || 4000;
@@ -49,7 +50,6 @@ function loadDirectory(dirName: string, targetKey: string) {
     return combinedData;
 }
 
-// 👉 MAGIA NOVA: Carregando os Tomos e o Escudo do Mestre
 function loadBooks() {
     const books: any = {};
     const files = ['book-xdmg.json', 'book-xmm.json', 'book-xphb.json', 'book-xscreen.json'];
@@ -95,7 +95,8 @@ const FULL_BESTIARY = MonsterImporter.loadBestiary();
 const FULL_SPELLS = SpellImporter.loadSpells();
 const FULL_ITEMS = ItemImporter.loadItems(); 
 const FULL_RACES = RaceImporter.loadRaces();
-const FULL_BOOKS = loadBooks(); // Carrega os Livros JSON
+const FULL_BOOKS = loadBooks(); 
+const FULL_RULES = RulesImporter.loadRules(); 
 
 let RAW_BACKGROUNDS = loadDirectory('backgrounds', 'background');
 if (RAW_BACKGROUNDS.length === 0) {
@@ -113,9 +114,10 @@ const FULL_FEATS = RAW_FEATS;
 
 interface GameState {
   entities: any[]; fogGrid: boolean[][]; currentMap: string; initiativeList: any[];
-  activeTurnId: number | null; chatHistory: any[]; customMonsters: any[];    
+  activeTurnId: number | null; chatHistory: any[]; customMonsters: any[];     
   availableClasses: any[]; availableSpells: any[]; availableItems: any[]; 
-  availableRaces: any[]; availableBackgrounds: any[]; availableFeats: any[];       
+  availableRaces: any[]; availableBackgrounds: any[]; availableFeats: any[];        
+  availableRules: { actions: any[], conditions: any[] }; 
   globalBrightness: number; weather: 'none' | 'rain' | 'snow'; currentTrack: string | null; 
 }
 
@@ -130,6 +132,7 @@ const getRoomState = (roomId: string): GameState => {
             initiativeList: [], activeTurnId: null, chatHistory: [], customMonsters: FULL_BESTIARY,
             availableClasses: FULL_CLASSES, availableSpells: FULL_SPELLS, availableItems: FULL_ITEMS, 
             availableRaces: FULL_RACES, availableBackgrounds: FULL_BACKGROUNDS, availableFeats: FULL_FEATS,
+            availableRules: FULL_RULES,
             globalBrightness: 1, weather: 'none', currentTrack: null
         };
         
@@ -145,6 +148,7 @@ const getRoomState = (roomId: string): GameState => {
                     ...roomsState[roomId], ...loadedData, customMonsters: mergedMonsters, 
                     availableClasses: FULL_CLASSES, availableSpells: FULL_SPELLS, availableItems: FULL_ITEMS, 
                     availableRaces: FULL_RACES, availableBackgrounds: FULL_BACKGROUNDS, availableFeats: FULL_FEATS,
+                    availableRules: FULL_RULES,
                     weather: loadedData.weather || 'none', currentTrack: loadedData.currentTrack || null
                 };
                 console.log(`✅ SAVE CARREGADO COM SUCESSO PARA A SALA: ${roomId}`);
@@ -166,13 +170,21 @@ const autoSaveRoom = (roomId: string) => {
 io.on('connection', (socket) => {
   console.log('🔌 Nova conexão:', socket.id);
 
-  socket.emit('compendiumSync', { availableClasses: FULL_CLASSES, availableRaces: FULL_RACES, availableBackgrounds: FULL_BACKGROUNDS, availableFeats: FULL_FEATS, availableSpells: FULL_SPELLS });
-  
-  socket.on('requestCompendium', () => { 
-      socket.emit('compendiumSync', { availableClasses: FULL_CLASSES, availableRaces: FULL_RACES, availableBackgrounds: FULL_BACKGROUNDS, availableFeats: FULL_FEATS, availableSpells: FULL_SPELLS }); 
-  });
+  const syncCompendium = () => {
+    socket.emit('compendiumSync', { 
+        availableClasses: FULL_CLASSES, 
+        availableRaces: FULL_RACES, 
+        availableBackgrounds: FULL_BACKGROUNDS, 
+        availableFeats: FULL_FEATS, 
+        availableSpells: FULL_SPELLS,
+        availableRules: FULL_RULES 
+    });
+  };
 
-  // 👉 Rota que envia os Livros da 5e (DM Screen e etc) para a interface do Mestre
+  syncCompendium();
+  
+  socket.on('requestCompendium', () => { syncCompendium(); });
+
   socket.on('requestBooks', () => {
       socket.emit('receiveBooks', FULL_BOOKS);
   });
@@ -255,19 +267,195 @@ io.on('connection', (socket) => {
   socket.on('playSFX', (data: any) => socket.to(data.roomId).emit('playSFX', { sfxId: data.sfxId }));
   socket.on('playMusic', (data: any) => { getRoomState(data.roomId).currentTrack = data.trackId; socket.to(data.roomId).emit('playMusic', { trackId: data.trackId }); });
   socket.on('stopMusic', (data: any) => { getRoomState(data.roomId).currentTrack = null; socket.to(data.roomId).emit('stopMusic'); });
+  
   socket.on('sendMessage', (data: any) => {
     const roomState = getRoomState(data.roomId); roomState.chatHistory.push(data.message);
     if (roomState.chatHistory.length > 50) roomState.chatHistory.shift();
     io.in(data.roomId).emit('chatMessage', data);
   });
+
   socket.on('sendLobbyMessage', (msgData: any) => socket.to(msgData.roomId).emit('receiveLobbyMessage', msgData));
   socket.on('rollDice', (data: any) => io.in(data.roomId).emit('newDiceResult', data));
   socket.on('triggerAudio', (data: any) => io.to(data.roomId).emit('triggerAudio', data));
   socket.on('dmRequestRoll', (data: any) => io.in(data.roomId).emit('dmRequestRoll', data));
+  
   socket.on('requestRandomLoot', (data: { rarity: string, type: string, count: number, roomId: string }) => {
       const loot = LootGenerator.generate(getRoomState(data.roomId).availableItems, { rarity: data.rarity, type: data.type, count: data.count });
       io.in(data.roomId).emit('randomLootGenerated', { loot });
   });
+
+  // 👉 MAGIA NOVA: FASE 1 - INICIAR COMBATE
+  socket.on('start_combat', (data: { roomId: string, combatants: number[] }) => {
+      const room = getRoomState(data.roomId);
+      const npcs: any[] = [];
+      
+      data.combatants.forEach(id => {
+          const ent = room.entities.find((e: any) => e.id === id);
+          if (!ent) return;
+          
+          const dexMod = ent.stats ? Math.floor((ent.stats.dex - 10) / 2) : 0;
+          
+          if (ent.type === 'player') {
+              // Manda a notificação silenciosa pro R3F abrir a rolagem pro jogador
+              io.in(data.roomId).emit('dmRequestRoll', {
+                  roomId: data.roomId,
+                  targetId: id,
+                  skillName: 'Iniciativa',
+                  mod: dexMod,
+                  dc: 0
+              });
+          } else {
+              // Rola os NPCs automaticamente para não tomar tempo do DM
+              const roll = Math.floor(Math.random() * 20) + 1 + dexMod;
+              npcs.push({ id: ent.id, name: ent.name, value: roll });
+          }
+      });
+
+      room.initiativeList = [...npcs].sort((a, b) => b.value - a.value);
+      room.activeTurnId = room.initiativeList.length > 0 ? room.initiativeList[0].id : null;
+      
+      io.in(data.roomId).emit('initiativeUpdated', { 
+          list: room.initiativeList, 
+          activeTurnId: room.activeTurnId 
+      });
+
+      // Emite o evento cinematográfico para escurecer as telas
+      io.in(data.roomId).emit('combat_started');
+
+      const chatMsg = {
+          id: Date.now().toString(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: `⚔️ **O COMBATE COMEÇOU!**\nOs monstros rolaram a iniciativa. Aventureiros, os dados chamam!`,
+          type: 'info',
+          sender: 'Sistema'
+      };
+      room.chatHistory.push(chatMsg);
+      io.in(data.roomId).emit('chatMessage', { roomId: data.roomId, message: chatMsg });
+  });
+
+  // 👉 MAGIA NOVA: FASE 6 - AVANÇAR TURNO
+  socket.on('next_turn', (data: { roomId: string }) => {
+      const room = getRoomState(data.roomId);
+      if (!room.initiativeList || room.initiativeList.length === 0) return;
+      
+      const currentIndex = room.initiativeList.findIndex((i: any) => i.id === room.activeTurnId);
+      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % room.initiativeList.length;
+      const nextEntity = room.initiativeList[nextIndex];
+      
+      room.activeTurnId = nextEntity.id;
+      
+      io.in(data.roomId).emit('initiativeUpdated', {
+          list: room.initiativeList,
+          activeTurnId: nextEntity.id
+      });
+
+      const chatMsg = {
+          id: Date.now().toString(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: `⏳ Início de Turno: **${nextEntity.name}**`,
+          type: 'info',
+          sender: 'Sistema'
+      };
+      room.chatHistory.push(chatMsg);
+      io.in(data.roomId).emit('chatMessage', { roomId: data.roomId, message: chatMsg });
+      autoSaveRoom(data.roomId);
+  });
+
+  socket.on('request_attack', (data: { roomId: string, atacanteId: number, alvoId: number, nomeAtaque: string, rolagemAtaque: number, rolagemDano: number, tipoDano: string }) => {
+      const roomState = getRoomState(data.roomId);
+      const atacante = roomState.entities.find(e => e.id === data.atacanteId);
+      const alvo = roomState.entities.find(e => e.id === data.alvoId);
+      
+      if (!atacante || !alvo) return;
+
+      const chatMsg = {
+          id: Date.now().toString(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: `⚔️ **${atacante.name}** ataca **${alvo.name}** com **${data.nomeAtaque}**!\n🎲 **Ataque:** ${data.rolagemAtaque} | 💥 **Dano Proposto:** ${data.rolagemDano} (${data.tipoDano})`,
+          type: 'roll',
+          sender: atacante.name
+      };
+      
+      roomState.chatHistory.push(chatMsg);
+      if (roomState.chatHistory.length > 50) roomState.chatHistory.shift();
+      io.in(data.roomId).emit('chatMessage', { roomId: data.roomId, message: chatMsg });
+
+      socket.to(data.roomId).emit('combatIntent', {
+          id: Date.now().toString(),
+          atacante: atacante.name,
+          atacanteId: atacante.id,
+          alvo: alvo.name,
+          alvoId: alvo.id,
+          nomeAtaque: data.nomeAtaque,
+          rolagemAtaque: data.rolagemAtaque,
+          rolagemDano: data.rolagemDano,
+          tipoDano: data.tipoDano,
+          alvoAc: alvo.ac 
+      });
+  });
+
+  socket.on('resolve_damage', (data: { roomId: string, alvoId: number, danoFinal: number, resolucaoMsg: string }) => {
+      const roomState = getRoomState(data.roomId);
+      const alvo = roomState.entities.find(e => e.id === data.alvoId);
+      
+      if (!alvo) return;
+
+      if (data.danoFinal > 0) {
+          let remainingDamage = data.danoFinal;
+          let newTemp = alvo.details?.tempHp || 0;
+          let currentHp = alvo.hp;
+
+          if (newTemp > 0) {
+              if (newTemp >= remainingDamage) {
+                  newTemp -= remainingDamage;
+                  remainingDamage = 0;
+              } else {
+                  remainingDamage -= newTemp;
+                  newTemp = 0;
+              }
+          }
+          currentHp = Math.max(0, currentHp - remainingDamage);
+          alvo.hp = currentHp;
+          if(!alvo.details) alvo.details = {};
+          alvo.details.tempHp = newTemp;
+
+          io.in(data.roomId).emit('entityStatusUpdated', { 
+              entityId: alvo.id, 
+              updates: { hp: currentHp, details: alvo.details } 
+          });
+          
+          io.in(data.roomId).emit('triggerCombatAnimation', { 
+              targetId: alvo.id, 
+              attackType: 'impact' 
+          });
+
+          if (currentHp <= 0) {
+             const deathMsg = { id: Date.now().toString(), timestamp: new Date().toLocaleTimeString(), text: `☠️ **${alvo.name} caiu inconsciente!**`, type: 'damage', sender: 'Sistema' };
+             roomState.chatHistory.push(deathMsg);
+             io.in(data.roomId).emit('chatMessage', { roomId: data.roomId, message: deathMsg });
+          }
+      }
+
+      const vereditoMsg = {
+          id: Date.now().toString(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: data.resolucaoMsg,
+          type: 'info',
+          sender: 'Mestre'
+      };
+      roomState.chatHistory.push(vereditoMsg);
+      if (roomState.chatHistory.length > 50) roomState.chatHistory.shift();
+      io.in(data.roomId).emit('chatMessage', { roomId: data.roomId, message: vereditoMsg });
+      
+      autoSaveRoom(data.roomId);
+  });
+
+  // 👉 MAGIA NOVA: FASE 4 - PEDIDO DE TESTE DO JOGADOR
+  socket.on('player_request_roll', (data: { roomId: string, playerId: number, playerName: string, skillName: string, mod: number }) => {
+      // Envia o card de pedido apenas para a sala (onde o Mestre vai interceptar)
+      io.in(data.roomId).emit('player_roll_requested', data);
+  });
+
 });
 
 fastify.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
