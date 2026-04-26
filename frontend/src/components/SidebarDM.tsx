@@ -1,15 +1,15 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Chat, { ChatMessage } from './Chat'; 
 import { Entity, MonsterPreset, FogRoom } from '../App';
 import EditEntityModal from './EditEntityModal';
 import CampaignManager from './CampaignManager';
-import { getLevelFromXP, getNextLevelXP } from '../utils/gameRules';
 import SkillList from './SkillList';
 import ItemCreator from './ItemCreator';
 import Scratchpad from './Scratchpad'; 
 import Soundboard from './Soundboard';
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
-import { Eye, EyeOff, Image as ImageIcon, Check, X, Brush, Square, Minus, Tent, Gem, Search, ShieldAlert, Flame, Heart, Sword, ChevronDown, ChevronRight, ChevronLeft, Activity, Skull, LayoutGrid, Trash2, BookOpen, BookText, Info, AlertTriangle } from 'lucide-react';
+import { EntityControlRow } from './EntityControlRow';
+import { Image as ImageIcon, Check, X, Brush, Square, Minus, Tent, Gem, Search, ShieldAlert, Flame, Heart, Sword, ChevronDown, ChevronRight, ChevronLeft, Activity, LayoutGrid, Trash2, BookOpen, BookText, Info, AlertTriangle, Undo2, Skull, Eye, EyeOff } from 'lucide-react';
 import UniversalDiceRoller from './UniversalDiceRoller';
 import socket from '../services/socket'; 
 
@@ -96,26 +96,22 @@ export interface SidebarDMProps {
   onDeleteFogRoom?: (roomId: string) => void;
   conditionsData?: any[];
   onStartCombat: (combatantIds: number[]) => void;
+  onQueueInitiativeRoll?: (entityId: number, entityName: string, mod: number) => void; // <--- ADICIONE AQUI
 }
 
-const extractTextFromEntries = (entries: any[]): string => {
+const extractTextFromEntries = (entries: any[], depth = 0): string => {
+    if (depth > 10) return '';
     if (!entries || !Array.isArray(entries)) return '';
     return entries.map(e => {
         if (typeof e === 'string') return e.replace(/\{@[a-z]+\s([^|}]+)(?:\|[^}]+)?\}/gi, '$1');
-        if (e.name && e.entries) return `${e.name}: ${extractTextFromEntries(e.entries)}`;
-        if (e.entries) return extractTextFromEntries(e.entries);
+        if (e.name && e.entries) return `${e.name}: ${extractTextFromEntries(e.entries, depth + 1)}`;
+        if (e.entries) return extractTextFromEntries(e.entries, depth + 1);
         if (e.items) return e.items.map((item:any) => typeof item === 'string' ? `• ${item.replace(/\{@[a-z]+\s([^|}]+)(?:\|[^}]+)?\}/gi, '$1')}` : `• ${item.name}: ${item.entry ? item.entry.replace(/\{@[a-z]+\s([^|}]+)(?:\|[^}]+)?\}/gi, '$1') : ''}`).join('\n');
         return '';
     }).join('\n\n');
 };
 
-interface DescriptionPanelProps {
-    title: string;
-    description: string;
-    onClose: () => void;
-}
-
-const DescriptionPanel: React.FC<DescriptionPanelProps> = ({ title, description, onClose }) => {
+const DescriptionPanel: React.FC<{ title: string; description: string; onClose: () => void; }> = ({ title, description, onClose }) => {
     return (
         <div className="absolute top-0 right-0 h-full w-[340px] bg-[#111111] border-l border-amber-900/50 z-[210] flex flex-col transform transition-transform animate-in slide-in-from-right duration-300 shadow-[-10px_0_30px_rgba(0,0,0,0.8)]">
             <div className="bg-black/60 p-4 shrink-0 flex items-center justify-between border-b border-amber-900/30 shadow-sm">
@@ -165,83 +161,22 @@ const CollapsibleSection = ({ title, icon: Icon, children, defaultOpen = false }
     );
 };
 
-const EntityControlRow = ({ entity, onUpdateHP, onDeleteEntity, onClickEdit, onAddToInit, isTarget, isAttacker, onSetTarget, onSetAttacker, onAddXP, onToggleVisibility, onEditEntity }: any) => {
-  const hpPercent = Math.max(0, Math.min(100, (entity.hp / entity.maxHp) * 100));
-  const isDead = entity.hp <= 0;
-  
-  let barColor = 'from-green-500 to-green-400';
-  let barShadow = 'shadow-[0_0_10px_rgba(34,197,94,0.4)]';
-  if (hpPercent < 30) { barColor = 'from-red-600 to-red-500'; barShadow = 'shadow-[0_0_10px_rgba(220,38,38,0.6)]'; } 
-  else if (hpPercent < 60) { barColor = 'from-yellow-500 to-yellow-400'; barShadow = 'shadow-[0_0_10px_rgba(234,179,8,0.4)]'; }
-
-  const [showXPInput, setShowXPInput] = useState(false);
-  const [showNotes, setShowNotes] = useState(false);
-  const [xpAmount, setXpAmount] = useState('');
-  const handleGiveXP = (e: React.FormEvent) => { e.preventDefault(); const amount = parseInt(xpAmount); if (amount && onAddXP) { onAddXP(entity.id, amount); setXpAmount(''); setShowXPInput(false); } };
-
-  return (
-    <div className={`relative p-3 rounded-xl border backdrop-blur-md transition-all duration-300 flex flex-col gap-2 group overflow-hidden cursor-pointer ${isDead ? 'opacity-50 grayscale bg-black/60 border-gray-800' : ''} ${isTarget && !isDead ? 'bg-red-950/40 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : isAttacker ? 'bg-blue-950/40 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.4)]' : 'bg-black/40 border-white/10 hover:bg-black/60 hover:border-white/20'}`} onClick={(e) => onSetTarget(entity.id, e.shiftKey)}>
-      {isDead && (<div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20 z-0"><Skull size={40} className="text-gray-300" /></div>)}
-      
-      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-20 bg-black/80 backdrop-blur-xl border border-white/10 rounded-lg p-1 shadow-2xl">
-        {entity.type === 'player' && (<button onClick={(e) => { e.stopPropagation(); setShowXPInput(!showXPInput); setShowNotes(false); }} className="text-gray-400 hover:text-amber-400 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Dar XP">✨</button>)}
-        <button onClick={(e) => { e.stopPropagation(); setShowNotes(!showNotes); setShowXPInput(false); }} className={`hover:bg-white/10 rounded p-1.5 transition-colors text-sm ${showNotes ? 'text-purple-400' : 'text-gray-400'}`} title="Anotações Secretas">📝</button>
-        <button onClick={(e) => { e.stopPropagation(); onSetAttacker(entity.id); }} className={`hover:bg-white/10 rounded p-1.5 transition-colors text-sm ${isAttacker ? 'text-blue-400' : 'text-gray-400'}`} title="Definir como Atacante">🎯</button>
-        <button onClick={(e) => { e.stopPropagation(); onAddToInit(); }} className="text-gray-400 hover:text-yellow-400 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Iniciativa">⚔️</button>
-        <button onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }} className={`hover:bg-white/10 rounded p-1.5 transition-colors text-sm ${entity.visible === false ? 'text-white/20' : 'text-cyan-400'}`} title={entity.visible === false ? "Revelar" : "Ocultar"}>
-            {entity.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); onClickEdit(); }} className="text-gray-400 hover:text-blue-400 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Editar">✎</button>
-        <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Deletar ${entity.name}?`)) onDeleteEntity(entity.id); }} className="text-gray-400 hover:text-red-500 hover:bg-white/10 rounded p-1.5 transition-colors text-sm" title="Excluir (Remove o Corpo)">✕</button>
-      </div>
-
-      {showXPInput && (<div className="absolute inset-0 z-30 bg-black/95 backdrop-blur-sm flex items-center justify-center p-3 animate-in fade-in" onClick={(e) => e.stopPropagation()}><form onSubmit={handleGiveXP} className="flex gap-2 w-full"><input autoFocus type="number" placeholder="XP" className="flex-1 bg-black border border-amber-500/50 text-white px-3 py-2 rounded-lg text-sm outline-none focus:border-amber-400" value={xpAmount} onChange={(e) => setXpAmount(e.target.value)} /><button type="submit" className="bg-amber-600 text-black px-4 py-2 rounded-lg font-black uppercase tracking-widest text-xs transition-transform active:scale-95">OK</button><button type="button" onClick={() => setShowXPInput(false)} className="text-gray-500 hover:text-white px-2">✕</button></form></div>)}
-
-      <div className="flex items-center justify-between pr-2 z-10 relative pointer-events-none">
-        <div className="flex items-center gap-4">
-          <div className={`relative w-12 h-12 flex-shrink-0 rounded-full border-2 p-0.5 ${isTarget && !isDead ? 'border-red-500' : isAttacker ? 'border-blue-500' : 'border-white/10'}`}>
-            {(entity.tokenImage || entity.image) ? (<img src={entity.tokenImage || entity.image} alt={entity.name} className={`w-full h-full rounded-full object-cover shadow-inner ${entity.visible === false ? 'opacity-40 grayscale' : ''}`}/>) : (<div className="w-full h-full rounded-full" style={{ backgroundColor: entity.color }}></div>)}
-            {entity.type === 'player' && (<div className="absolute -bottom-1 -right-1 bg-gradient-to-br from-amber-600 to-amber-800 border border-black text-black text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-lg">Nv.{getLevelFromXP(entity.xp || 0)}</div>)}
-          </div>
-          <div className="overflow-hidden flex flex-col justify-center">
-              <span className={`text-white font-bold text-sm tracking-wide truncate block ${isDead ? 'line-through text-gray-600' : ''} ${entity.visible === false ? 'opacity-40 italic' : ''}`}>
-                  {entity.name} {entity.visible === false && '(Oculto)'}
-              </span>
-              <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[9px] text-gray-500 uppercase tracking-widest font-bold leading-none">{entity.classType || 'NPC'}</span>
-                  {entity.conditions && entity.conditions.length > 0 && (
-                      <span className="flex gap-1">
-                          {entity.conditions.map((c: string, idx: number) => {
-                              const icon = CONDITION_MAP.find(cm => cm.id === c)?.icon;
-                              return icon ? <span key={idx} className="text-[10px] filter drop-shadow-md leading-none" title={c}>{icon}</span> : null;
-                          })}
-                      </span>
-                  )}
-              </div>
-          </div>
+const CustomConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, confirmText = "Confirmar", confirmColor = "bg-red-600 hover:bg-red-500" }: any) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={onCancel}>
+            <div className="bg-[#111] border border-white/10 p-6 rounded-xl shadow-2xl w-80 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                <h3 className="text-white font-black text-lg mb-2 flex items-center gap-2">
+                    <AlertTriangle size={20} className="text-amber-500"/> {title}
+                </h3>
+                <p className="text-gray-400 text-sm mb-6 leading-relaxed font-serif">{message}</p>
+                <div className="flex gap-3">
+                    <button onClick={onCancel} className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors border border-white/10">Cancelar</button>
+                    <button onClick={onConfirm} className={`flex-[1.5] py-2.5 text-white text-xs font-black uppercase tracking-widest rounded-lg transition-all shadow-lg active:scale-95 ${confirmColor}`}>{confirmText}</button>
+                </div>
+            </div>
         </div>
-        <div className="text-right">
-            <span className={`text-sm font-black font-mono tracking-tighter ${isDead ? 'text-gray-600' : (entity.hp < entity.maxHp / 2 ? 'text-red-400' : 'text-white')}`}>{entity.hp}<span className="text-[10px] text-gray-500 font-normal">/{entity.maxHp}</span></span>
-        </div>
-      </div>
-      
-      {entity.type === 'player' && (<div className="w-full h-1 bg-black/50 rounded-full mt-1.5 relative overflow-hidden pointer-events-none"><div className="h-full bg-cyan-500" style={{ width: `${Math.min(100, ((entity.xp || 0) / getNextLevelXP(getLevelFromXP(entity.xp || 0))) * 100)}%` }}></div></div>)}
-      <div className="w-full h-1.5 bg-black/60 rounded-full overflow-hidden border border-white/5 mt-1 z-10 relative pointer-events-none shadow-inner"><div className={`h-full bg-gradient-to-r ${barColor} ${barShadow} transition-all duration-500 ease-out`} style={{ width: `${hpPercent}%` }}></div></div>
-
-      {showNotes && (
-          <div className="mt-3 pt-3 border-t border-white/10 animate-in slide-in-from-top-2 fade-in duration-200" onClick={e => e.stopPropagation()}>
-              <span className="text-[9px] font-black text-purple-400 uppercase tracking-widest mb-1.5 flex items-center gap-1"><Eye size={10} /> Segredos do Mestre</span>
-              <textarea
-                  autoFocus
-                  className="w-full bg-black/50 border border-purple-500/30 rounded-lg p-3 text-xs text-purple-100 placeholder-purple-900/50 outline-none focus:border-purple-400 focus:bg-black/80 min-h-[70px] custom-scrollbar transition-all"
-                  placeholder="Anotações confidenciais..."
-                  defaultValue={entity.dmNotes || ''}
-                  onBlur={(e) => onEditEntity(entity.id, { dmNotes: e.target.value })}
-              />
-          </div>
-      )}
-    </div>
-  );
+    );
 };
 
 const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll, onRequestRoll }: any) => {
@@ -414,7 +349,6 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll,
     );
 };
 
-// --- DICIONÁRIO DE CONDIÇÕES ---
 const CONDITION_MAP = [
     { id: 'Blinded', icon: '🦇', label: 'Cego', bg: 'bg-gray-900 hover:bg-gray-800', border: 'border-gray-500/50', text: 'text-gray-200' },
     { id: 'Charmed', icon: '💕', label: 'Enfeitiçado', bg: 'bg-pink-950 hover:bg-pink-900', border: 'border-pink-500/50', text: 'text-pink-300' },
@@ -449,7 +383,8 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   onRequestCustomRoll,
   fogRooms = [], onToggleFogRoom, onDeleteFogRoom,
   conditionsData,
-  onStartCombat
+  onStartCombat,    
+  onQueueInitiativeRoll // <--- ADICIONE AQUI
 }) => {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>('combat');
@@ -477,6 +412,18 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
 
   const [pendingIntents, setPendingIntents] = useState<any[]>([]);
   const [roomId] = useState(window.location.pathname.split('/').pop() || 'mesa-do-victor');
+
+  const [roundCount, setRoundCount] = useState(1);
+
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean, title: string, message: string, action: () => void, confirmText?: string, confirmColor?: string }>({
+      isOpen: false, title: '', message: '', action: () => {}
+  });
+
+  const [conditionToast, setConditionToast] = useState<{visible: boolean, condId: string, timeoutId?: NodeJS.Timeout}>({visible: false, condId: ''});
+
+  // 🔴 NOVOS ESTADOS: Modal de Iniciar Combate
+  const [showCombatModal, setShowCombatModal] = useState(false);
+  const [selectedCombatants, setSelectedCombatants] = useState<number[]>([]);
 
   const bookNames: Record<string, string> = {
       'book-xscreen': 'Escudo do Mestre',
@@ -664,8 +611,67 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
 
   const attacker = entities.find(e => e.id === attackerId) || null;
   const targets = entities.filter(e => targetEntityIds.includes(e.id));
-  const toggleConditionForAll = (cond: string) => { targets.forEach(t => onToggleCondition(t.id, cond)); };
   
+  const toggleConditionForAll = useCallback((cond: string) => { 
+      if (targets.length > 1) {
+          targets.forEach(t => onToggleCondition(t.id, cond));
+          if (conditionToast.timeoutId) clearTimeout(conditionToast.timeoutId);
+          const tId = setTimeout(() => setConditionToast({visible: false, condId: ''}), 3000);
+          setConditionToast({visible: true, condId: cond, timeoutId: tId});
+      } else {
+          targets.forEach(t => onToggleCondition(t.id, cond)); 
+      }
+  }, [targets, onToggleCondition, conditionToast.timeoutId]);
+
+  const undoCondition = () => {
+      if (conditionToast.condId) {
+          targets.forEach(t => onToggleCondition(t.id, conditionToast.condId)); 
+          if (conditionToast.timeoutId) clearTimeout(conditionToast.timeoutId);
+          setConditionToast({visible: false, condId: ''});
+      }
+  };
+  
+  const handleUpdateHP = useCallback((id: number, change: number) => onUpdateHP(id, change), [onUpdateHP]);
+  const handleSetTarget = useCallback((id: number | number[] | null, multiSelect?: boolean) => onSetTarget(id, multiSelect), [onSetTarget]);
+  const handleSetAttacker = useCallback((id: number | null) => onSetAttacker(id), [onSetAttacker]);
+  const handleToggleCondition = useCallback((id: number, condition: string) => onToggleCondition(id, condition), [onToggleCondition]);
+  const handleAddXP = useCallback((id: number, amount: number) => { if(onAddXP) onAddXP(id, amount); }, [onAddXP]);
+  const handleToggleVisibility = useCallback((id: number) => onToggleVisibility(id), [onToggleVisibility]);
+  const handleEditEntity = useCallback((id: number, updates: Partial<Entity>) => onEditEntity(id, updates), [onEditEntity]);
+  const handleEditClick = useCallback((entity: Entity) => setEditingEntity(entity), []);
+  const handleAddToInitClick = useCallback((entity: Entity) => onAddToInitiative(entity), [onAddToInitiative]);
+
+  const handleDeleteClick = useCallback((entity: Entity) => {
+      setConfirmModal({
+          isOpen: true,
+          title: 'Excluir Entidade',
+          message: `Tem certeza que deseja apagar "${entity.name}" do plano de existência? Esta ação não pode ser desfeita.`,
+          action: () => { onDeleteEntity(entity.id); setConfirmModal(prev => ({...prev, isOpen: false})); },
+          confirmText: 'Apagar',
+          confirmColor: 'bg-red-600 hover:bg-red-500'
+      });
+  }, [onDeleteEntity]);
+
+  const handleNextTurnWrapper = () => {
+      if (initiativeList.length > 0) {
+          const currentIndex = initiativeList.findIndex(i => i.id === activeTurnId);
+          if (currentIndex === initiativeList.length - 1) {
+              setRoundCount(prev => prev + 1);
+          }
+      }
+      onNextTurn();
+  };
+
+  const handleStartCombatWrapper = (ids: number[]) => {
+      setRoundCount(1);
+      onStartCombat(ids);
+  };
+
+  const handleClearInitiativeWrapper = () => {
+      setRoundCount(1);
+      onClearInitiative();
+  };
+
   const sidebarStyle = { 
       backgroundColor: '#111', 
       backgroundImage: `url('/assets/bg-couro-sidebar.png')`, 
@@ -681,6 +687,77 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   return (
     <>
       {editingEntity && (<EditEntityModal entity={editingEntity} onSave={onEditEntity} onClose={() => setEditingEntity(null)} />)}
+      
+      <CustomConfirmModal 
+          isOpen={confirmModal.isOpen} 
+          title={confirmModal.title} 
+          message={confirmModal.message} 
+          onConfirm={confirmModal.action} 
+          onCancel={() => setConfirmModal(prev => ({...prev, isOpen: false}))} 
+          confirmText={confirmModal.confirmText}
+          confirmColor={confirmModal.confirmColor}
+      />
+
+      {/* 🔴 NOVO: Modal para Iniciar o Combate (Selecionar alvos e Rolar Iniciativa) */}
+      {showCombatModal && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setShowCombatModal(false)}>
+              <div className="bg-[#111] border border-amber-500/30 p-6 rounded-xl shadow-[0_0_40px_rgba(245,158,11,0.2)] w-[400px] max-w-[90vw] animate-in zoom-in-95 duration-200 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+                  <h3 className="text-amber-500 font-black text-lg mb-2 flex items-center gap-2 uppercase tracking-widest border-b border-amber-900/50 pb-3 shrink-0">
+                      <Sword size={20}/> Preparar Combate
+                  </h3>
+                  <p className="text-gray-400 text-xs mb-4 shrink-0">Selecione os participantes deste confronto. A iniciativa será solicitada automaticamente.</p>
+                  
+                  <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 mb-4 space-y-2">
+                      {entities.map(ent => (
+                          <label key={ent.id} className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${selectedCombatants.includes(ent.id) ? 'bg-amber-900/20 border-amber-500/50' : 'bg-black/50 border-white/5 hover:border-white/20'}`}>
+                              <input 
+                                  type="checkbox" 
+                                  checked={selectedCombatants.includes(ent.id)}
+                                  onChange={(e) => {
+                                      if (e.target.checked) setSelectedCombatants(prev => [...prev, ent.id]);
+                                      else setSelectedCombatants(prev => prev.filter(id => id !== ent.id));
+                                  }}
+                                  className="accent-amber-500 w-4 h-4 cursor-pointer"
+                              />
+                              <div className="w-8 h-8 rounded-full overflow-hidden bg-black border border-white/10 shrink-0">
+                                  {(ent.tokenImage || ent.image) && <img src={ent.tokenImage || ent.image} alt="" className="w-full h-full object-cover"/>}
+                              </div>
+                              <span className="text-sm font-bold text-gray-200 truncate">{ent.name}</span>
+                              <span className="ml-auto text-[9px] text-gray-500 uppercase tracking-widest shrink-0">{ent.type === 'player' ? 'Jogador' : 'NPC'}</span>
+                          </label>
+                      ))}
+                      {entities.length === 0 && <p className="text-center text-gray-600 text-xs italic py-4">Nenhuma entidade no mapa.</p>}
+                  </div>
+
+                  <div className="flex gap-3 pt-3 border-t border-white/10 shrink-0">
+                      <button onClick={() => setShowCombatModal(false)} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors border border-white/10">Cancelar</button>
+                      <button 
+    onClick={() => {
+        selectedCombatants.forEach(id => {
+            const e = entities.find(x => x.id === id);
+            if (e) {
+                const attrs = mapEntityStatsToAttributes(e);
+                const dexMod = Math.floor((attrs.DES - 10) / 2);
+                if (e.type === 'player') {
+                    onRequestRoll(id, 'Iniciativa', dexMod, 0); 
+                } else if (onQueueInitiativeRoll) {
+                    onQueueInitiativeRoll(id, e.name, dexMod);
+                }
+            }
+        });
+        onSendMessage(`⚔️ **INICIATIVA ROLADA!**\n> O Mestre iniciou um novo combate! Todos os participantes devem rolar suas iniciativas.`);
+        handleStartCombatWrapper(selectedCombatants);
+        setShowCombatModal(false);
+    }} 
+    disabled={selectedCombatants.length === 0}
+    className="flex-[1.5] py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:grayscale text-black text-xs font-black uppercase tracking-widest rounded-lg transition-all shadow-[0_0_15px_rgba(245,158,11,0.4)] active:scale-95"
+>
+    Iniciar ({selectedCombatants.length})
+</button>
+                  </div>
+              </div>
+          </div>
+      )}
       
       {isUniversalRollerOpen && (
           <UniversalDiceRoller 
@@ -879,11 +956,14 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                             ⚔️ MESA DE COMBATE
                                         </span>
                                         <button 
-                                            onClick={(e) => { e.stopPropagation(); onStartCombat(targetEntityIds); }} 
-                                            disabled={targetEntityIds.length === 0}
-                                            className="bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:grayscale text-black text-[9px] px-3 py-1.5 rounded-lg font-black uppercase tracking-widest transition-all shadow-[0_0_10px_rgba(217,119,6,0.3)] active:scale-95"
+                                            onClick={(e) => { 
+                                                e.stopPropagation(); 
+                                                setSelectedCombatants(targetEntityIds.length > 0 ? targetEntityIds : entities.filter(e => e.type === 'player').map(e => e.id));
+                                                setShowCombatModal(true); 
+                                            }} 
+                                            className="bg-amber-600 hover:bg-amber-500 text-black text-[9px] px-3 py-1.5 rounded-lg font-black uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(217,119,6,0.3)] active:scale-95"
                                         >
-                                            Lançar Encontro ({targetEntityIds.length})
+                                            INICIAR COMBATE
                                         </button>
                                     </div>
                                     <div className="p-4 relative z-10">
@@ -893,10 +973,12 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
 
                                 <div className="bg-black/60 backdrop-blur-xl border border-amber-900/30 rounded-2xl flex flex-col overflow-hidden relative shadow-2xl">
                                     <div className="flex justify-between items-center p-3 border-b border-amber-900/30 bg-gradient-to-r from-amber-900/10 to-transparent">
-                                        <h3 className="text-amber-500 font-black text-[11px] uppercase tracking-[0.2em] flex items-center gap-2">⚡ INICIATIVA</h3>
+                                        <h3 className="text-amber-500 font-black text-[11px] uppercase tracking-[0.2em] flex items-center gap-2">
+                                            ⚡ INICIATIVA - RODADA {roundCount}
+                                        </h3>
                                         <div className="flex gap-2">
                                             <button onClick={onSortInitiative} className="text-[9px] bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1 rounded text-gray-300 font-bold uppercase tracking-widest transition-colors">Sort</button>
-                                            <button onClick={onClearInitiative} className="text-[9px] bg-red-950/50 hover:bg-red-900 border border-red-900/50 px-3 py-1 rounded text-red-200 font-bold uppercase tracking-widest transition-colors">Limpar</button>
+                                            <button onClick={handleClearInitiativeWrapper} className="text-[9px] bg-red-950/50 hover:bg-red-900 border border-red-900/50 px-3 py-1 rounded text-red-200 font-bold uppercase tracking-widest transition-colors">Limpar</button>
                                         </div>
                                     </div>
                                     <div className="flex-1 overflow-y-auto custom-scrollbar p-2 max-h-60">
@@ -923,6 +1005,10 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                                         <div className="flex items-center gap-3 overflow-hidden flex-1 pl-1">
                                                             <span className={`font-black text-[10px] w-6 text-center ${item.id === activeTurnId ? 'text-amber-400' : 'text-gray-500'}`}>{item.value}</span>
                                                             
+                                                            {item.id === activeTurnId && (
+                                                                <span className="bg-amber-500/20 text-amber-400 text-[8px] font-black px-1.5 py-0.5 rounded border border-amber-500/50 animate-pulse shrink-0">AGINDO</span>
+                                                            )}
+
                                                             {ent && (
                                                                 <div className={`w-2.5 h-2.5 rounded-full ${hpStatusColor} shrink-0 flex items-center justify-center`}>
                                                                     {ent.hp <= 0 && <Skull size={8} className="text-red-500" />}
@@ -957,19 +1043,37 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                     </div>
                                     {initiativeList.length > 0 && (
                                         <div className="p-2 border-t border-amber-900/30 bg-black/40">
-                                            <button onClick={onNextTurn} className="w-full py-3 bg-gradient-to-r from-amber-700 to-amber-600 hover:from-amber-600 hover:to-amber-500 text-black text-[10px] font-black uppercase tracking-[0.2em] rounded-xl shadow-[0_0_15px_rgba(217,119,6,0.3)] transition-all active:scale-95">Próximo Turno ⏩</button>
+                                            <button onClick={handleNextTurnWrapper} className="w-full py-3 bg-gradient-to-r from-amber-700 to-amber-600 hover:from-amber-600 hover:to-amber-500 text-black text-[10px] font-black uppercase tracking-[0.2em] rounded-xl shadow-[0_0_15px_rgba(217,119,6,0.3)] transition-all active:scale-95">Próximo Turno ⏩</button>
                                         </div>
                                     )}
                                 </div>
 
                                 <CollapsibleSection title="Entidades no Mapa" icon={Activity}>
                                     <div className="p-2 space-y-2 max-h-[400px] overflow-y-auto custom-scrollbar">
-                                        {entities.map((entity) => (<EntityControlRow key={entity.id} entity={entity} onUpdateHP={onUpdateHP} onDeleteEntity={onDeleteEntity} onClickEdit={() => setEditingEntity(entity)} onAddToInit={() => onAddToInitiative(entity)} isTarget={targetEntityIds.includes(entity.id)} isAttacker={attackerId === entity.id} onSetTarget={onSetTarget} onSetAttacker={onSetAttacker} onToggleCondition={onToggleCondition} onAddXP={onAddXP} onToggleVisibility={() => onToggleVisibility(entity.id)} onEditEntity={onEditEntity} />))}
+                                        {entities.map((entity) => (
+                                          <EntityControlRow 
+                                            key={entity.id} 
+                                            entity={entity} 
+                                            onUpdateHP={handleUpdateHP} 
+                                            onDeleteEntity={handleDeleteClick} 
+                                            onClickEdit={handleEditClick} 
+                                            onAddToInit={handleAddToInitClick} 
+                                            isTarget={targetEntityIds.includes(entity.id)} 
+                                            isAttacker={attackerId === entity.id} 
+                                            onSetTarget={handleSetTarget} 
+                                            onSetAttacker={handleSetAttacker} 
+                                            onToggleCondition={handleToggleCondition} 
+                                            onAddXP={handleAddXP} 
+                                            onToggleVisibility={handleToggleVisibility} 
+                                            onEditEntity={handleEditEntity}
+                                            CONDITION_MAP={CONDITION_MAP}
+                                          />
+                                        ))}
                                     </div>
                                 </CollapsibleSection>
 
                                 <CollapsibleSection title="Condições" icon={ShieldAlert}>
-                                    <div className="p-2 bg-black/20">
+                                    <div className="p-2 bg-black/20 relative">
                                         <div className="grid grid-cols-3 gap-2">
                                             {CONDITION_MAP.map(cond => (
                                                 <button 
@@ -984,6 +1088,15 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                                 </button>
                                             ))}
                                         </div>
+
+                                        {conditionToast.visible && (
+                                            <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 bg-[#111] border border-blue-500 p-2 rounded-lg shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                                                <span className="text-[9px] text-blue-300 font-black uppercase tracking-widest whitespace-nowrap">Condição Aplicada!</span>
+                                                <button onClick={undoCondition} className="flex items-center gap-1 bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-white text-[9px] uppercase tracking-widest font-bold transition-colors">
+                                                    <Undo2 size={10}/> Desfazer
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </CollapsibleSection>
 
@@ -1093,9 +1206,14 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                                     <p className="text-xs text-gray-400 mb-5 font-serif leading-relaxed relative z-10">Cura completamente todos os aventureiros da mesa e restaura seus espaços de magia e habilidades diárias.</p>
                                     <button 
                                         onClick={() => {
-                                            if (window.confirm("Os heróis montaram acampamento para um descanso longo? (Cura total para todos os jogadores)")) {
-                                                onLongRest();
-                                            }
+                                            setConfirmModal({
+                                                isOpen: true,
+                                                title: 'Acampamento Seguro',
+                                                message: 'Os heróis montaram acampamento para um descanso longo? Esta ação irá curar totalmente todos os jogadores e restaurar magias.',
+                                                action: () => { onLongRest(); setConfirmModal(prev => ({...prev, isOpen: false})); },
+                                                confirmText: 'Realizar Descanso Longo',
+                                                confirmColor: 'bg-orange-600 hover:bg-orange-500'
+                                            });
                                         }} 
                                         className="w-full py-4 bg-gradient-to-r from-orange-900 to-amber-900 hover:from-orange-800 hover:to-amber-800 border border-orange-500/50 text-white font-black uppercase tracking-widest rounded-xl transition-all shadow-[0_0_20px_rgba(249,115,22,0.2)] flex items-center justify-center gap-2 active:scale-95 relative z-10"
                                     >

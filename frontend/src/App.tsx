@@ -209,6 +209,9 @@ function App() {
   const [gamePhase, setGamePhase] = useState<'LOBBY' | 'GAME'>('LOBBY');
 
   const [entities, setEntities] = useState<Entity[]>([]);
+  const entitiesRef = useRef(entities);
+  useEffect(() => { entitiesRef.current = entities; }, [entities]);
+
   const [fogGrid, setFogGrid] = useState<boolean[][]>(createInitialFog());
   
   const [walls, setWalls] = useState<Wall[]>([]); 
@@ -454,11 +457,14 @@ function App() {
         }
     });
 
-    socket.on('newDiceResult', (data: any) => { 
+    // MAGIA DE PROTEÇÃO: Função isolada para limpar o socket corretamente
+    const handleNewDiceResult = (data: any) => { 
         const myName = role === 'DM' ? 'Mestre' : playerName;
         if (data && data.user === myName) return; 
         playSound('dado'); 
-    });
+    };
+
+    socket.on('newDiceResult', handleNewDiceResult);
 
     socket.on('wallsUpdated', (data: any) => { if(data.walls) setWalls(data.walls); });
     socket.on('fogRoomsUpdated', (data: any) => { if(data.rooms) setFogRooms(data.rooms); });
@@ -510,26 +516,34 @@ function App() {
     socket.on('mapStateUpdated', (data: any) => { if (role === 'PLAYER') { setMapOffset(data.offset); setMapScale(data.scale); } });
     socket.on('globalBrightnessUpdated', (data: any) => { setGlobalBrightness(data.brightness); });
 
-    socket.on('dmRequestRoll', (data: any) => {
+    // 🛡️ MAGIA DE PROTEÇÃO: Impede clones de rolagem na fila do jogador
+    const handleDmRequestRollListener = (data: any) => {
         if (role === 'PLAYER') {
-            setEntities(currentEntities => {
-                const myChar = currentEntities.find(e => e.name.toLowerCase() === playerName.toLowerCase() && e.id === data.targetId);
-                const isMyChar = myChar || currentEntities.some(e => e.id === data.targetId && e.type === 'player' && e.name.toLowerCase() === playerName.toLowerCase());
-                if (isMyChar) {
-                    const charName = myChar ? myChar.name : playerName;
-                    const charId = myChar ? myChar.id : data.targetId;
-                    setRollQueue(prev => [...prev, {
-                        title: data.skillName, subtitle: `Exigido pelo Mestre`, mod: data.mod, dc: data.dc, entityId: charId,
-                        targetName: charName, isDamage: data.isDamage || false, damageExpression: data.damageExpression || '1d20',
+            const currentEntities = entitiesRef.current;
+            const myChar = currentEntities.find(e => e.name.toLowerCase() === playerName.toLowerCase() && e.id === data.targetId);
+            
+            if (myChar) {
+                setRollQueue(prev => {
+                    // BLINDAGEM: Se já tem um pedido idêntico na fila, ignora o clone sumariamente!
+                    if (prev.some(r => r.entityId === myChar.id && r.title === data.skillName)) return prev;
+                    
+                    // Dispara som e log de forma segura (fora do render do StrictMode)
+                    setTimeout(() => {
+                        playSound('notificacao');
+                        addLog({ text: `⚠️ O Mestre exigiu uma rolagem de **${data.skillName}** de você!`, type: 'info', sender: 'Sistema' }, false);
+                    }, 0);
+
+                    return [...prev, {
+                        title: data.skillName, subtitle: `Exigido pelo Mestre`, mod: data.mod, dc: data.dc, entityId: myChar.id,
+                        targetName: myChar.name, isDamage: data.isDamage || false, damageExpression: data.damageExpression || '1d20',
                         isCustomNoDamage: data.isCustomNoDamage || false
-                    }]);
-                    playSound('notificacao');
-                    addLog({ text: `⚠️ O Mestre exigiu uma rolagem de **${data.skillName}** de você!`, type: 'info', sender: 'Sistema' }, false);
-                }
-                return currentEntities;
-            });
+                    }];
+                });
+            }
         }
-    });
+    };
+    
+    socket.on('dmRequestRoll', handleDmRequestRollListener);
 
     // 👉 MAGIA NOVA: RECEBER PEDIDO DE TESTE DO JOGADOR (Só Mestre reage)
     socket.on('player_roll_requested', (data: any) => {
@@ -542,10 +556,14 @@ function App() {
     socket.on('mapPinged', (data: { ping: MapPing }) => { setPings(prev => [...prev, data.ping]); handlePlaySFX('ping', false); setTimeout(() => { setPings(prev => prev.filter(p => p.id !== data.ping.id)); }, 2500); });
 
     return () => {
-      socket.off('gameStateSync'); socket.off('notification'); socket.off('newDiceResult'); socket.off('chatMessage'); 
+      socket.off('gameStateSync'); socket.off('notification'); 
+      socket.off('newDiceResult', handleNewDiceResult); // PROTEGIDO!
+      socket.off('chatMessage'); 
+// ...
       socket.off('entityPositionUpdated'); socket.off('entityStatusUpdated'); socket.off('entityCreated'); socket.off('entityDeleted'); 
       socket.off('mapChanged'); socket.off('fogUpdated'); socket.off('fogGridSynced'); socket.off('initiativeUpdated'); 
-      socket.off('triggerAudio'); socket.off('mapStateUpdated'); socket.off('globalBrightnessUpdated'); socket.off('dmRequestRoll');
+      socket.off('triggerAudio'); socket.off('mapStateUpdated'); socket.off('globalBrightnessUpdated'); 
+socket.off('dmRequestRoll', handleDmRequestRollListener); // PROTEGIDO!
       socket.off('playMusic'); socket.off('stopMusic'); socket.off('playSFX'); socket.off('mapPinged'); 
       socket.off('gameStarted'); socket.off('fogRoomsUpdated'); socket.off('wallsUpdated');
       socket.off('player_roll_requested');
@@ -774,6 +792,10 @@ function App() {
   const openDiceRoller = () => { setRollQueue(prev => [...prev, { title: 'Rolagem Livre', subtitle: 'Sorte', dc: 10, mod: 0, entityId: null, targetName: '' }]); };
   const handleDMRoll = (title: string, subtitle: string, mod: number, rollType: 'normal' | 'advantage' | 'disadvantage' = 'normal') => { 
       setRollQueue(prev => [...prev, { title, subtitle, dc: 10, mod, entityId: null, targetName: '' }]); 
+  };
+
+  const handleQueueInitiativeRoll = (entityId: number, entityName: string, mod: number) => {
+      setRollQueue(prev => [...prev, { title: 'Iniciativa', subtitle: `Rolagem para ${entityName}`, dc: 0, mod, entityId, targetName: entityName }]);
   };
 
   const handleAddXP = (id: number, amount: number) => {
@@ -1457,6 +1479,7 @@ function App() {
                   onOpenLootGenerator={() => setShowLootGenerator(true)}
                   onStartCombat={handleStartCombat}
                   onRequestCustomRoll={handleRequestCustomRoll}
+                  onQueueInitiativeRoll={handleQueueInitiativeRoll} // <--- ADICIONE ESTA LINHA AQUI
                   fogRooms={fogRooms}
                   onToggleFogRoom={handleToggleFogRoom}
                   onDeleteFogRoom={handleDeleteFogRoom}
