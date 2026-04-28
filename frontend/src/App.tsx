@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';import socket from './services/socket';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import socket from './services/socket';
 import { Howl } from 'howler';
 import GameMap from './components/GameMap'; 
 import SidebarDM, { InitiativeItem } from './components/SidebarDM';
@@ -11,8 +12,9 @@ import UniversalDiceRoller, { RollBonus } from './components/UniversalDiceRoller
 import { getLevelFromXP } from './utils/gameRules';
 import MobilePlayerSheet from './components/MobilePlayerSheet'; 
 import CharacterSheetFloating from './components/CharacterSheetFloating'; 
+import MonsterSidebar from './components/MonsterSidebar'; 
 import LootGeneratorModal from './components/LootGeneratorModal';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Zap } from 'lucide-react';
 
 const GRID_SIZE = 70; 
 const CANVAS_WIDTH = 1920; 
@@ -34,11 +36,8 @@ export interface Entity {
   proficiencies?: Record<string, number>; deathSaves?: { successes: number, failures: number }; inspiration?: boolean; 
   spellSlots?: Record<number, { max: number, used: number }>; spells?: { id: string, name: string, level: number }[];
   coins?: { cp: number, sp: number, ep: number, gp: number, pp: number };
-  resistances?: string[]; 
-  vulnerabilities?: string[];
-  immunities?: string[];
-  dmNotes?: string;
-  customActions?: any[]; 
+  resistances?: string[]; vulnerabilities?: string[]; immunities?: string[];
+  dmNotes?: string; customActions?: any[]; actions?: any[];
   details?: {
     background?: string; alignment?: string; faith?: string; lifestyle?: string; personalityTraits?: string;
     ideals?: string; bonds?: string; flaws?: string; backgroundDesc?: string;
@@ -50,35 +49,39 @@ export interface Entity {
 export interface MonsterPreset {
   name: string; hp: number; ac: number; image: string; tokenImage?: string; size?: number;
   resistances?: string[]; vulnerabilities?: string[]; immunities?: string[];
+  actions?: any[]; stats?: { str: number; dex: number; con: number; int: number; wis: number; cha: number; }; 
+  level?: any; details?: any; 
 }
 
-export interface MapPing {
-  id: string; x: number; y: number; color: string;
-}
+export interface MapPing { id: string; x: number; y: number; color: string; }
 
 export interface QueuedRoll {
-  title: string; subtitle: string; mod: number; dc: number; entityId: number | null; targetName: string;
+  id: string; title: string; subtitle: string; mod: number; dc: number; entityId: number | null; targetName: string;
   isDamage?: boolean; damageExpression?: string; isCustomNoDamage?: boolean; damageType?: string; rollType?: 'normal' | 'advantage' | 'disadvantage';
 }
 
-export interface FogRoom {
-  id: string; name: string; cells: { x: number, y: number }[];
-}
+export interface FogRoom { id: string; name: string; cells: { x: number, y: number }[]; }
+export interface Wall { id: string; x1: number; y1: number; x2: number; y2: number; }
 
-export interface Wall {
-  id: string; x1: number; y1: number; x2: number; y2: number;
+// 🛡️ REAÇÃO: Interface de Ataque Recebido
+export interface IncomingAttack {
+    id: string;
+    attackerName: string;
+    attackerId: number | null;
+    targetId: number;
+    targetName: string;
+    attackName: string;
+    attackRoll: number;
+    damageExpr: string;
+    damageType: string;
+    isCritical: boolean;
+    targetAC: number;
 }
 
 const getLineIntersection = (p0x: number, p0y: number, p1x: number, p1y: number, p2x: number, p2y: number, p3x: number, p3y: number) => {
-    const s1x = p1x - p0x; const s1y = p1y - p0y;
-    const s2x = p3x - p2x; const s2y = p3y - p2y;
-    const denom = -s2x * s1y + s1x * s2y;
-    if (denom === 0) return null; 
-    const s = (-s1y * (p0x - p2x) + s1x * (p0y - p2y)) / denom;
-    const t = ( s2x * (p0y - p2y) - s2y * (p0x - p2x)) / denom;
-    if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
-        return { x: p0x + (t * s1x), y: p0y + (t * s1y) };
-    }
+    const s1x = p1x - p0x; const s1y = p1y - p0y; const s2x = p3x - p2x; const s2y = p3y - p2y; const denom = -s2x * s1y + s1x * s2y; if (denom === 0) return null; 
+    const s = (-s1y * (p0x - p2x) + s1x * (p0y - p2y)) / denom; const t = ( s2x * (p0y - p2y) - s2y * (p0x - p2x)) / denom;
+    if (s >= 0 && s <= 1 && t >= 0 && t <= 1) return { x: p0x + (t * s1x), y: p0y + (t * s1y) };
     return null;
 };
 
@@ -107,6 +110,101 @@ const InitiativeModal = ({ entity, onClose, onConfirm }: { entity: Entity, onClo
       </div>
     </div>
   );
+};
+
+// 🛡️ REAÇÃO: Componente de Interceptação de Ataque
+const IncomingAttackModal = ({ attack, targetEntity, onResolve }: { attack: IncomingAttack, targetEntity: Entity, onResolve: (dodgeRoll?: number) => void }) => {
+    const [rolling, setRolling] = useState(false);
+    const [rollResult, setRollResult] = useState<number | null>(null);
+    const dexMod = targetEntity.stats ? Math.floor((targetEntity.stats.dex - 10) / 2) : 0;
+    const ac = targetEntity.ac || 10;
+    
+    const willHitNormal = attack.attackRoll >= ac || attack.isCritical;
+
+    const handleDodge = () => {
+        setRolling(true);
+        let ticks = 0;
+        const audio = new Howl({ src: ['/sfx/dado.mp3'], volume: 0.5, rate: 1.5 });
+        audio.play();
+
+        const interval = setInterval(() => {
+            ticks++;
+            setRollResult(Math.floor(Math.random() * 20) + 1);
+            if (ticks > 15) {
+                clearInterval(interval);
+                const finalD20 = Math.floor(Math.random() * 20) + 1;
+                setRollResult(finalD20);
+                setTimeout(() => {
+                    onResolve(finalD20 + dexMod);
+                }, 2000);
+            }
+        }, 60);
+    };
+
+    return (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/90 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-[#0e0d16] border border-amber-500/50 rounded-2xl shadow-[0_0_50px_rgba(245,158,11,0.3)] w-[400px] flex flex-col overflow-hidden relative">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-amber-500 to-transparent"></div>
+                <div className="p-6 text-center">
+                    <div className="w-20 h-20 mx-auto rounded-full border-2 border-amber-500 overflow-hidden mb-4 shadow-[0_0_20px_rgba(245,158,11,0.5)]">
+                        {targetEntity.tokenImage || targetEntity.image ? <img src={targetEntity.tokenImage || targetEntity.image} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full bg-gray-800"/>}
+                    </div>
+                    <h2 className="text-2xl font-black font-serif tracking-wide mb-1 uppercase text-amber-500">Ataque Recebido!</h2>
+                    <p className="text-sm text-gray-400 mb-6">
+                        <strong className="text-white">{attack.attackerName}</strong> direcionou <span className="text-amber-400">{attack.attackName}</span> contra você!
+                    </p>
+                    
+                    <div className="bg-[#1a1510] border border-[#2e2518] rounded-xl p-4 flex justify-between items-center mb-6 shadow-inner">
+                        <div className="flex flex-col items-center w-24">
+                            <span className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Ataque</span>
+                            <span className="text-3xl font-black text-red-500 leading-none">{attack.attackRoll}</span>
+                        </div>
+                        <div className="text-2xl font-black text-gray-600 font-serif">VS</div>
+                        <div className="flex flex-col items-center w-24">
+                            <span className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Sua CA</span>
+                            <span className="text-3xl font-black text-blue-400 leading-none">{ac}</span>
+                        </div>
+                    </div>
+
+                    {!rolling && rollResult === null && (
+                        <div className="flex flex-col gap-3">
+                            {willHitNormal ? (
+                                <div className="bg-red-900/30 border border-red-500/50 text-red-400 text-[11px] uppercase tracking-widest font-black py-2 px-4 rounded-lg animate-pulse mb-2">
+                                    ⚠️ O ataque irá ACERTAR!
+                                </div>
+                            ) : (
+                                <div className="bg-green-900/30 border border-green-500/50 text-green-400 text-[11px] uppercase tracking-widest font-black py-2 px-4 rounded-lg mb-2">
+                                    🛡️ O ataque já vai ERRAR.
+                                </div>
+                            )}
+                            
+                            <button onClick={handleDodge} className="w-full py-4 bg-gradient-to-r from-amber-700 to-yellow-600 hover:from-amber-600 hover:to-yellow-500 text-black font-black uppercase tracking-widest rounded-xl transition-all shadow-[0_0_20px_rgba(245,158,11,0.4)] flex items-center justify-center gap-2 active:scale-95">
+                                <Zap size={18} /> Tentar Esquivar (1d20 {dexMod >= 0 ? '+'+dexMod : dexMod})
+                            </button>
+                            
+                            <button onClick={() => onResolve()} className="w-full py-3 bg-[#1a1510] hover:bg-[#221c13] border border-[#2e2518] text-gray-400 hover:text-white font-bold uppercase tracking-widest rounded-xl transition-colors text-xs">
+                                Aceitar o Golpe (Usar CA)
+                            </button>
+                        </div>
+                    )}
+
+                    {(rolling || rollResult !== null) && (
+                        <div className="py-6 flex flex-col items-center justify-center animate-in zoom-in duration-200">
+                            <span className="text-[10px] text-amber-500 uppercase tracking-widest font-bold mb-2">Rolando Esquiva...</span>
+                            <div className={`w-24 h-24 rounded-2xl flex items-center justify-center text-5xl font-black font-serif shadow-2xl transition-all duration-300 ${!rolling && rollResult !== null ? (rollResult + dexMod >= attack.attackRoll ? 'bg-green-900 border-2 border-green-500 text-green-400 shadow-[0_0_40px_rgba(34,197,94,0.5)]' : 'bg-red-900 border-2 border-red-500 text-red-400 shadow-[0_0_40px_rgba(220,38,38,0.5)]') : 'bg-gray-800 border-2 border-amber-500 text-amber-500'}`}>
+                                {rollResult !== null ? rollResult : '?'}
+                            </div>
+                            {!rolling && rollResult !== null && (
+                                <div className="mt-4 text-lg font-bold text-white">
+                                    Total: {rollResult} {dexMod >= 0 ? '+' : ''}{dexMod} = <span className="text-amber-400 text-2xl">{rollResult + dexMod}</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 };
 
 const DamageOverlay = ({ data, onComplete }: { data: any, onComplete: () => void }) => {
@@ -201,6 +299,8 @@ const SFX_LIBRARY: Record<string, Howl> = {
   campfire: new Howl({ src: ['/sfx/campfire.mp3'], volume: 0.8, html5: true }) 
 };
 
+const soundDebounce: Record<string, number> = {};
+
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false); 
   const [role, setRole] = useState<'DM' | 'PLAYER'>('PLAYER'); 
@@ -213,7 +313,6 @@ function App() {
   useEffect(() => { entitiesRef.current = entities; }, [entities]);
 
   const [fogGrid, setFogGrid] = useState<boolean[][]>(createInitialFog());
-  
   const [walls, setWalls] = useState<Wall[]>([]); 
   
   const [isFogMode, setIsFogMode] = useState(false);
@@ -236,6 +335,7 @@ function App() {
 
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, entity: Entity } | null>(null);
   const [activeCharacterSheetId, setActiveCharacterSheetId] = useState<number | null>(null);
+  const [activeMonsterSheetId, setActiveMonsterSheetId] = useState<number | null>(null); 
 
   const [customMonsters, setCustomMonsters] = useState<MonsterPreset[]>([]); 
   const [availableClasses, setAvailableClasses] = useState<any[]>([]); 
@@ -243,10 +343,11 @@ function App() {
   const [availableItems, setAvailableItems] = useState<any[]>([]); 
   const [availableRaces, setAvailableRaces] = useState<any[]>([]); 
   const [availableConditions, setAvailableConditions] = useState<any[]>([]); 
-  
+  const [availableMonsters, setAvailableMonsters] = useState<any[]>([]); 
+
   const [availableRules, setAvailableRules] = useState<{actions: any[], conditions: any[]}>({ actions: [], conditions: [] });
 
-  const [globalBrightness, setGlobalBrightness] = useState(1);              
+  const [globalBrightness, setGlobalBrightness] = useState(1);             
 
   const [mapOffset, setMapOffset] = useState({ x: 0, y: 0 });
   const [mapScale, setMapScale] = useState(1);
@@ -259,13 +360,21 @@ function App() {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const [damageOverlayData, setDamageOverlayData] = useState<any>(null);
+  const [incomingAttack, setIncomingAttack] = useState<IncomingAttack | null>(null); // 🛡️ REAÇÃO ESTADO
 
   const [rollQueue, setRollQueue] = useState<QueuedRoll[]>([]);
-  const [diceRollId, setDiceRollId] = useState(0);
+  const rollQueueRef = useRef(rollQueue);
+  useEffect(() => { rollQueueRef.current = rollQueue; }, [rollQueue]);
 
-  const [playerSkillRequests, setPlayerSkillRequests] = useState<{ playerId: number, playerName: string, skillName: string, mod: number }[]>([]);
+  const [diceRollId, setDiceRollId] = useState(0);
+  const processedRollIdRef = useRef<number>(-1);
+
+  const [playerSkillRequests, setPlayerSkillRequests] = useState<{ id: string, playerId: number, playerName: string, skillName: string, mod: number }[]>([]);
+  const playerSkillRequestsRef = useRef(playerSkillRequests);
+  useEffect(() => { playerSkillRequestsRef.current = playerSkillRequests; }, [playerSkillRequests]);
 
   const [diceContext, setDiceContext] = useState({
+      id: '',
       title: 'Teste Geral', subtitle: 'Sorte', dc: 15, mod: 0, prof: 0, bonuses: [] as RollBonus[], 
       rollType: 'normal' as 'normal' | 'advantage' | 'disadvantage', entityId: null as number | null,
       targetName: '', isDamage: false, damageExpression: '1d20', isCustomNoDamage: false, damageType: 'Físico' 
@@ -278,7 +387,6 @@ function App() {
   const [pings, setPings] = useState<MapPing[]>([]);
   const [toastMsg, setToastMsg] = useState<{text: string, id: number, sender?: string} | null>(null);
 
-  // 👉 AQUI A MÁGICA: Buscar o compêndio imediatamente (Independente de estar logado)
   useEffect(() => {
       const handleCompendiumSync = (data: any) => {
           if (data.availableClasses) setAvailableClasses(data.availableClasses);
@@ -287,13 +395,12 @@ function App() {
           if (data.availableSpells) setAvailableSpells(data.availableSpells);
           if (data.availableItems) setAvailableItems(data.availableItems);
           if (data.availableConditions) setAvailableConditions(data.availableConditions);
+          if (data.availableMonsters) setAvailableMonsters(data.availableMonsters); 
       };
       
       socket.on('compendiumSync', handleCompendiumSync);
       const handleConnect = () => socket.emit('requestCompendium');
       socket.on('connect', handleConnect);
-      
-      // Solicita imediatamente caso já tenha conectado
       socket.emit('requestCompendium');
 
       return () => {
@@ -310,6 +417,7 @@ function App() {
               setStatusSelectionId(null);
               setActiveAoE(null);
               setActiveCharacterSheetId(null);
+              setActiveMonsterSheetId(null); 
               setContextMenu(null);
               setPendingRoomCells(null);
           }
@@ -333,6 +441,7 @@ function App() {
       if (rollQueue.length > 0 && !showBgDice) {
           const nextRoll = rollQueue[0];
           setDiceContext({
+              id: nextRoll.id,
               title: nextRoll.title, subtitle: nextRoll.subtitle, dc: nextRoll.dc, mod: nextRoll.mod, prof: 0,
               bonuses: [], rollType: nextRoll.rollType || 'normal', entityId: nextRoll.entityId, targetName: nextRoll.targetName,
               isDamage: nextRoll.isDamage || false, damageExpression: nextRoll.damageExpression || '1d20',
@@ -368,6 +477,15 @@ function App() {
   }, [chatMessages, privateChatTarget]);
 
   useEffect(() => {
+      if (role === 'DM' && activeTurnId !== null) {
+          const activeEntity = entitiesRef.current.find(e => e.id === activeTurnId);
+          if (activeEntity && activeEntity.type === 'enemy') {
+              setActiveMonsterSheetId(activeTurnId);
+          }
+      }
+  }, [activeTurnId, role]);
+
+  useEffect(() => {
       const handleOpenDraft = (e: Event) => {
           const customEvent = e as CustomEvent<string>;
           const match = customEvent.detail.match(/^\/w\s+"?([^"]+)"?\s*/i);
@@ -394,6 +512,10 @@ function App() {
   }, [roomId]);
 
   const handlePlaySFX = useCallback((sfxId: string, emit: boolean = true) => {
+      const now = Date.now();
+      if (soundDebounce[sfxId] && (now - soundDebounce[sfxId] < 400)) return;
+      soundDebounce[sfxId] = now;
+
       const sound = SFX_LIBRARY[sfxId];
       if (sound) { sound.volume(audioVolume); sound.play(); }
       if (emit) socket.emit('playSFX', { sfxId, roomId });
@@ -422,7 +544,8 @@ function App() {
           deathSaves: customStats?.deathSaves || { successes: 0, failures: 0 }, inspiration: customStats?.inspiration || false, 
           spellSlots: customStats?.spellSlots || {}, spells: customStats?.spells || [], coins: customStats?.coins || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
           resistances: customStats?.resistances || [], vulnerabilities: customStats?.vulnerabilities || [], immunities: customStats?.immunities || [],
-          dmNotes: customStats?.dmNotes || '', details: customStats?.details || {}
+          dmNotes: customStats?.dmNotes || '', details: customStats?.details || {},
+          actions: customStats?.actions || []
       }; 
       setEntities(prev => [...prev, newEntity]); 
       socket.emit('createEntity', { entity: newEntity, roomId }); 
@@ -433,142 +556,253 @@ function App() {
     socket.emit('joinRoom', roomId);
   }, [isLoggedIn, roomId]);
 
+  const handleApplyDamageFromChat = useCallback((targetId: number, damageExpression: string) => {
+        const target = entitiesRef.current.find(e => e.id === targetId);
+        if (!target) return;
+        const rollMatch = damageExpression.match(/^(\d+)d(\d+)(\+(\d+))?$/i);
+        if (rollMatch) {
+            setRollQueue(prev => [...prev, { id: `dmg-${Date.now()}`, title: `Dano em ${target.name}`, subtitle: damageExpression, dc: 0, mod: 0, entityId: targetId, targetName: target.name, isDamage: true, damageExpression: damageExpression }]);
+        } else { 
+            const totalDano = parseInt(damageExpression) || 0; 
+            if (totalDano > 0) {
+                // Aqui, se quisermos enviar o dano direto...
+                setDamageOverlayData({ rolls: null, mod: 0, total: totalDano, targetName: target.name });
+            }
+        }
+  }, []);
+
+  // 🛡️ REAÇÃO: Ouvintes de Sockets para o sistema de interceptação
   useEffect(() => {
-    if (!isLoggedIn) return;
+      if (!isLoggedIn) return;
 
-    socket.on('gameStateSync', (gameState: any) => {
-      if (gameState.entities) setEntities(gameState.entities);
-      if (gameState.fogGrid) setFogGrid(gameState.fogGrid);
-      if (gameState.walls) setWalls(gameState.walls);
-      if (gameState.currentMap) setCurrentMap(gameState.currentMap);
-      if (gameState.initiativeList) setInitiativeList(gameState.initiativeList);
-      if (gameState.activeTurnId) setActiveTurnId(gameState.activeTurnId);
-      if (gameState.chatHistory) setChatMessages(gameState.chatHistory);
-      if (gameState.customMonsters) setCustomMonsters(gameState.customMonsters);
-      if (gameState.globalBrightness !== undefined) setGlobalBrightness(gameState.globalBrightness);
-      if (gameState.currentTrack) handlePlayMusic(gameState.currentTrack, false);
-      if (gameState.fogRooms) setFogRooms(gameState.fogRooms);
-    });
+      const handleGameStateSync = (gameState: any) => {
+        if (gameState.entities) setEntities(gameState.entities);
+        if (gameState.fogGrid) setFogGrid(gameState.fogGrid);
+        if (gameState.walls) setWalls(gameState.walls);
+        if (gameState.currentMap) setCurrentMap(gameState.currentMap);
+        if (gameState.initiativeList) setInitiativeList(gameState.initiativeList);
+        if (gameState.activeTurnId) setActiveTurnId(gameState.activeTurnId);
+        if (gameState.chatHistory) setChatMessages(gameState.chatHistory);
+        if (gameState.customMonsters) setCustomMonsters(gameState.customMonsters);
+        if (gameState.globalBrightness !== undefined) setGlobalBrightness(gameState.globalBrightness);
+        if (gameState.currentTrack) handlePlayMusic(gameState.currentTrack, false);
+        if (gameState.fogRooms) setFogRooms(gameState.fogRooms);
+      };
 
-    socket.on('fogGridSynced', (data: any) => { 
-        setFogGrid(data.grid); 
-        if (data.walls !== undefined) {
-            setWalls(data.walls);
-        }
-    });
+      const handleReceiveLobbyMessage = (msgData: any) => {
+          if (msgData.type === 'ATTACK_INCOMING') {
+              const atk = msgData.attack as IncomingAttack;
+              const target = entitiesRef.current.find(e => e.id === atk.targetId);
+              if (!target) return;
+              
+              const isMyPlayer = role === 'PLAYER' && target.name.toLowerCase() === playerName.toLowerCase() && target.type === 'player';
+              const isMyNpc = role === 'DM' && target.type === 'enemy';
+              
+              if (isMyPlayer || isMyNpc) {
+                  setIncomingAttack(atk);
+                  playSound('notificacao');
+              }
+          } else if (msgData.type === 'ATTACK_REACTION_RESOLVED') {
+              addLog({ text: msgData.logMsg, type: 'roll', sender: 'Sistema' }, false);
+              
+              if (msgData.finalHit) {
+                  handlePlaySFX('sword', false);
+                  
+                  const myName = role === 'DM' ? 'MESTRE' : playerName.toUpperCase();
+                  const attackerIsMe = msgData.attack.attackerName.toUpperCase() === myName || (role === 'DM' && msgData.attack.attackerName === 'Mestre');
+                  
+                  if (attackerIsMe && msgData.attack.damageExpr) {
+                      setTimeout(() => {
+                          setRollQueue(prev => [...prev, { 
+                              id: `dmg-${Date.now()}`, title: `Dano em ${msgData.attack.targetName}`, subtitle: msgData.attack.damageExpr, 
+                              dc: 0, mod: 0, entityId: msgData.attack.targetId, targetName: msgData.attack.targetName, 
+                              isDamage: true, damageExpression: msgData.attack.damageExpr, damageType: msgData.attack.damageType 
+                          }]);
+                      }, 1000);
+                  }
+              } else {
+                  handlePlaySFX('magic', false);
+              }
+          }
+      };
 
-    // MAGIA DE PROTEÇÃO: Função isolada para limpar o socket corretamente
-    const handleNewDiceResult = (data: any) => { 
-        const myName = role === 'DM' ? 'Mestre' : playerName;
-        if (data && data.user === myName) return; 
-        playSound('dado'); 
-    };
+      const handleFogGridSynced = (data: any) => { setFogGrid(data.grid); if (data.walls !== undefined) setWalls(data.walls); };
+      const handleNewDiceResult = (data: any) => { const myName = role === 'DM' ? 'Mestre' : playerName; if (data && data.user && typeof data.user === 'string' && data.user.trim().toLowerCase() === myName.trim().toLowerCase()) return; playSound('dado'); };
+      const handleWallsUpdated = (data: any) => { if(data.walls) setWalls(data.walls); };
+      const handleFogRoomsUpdated = (data: any) => { if(data.rooms) setFogRooms(data.rooms); };
+      const handleNotification = (data: any) => { setToastMsg({ text: data.message, id: Date.now() }); };
+      const handleGameStarted = () => { setGamePhase('GAME'); addLog({ text: "A aventura começou! O Mestre abriu os portões.", type: 'info', sender: 'Sistema' }); };
 
-    socket.on('newDiceResult', handleNewDiceResult);
+      const handleChatMessage = (data: any) => {
+          const msg = data.message;
+          if (msg.isWhisper) {
+              const myName = role === 'DM' ? 'MESTRE' : playerName;
+              const isSender = msg.sender.toLowerCase() === myName.toLowerCase();
+              const isTarget = msg.whisperTarget?.toLowerCase() === myName.toLowerCase() || (role === 'DM' && msg.whisperTarget?.toLowerCase() === 'mestre');
+              const amIDM = role === 'DM'; 
+              if (!isSender && !isTarget && !amIDM) return; 
+              if (isTarget && !isSender) { setToastMsg({ text: `🤫 Mensagem de ${msg.sender}. Clique aqui para ler!`, id: Date.now(), sender: msg.sender }); playSound('notificacao'); }
+          }
+          setChatMessages(prev => { if (prev.some(m => m.id === msg.id)) return prev; return [...prev, msg]; });
+      };
 
-    socket.on('wallsUpdated', (data: any) => { if(data.walls) setWalls(data.walls); });
-    socket.on('fogRoomsUpdated', (data: any) => { if(data.rooms) setFogRooms(data.rooms); });
-    socket.on('notification', (data: any) => { setToastMsg({ text: data.message, id: Date.now() }); });
-    socket.on('gameStarted', () => { setGamePhase('GAME'); addLog({ text: "A aventura começou! O Mestre abriu os portões.", type: 'info', sender: 'Sistema' }); });
-    
-    socket.on('chatMessage', (data: any) => {
-        const msg = data.message;
-        if (msg.isWhisper) {
-            const myName = role === 'DM' ? 'MESTRE' : playerName;
-            const isSender = msg.sender.toLowerCase() === myName.toLowerCase();
-            const isTarget = msg.whisperTarget?.toLowerCase() === myName.toLowerCase() || (role === 'DM' && msg.whisperTarget?.toLowerCase() === 'mestre');
-            const amIDM = role === 'DM'; 
-            if (!isSender && !isTarget && !amIDM) return; 
-            if (isTarget && !isSender) {
-                setToastMsg({ text: `🤫 Mensagem de ${msg.sender}. Clique aqui para ler!`, id: Date.now(), sender: msg.sender });
-                playSound('notificacao'); 
-            }
-        }
-        setChatMessages(prev => { if (prev.some(m => m.id === msg.id)) return prev; return [...prev, msg]; });
-    });
+      const handlePlayMusicEvent = (data: any) => handlePlayMusic(data.trackId, false);
+      const handleStopMusicEvent = () => handleStopMusic(false);
+      const handlePlaySFXEvent = (data: any) => handlePlaySFX(data.sfxId, false);
+      const handleEntityPosition = (data: any) => setEntities(prev => prev.map(ent => ent.id === data.entityId ? { ...ent, x: data.x, y: data.y } : ent));
+      const handleEntityStatus = (data: any) => setEntities(prev => prev.map(ent => ent.id === data.entityId ? { ...ent, ...data.updates } : ent));
+      const handleEntityCreated = (data: any) => setEntities(prev => { if (prev.find(e => e.id === data.entity.id)) return prev; return [...prev, data.entity]; });
 
-    socket.on('playMusic', (data: any) => handlePlayMusic(data.trackId, false));
-    socket.on('stopMusic', () => handleStopMusic(false));
-    socket.on('playSFX', (data: any) => handlePlaySFX(data.sfxId, false));
-    socket.on('entityPositionUpdated', (data: any) => setEntities(prev => prev.map(ent => ent.id === data.entityId ? { ...ent, x: data.x, y: data.y } : ent)));
-    socket.on('entityStatusUpdated', (data: any) => setEntities(prev => prev.map(ent => ent.id === data.entityId ? { ...ent, ...data.updates } : ent)));
-    socket.on('entityCreated', (data: any) => setEntities(prev => { if (prev.find(e => e.id === data.entity.id)) return prev; return [...prev, data.entity]; }));
-    
-    socket.on('entityDeleted', (data: any) => { 
-        setEntities(prev => {
-            const deletedEnt = prev.find(e => e.id === data.entityId);
-            if (role === 'PLAYER' && deletedEnt && deletedEnt.name.toLowerCase() === playerName.toLowerCase() && deletedEnt.type === 'player') {
-                localStorage.removeItem('nexus_last_char'); 
-                setToastMsg({ text: "Sua ficha foi removida da mesa pelo Mestre.", id: Date.now() });
-                setTimeout(() => { window.location.reload(); }, 3000);
-            }
-            return prev.filter(ent => ent.id !== data.entityId);
-        }); 
-        setStatusSelectionId(prev => prev === data.entityId ? null : prev); 
-        setAttackerId(prev => prev === data.entityId ? null : prev); 
-    });
+      const handleEntityDeleted = (data: any) => { 
+          setEntities(prev => {
+              const deletedEnt = prev.find(e => e.id === data.entityId);
+              if (role === 'PLAYER' && deletedEnt && deletedEnt.name.toLowerCase() === playerName.toLowerCase() && deletedEnt.type === 'player') {
+                  localStorage.removeItem('nexus_last_char'); setToastMsg({ text: "Sua ficha foi removida da mesa pelo Mestre.", id: Date.now() }); setTimeout(() => { window.location.reload(); }, 3000);
+              }
+              return prev.filter(ent => ent.id !== data.entityId);
+          }); 
+          setStatusSelectionId(prev => prev === data.entityId ? null : prev); setAttackerId(prev => prev === data.entityId ? null : prev); 
+      };
 
-    socket.on('mapChanged', (data: any) => { setCurrentMap(data.mapUrl); setFogGrid(data.fogGrid); setWalls([]); });
-    socket.on('fogUpdated', (data: any) => { setFogGrid(prev => { if (!prev || !prev[data.y]) return prev; const newGrid = prev.map(row => [...row]); newGrid[data.y][data.x] = data.shouldReveal; return newGrid; }); });
-    
-    socket.on('initiativeUpdated', (data: any) => { setInitiativeList(data.list); setActiveTurnId(data.activeTurnId); });
-    socket.on('triggerAudio', (data: any) => { if (data.trackId === 'suspense') handlePlayMusic('suspense', false); });
-    socket.on('mapStateUpdated', (data: any) => { if (role === 'PLAYER') { setMapOffset(data.offset); setMapScale(data.scale); } });
-    socket.on('globalBrightnessUpdated', (data: any) => { setGlobalBrightness(data.brightness); });
+      const handleMapChanged = (data: any) => { setCurrentMap(data.mapUrl); setFogGrid(data.fogGrid); setWalls([]); };
+      const handleFogUpdated = (data: any) => { setFogGrid(prev => { if (!prev || !prev[data.y]) return prev; const newGrid = prev.map(row => [...row]); newGrid[data.y][data.x] = data.shouldReveal; return newGrid; }); };
+      const handleInitiativeUpdated = (data: any) => { setInitiativeList(data.list); setActiveTurnId(data.activeTurnId); };
+      const handleTriggerAudio = (data: any) => { if (data.trackId === 'suspense') handlePlayMusic('suspense', false); };
+      const handleMapStateUpdated = (data: any) => { if (role === 'PLAYER') { setMapOffset(data.offset); setMapScale(data.scale); } };
+      const handleGlobalBrightness = (data: any) => { setGlobalBrightness(data.brightness); };
 
-    // 🛡️ MAGIA DE PROTEÇÃO: Impede clones de rolagem na fila do jogador
-    const handleDmRequestRollListener = (data: any) => {
-        if (role === 'PLAYER') {
-            const currentEntities = entitiesRef.current;
-            const myChar = currentEntities.find(e => e.name.toLowerCase() === playerName.toLowerCase() && e.id === data.targetId);
-            
-            if (myChar) {
-                setRollQueue(prev => {
-                    // BLINDAGEM: Se já tem um pedido idêntico na fila, ignora o clone sumariamente!
-                    if (prev.some(r => r.entityId === myChar.id && r.title === data.skillName)) return prev;
-                    
-                    // Dispara som e log de forma segura (fora do render do StrictMode)
-                    setTimeout(() => {
-                        playSound('notificacao');
-                        addLog({ text: `⚠️ O Mestre exigiu uma rolagem de **${data.skillName}** de você!`, type: 'info', sender: 'Sistema' }, false);
-                    }, 0);
+      const handleDmRequestRollListener = (data: any) => {
+          if (role === 'PLAYER') {
+              const currentEntities = entitiesRef.current;
+              const myChar = currentEntities.find(e => e.name.toLowerCase() === playerName.toLowerCase() && e.id === data.targetId);
+              if (myChar) {
+                  const rollId = data.id || `${myChar.id}-${data.skillName}-${Date.now()}`;
+                  const exists = rollQueueRef.current.some(r => r.id === rollId || (r.entityId === myChar.id && r.title === data.skillName));
+                  if (exists) return;
+                  playSound('notificacao'); addLog({ text: `⚠️ O Mestre exigiu uma rolagem de **${data.skillName}** de você!`, type: 'info', sender: 'Sistema' }, false);
+                  setRollQueue(prev => [...prev, { id: rollId, title: data.skillName, subtitle: `Exigido pelo Mestre`, mod: data.mod, dc: data.dc, entityId: myChar.id, targetName: myChar.name, isDamage: data.isDamage || false, damageExpression: data.damageExpression || '1d20', isCustomNoDamage: data.isCustomNoDamage || false }]);
+              }
+          }
+      };
 
-                    return [...prev, {
-                        title: data.skillName, subtitle: `Exigido pelo Mestre`, mod: data.mod, dc: data.dc, entityId: myChar.id,
-                        targetName: myChar.name, isDamage: data.isDamage || false, damageExpression: data.damageExpression || '1d20',
-                        isCustomNoDamage: data.isCustomNoDamage || false
-                    }];
-                });
-            }
-        }
-    };
-    
-    socket.on('dmRequestRoll', handleDmRequestRollListener);
+      const handlePlayerRollRequested = (data: any) => {
+          if (role === 'DM') {
+              const reqId = data.id || `${data.playerId}-${data.skillName}-${Date.now()}`;
+              const exists = playerSkillRequestsRef.current.some(r => r.id === reqId || (r.playerId === data.playerId && r.skillName === data.skillName));
+              if (exists) return;
+              playSound('notificacao'); setPlayerSkillRequests(prev => [...prev, { ...data, id: reqId }]);
+          }
+      };
 
-    // 👉 MAGIA NOVA: RECEBER PEDIDO DE TESTE DO JOGADOR (Só Mestre reage)
-    socket.on('player_roll_requested', (data: any) => {
-        if (role === 'DM') {
-            setPlayerSkillRequests(prev => [...prev, data]);
-            playSound('notificacao');
-        }
-    });
+      const handleMapPinged = (data: { ping: MapPing }) => { setPings(prev => [...prev, data.ping]); handlePlaySFX('ping', false); setTimeout(() => { setPings(prev => prev.filter(p => p.id !== data.ping.id)); }, 2500); };
 
-    socket.on('mapPinged', (data: { ping: MapPing }) => { setPings(prev => [...prev, data.ping]); handlePlaySFX('ping', false); setTimeout(() => { setPings(prev => prev.filter(p => p.id !== data.ping.id)); }, 2500); });
+      socket.on('gameStateSync', handleGameStateSync);
+      socket.on('fogGridSynced', handleFogGridSynced);
+      socket.on('newDiceResult', handleNewDiceResult);
+      socket.on('wallsUpdated', handleWallsUpdated);
+      socket.on('fogRoomsUpdated', handleFogRoomsUpdated);
+      socket.on('notification', handleNotification);
+      socket.on('gameStarted', handleGameStarted);
+      socket.on('chatMessage', handleChatMessage);
+      socket.on('playMusic', handlePlayMusicEvent);
+      socket.on('stopMusic', handleStopMusicEvent);
+      socket.on('playSFX', handlePlaySFXEvent);
+      socket.on('entityPositionUpdated', handleEntityPosition);
+      socket.on('entityStatusUpdated', handleEntityStatus);
+      socket.on('entityCreated', handleEntityCreated);
+      socket.on('entityDeleted', handleEntityDeleted);
+      socket.on('mapChanged', handleMapChanged);
+      socket.on('fogUpdated', handleFogUpdated);
+      socket.on('initiativeUpdated', handleInitiativeUpdated);
+      socket.on('triggerAudio', handleTriggerAudio);
+      socket.on('mapStateUpdated', handleMapStateUpdated);
+      socket.on('globalBrightnessUpdated', handleGlobalBrightness);
+      socket.on('dmRequestRoll', handleDmRequestRollListener);
+      socket.on('player_roll_requested', handlePlayerRollRequested);
+      socket.on('mapPinged', handleMapPinged);
+      socket.on('receiveLobbyMessage', handleReceiveLobbyMessage); // 🛡️ Ouvinte do Interceptador
 
-    return () => {
-      socket.off('gameStateSync'); socket.off('notification'); 
-      socket.off('newDiceResult', handleNewDiceResult); // PROTEGIDO!
-      socket.off('chatMessage'); 
-// ...
-      socket.off('entityPositionUpdated'); socket.off('entityStatusUpdated'); socket.off('entityCreated'); socket.off('entityDeleted'); 
-      socket.off('mapChanged'); socket.off('fogUpdated'); socket.off('fogGridSynced'); socket.off('initiativeUpdated'); 
-      socket.off('triggerAudio'); socket.off('mapStateUpdated'); socket.off('globalBrightnessUpdated'); 
-socket.off('dmRequestRoll', handleDmRequestRollListener); // PROTEGIDO!
-      socket.off('playMusic'); socket.off('stopMusic'); socket.off('playSFX'); socket.off('mapPinged'); 
-      socket.off('gameStarted'); socket.off('fogRoomsUpdated'); socket.off('wallsUpdated');
-      socket.off('player_roll_requested');
-    };
-  }, [isLoggedIn, addLog, role, playerName, handlePlayMusic, handleStopMusic, handlePlaySFX, playSound]); 
+      return () => {
+        socket.off('gameStateSync', handleGameStateSync);
+        socket.off('fogGridSynced', handleFogGridSynced);
+        socket.off('newDiceResult', handleNewDiceResult);
+        socket.off('wallsUpdated', handleWallsUpdated);
+        socket.off('fogRoomsUpdated', handleFogRoomsUpdated);
+        socket.off('notification', handleNotification);
+        socket.off('gameStarted', handleGameStarted);
+        socket.off('chatMessage', handleChatMessage);
+        socket.off('playMusic', handlePlayMusicEvent);
+        socket.off('stopMusic', handleStopMusicEvent);
+        socket.off('playSFX', handlePlaySFXEvent);
+        socket.off('entityPositionUpdated', handleEntityPosition);
+        socket.off('entityStatusUpdated', handleEntityStatus);
+        socket.off('entityCreated', handleEntityCreated);
+        socket.off('entityDeleted', handleEntityDeleted);
+        socket.off('mapChanged', handleMapChanged);
+        socket.off('fogUpdated', handleFogUpdated);
+        socket.off('initiativeUpdated', handleInitiativeUpdated);
+        socket.off('triggerAudio', handleTriggerAudio);
+        socket.off('mapStateUpdated', handleMapStateUpdated);
+        socket.off('globalBrightnessUpdated', handleGlobalBrightness);
+        socket.off('dmRequestRoll', handleDmRequestRollListener);
+        socket.off('player_roll_requested', handlePlayerRollRequested);
+        socket.off('mapPinged', handleMapPinged);
+        socket.off('receiveLobbyMessage', handleReceiveLobbyMessage);
+      };
+  }, [isLoggedIn, addLog, role, playerName, handlePlayMusic, handleStopMusic, handlePlaySFX, playSound, handleApplyDamageFromChat]); 
+
+  // 🛡️ REAÇÃO: Resolução Local da Decisão do Alvo
+  const handleResolveIncomingAttack = (dodgeRoll?: number) => {
+      if (!incomingAttack) return;
+      const target = entities.find(e => e.id === incomingAttack.targetId);
+      if (!target) { setIncomingAttack(null); return; }
+
+      let isHit = false;
+      let logMsg = '';
+
+      if (dodgeRoll !== undefined) {
+          if (dodgeRoll >= incomingAttack.attackRoll) {
+              isHit = false;
+              logMsg = `💨 **${target.name}** esquivou graciosamente do ataque de ${incomingAttack.attackerName}! (Esquiva: ${dodgeRoll} vs Ataque: ${incomingAttack.attackRoll})`;
+          } else {
+              isHit = true;
+              logMsg = `🩸 **${target.name}** tentou esquivar, mas não foi rápido o suficiente! (Esquiva: ${dodgeRoll} vs Ataque: ${incomingAttack.attackRoll})`;
+          }
+      } else {
+          if (incomingAttack.attackRoll >= incomingAttack.targetAC || incomingAttack.isCritical) {
+              isHit = true;
+              logMsg = `🎯 O ataque de **${incomingAttack.attackerName}** atingiu em cheio **${target.name}**! (Ataque: ${incomingAttack.attackRoll} vs CA: ${incomingAttack.targetAC})`;
+          } else {
+              isHit = false;
+              logMsg = `🛡️ **${target.name}** defendeu o ataque de ${incomingAttack.attackerName} usando sua armadura. (Ataque: ${incomingAttack.attackRoll} vs CA: ${incomingAttack.targetAC})`;
+          }
+      }
+
+      const resData = { roomId, type: 'ATTACK_REACTION_RESOLVED', attack: incomingAttack, dodgeRoll, finalHit: isHit, logMsg };
+      
+      // Envia pra todo mundo no lobby
+      socket.emit('sendLobbyMessage', resData);
+      
+      // Aplica na própria tela também
+      addLog({ text: logMsg, type: 'roll', sender: 'Sistema' }, false);
+      if (isHit) {
+          handlePlaySFX('sword', false);
+          socket.emit('triggerCombatAnimation', { roomId, attackerName: incomingAttack.attackerName, targetId: incomingAttack.targetId, attackType: 'fisico' });
+          
+          const myName = role === 'DM' ? 'MESTRE' : playerName.toUpperCase();
+          const attackerIsMe = incomingAttack.attackerName.toUpperCase() === myName || (role === 'DM' && incomingAttack.attackerName === 'Mestre');
+          
+          if (attackerIsMe && incomingAttack.damageExpr) {
+              setTimeout(() => {
+                  setRollQueue(prev => [...prev, { id: `dmg-${Date.now()}`, title: `Dano em ${incomingAttack.targetName}`, subtitle: incomingAttack.damageExpr, dc: 0, mod: 0, entityId: incomingAttack.targetId, targetName: incomingAttack.targetName, isDamage: true, damageExpression: incomingAttack.damageExpr, damageType: incomingAttack.damageType }]);
+              }, 1000);
+          }
+      } else {
+          handlePlaySFX('magic', false);
+      }
+
+      setIncomingAttack(null);
+  };
 
   useEffect(() => {
       const handleLootGenerated = (data: any) => {
@@ -597,7 +831,7 @@ socket.off('dmRequestRoll', handleDmRequestRollListener); // PROTEGIDO!
   const handleDmRequestRoll = (targetId: number, skillName: string, mod: number, dc: number) => { 
       const target = entities.find(e => e.id === targetId); 
       addLog({ text: `Mestre solicitou um teste de **${skillName}** para **${target ? target.name : 'Alvo'}**.`, type: 'info', sender: 'Sistema' }); 
-      socket.emit('dmRequestRoll', { roomId, targetId, skillName, mod, dc }); 
+      socket.emit('dmRequestRoll', { roomId, targetId, skillName, mod, dc, id: `${targetId}-${skillName}-${Date.now()}` }); 
   };
 
   const handleStartCombat = (combatantIds: number[]) => {
@@ -609,18 +843,17 @@ socket.off('dmRequestRoll', handleDmRequestRollListener); // PROTEGIDO!
       socket.emit('next_turn', { roomId }); 
   };
 
-  // 👉 MAGIA NOVA: Envia o pedido para o mestre
   const handlePlayerRequestSkill = (skillName: string, mod: number) => {
       const myChar = entities.find(e => e.name.toLowerCase() === playerName.toLowerCase() && e.type === 'player');
       if (myChar) {
-          socket.emit('player_request_roll', { roomId, playerId: myChar.id, playerName: myChar.name, skillName, mod });
+          socket.emit('player_request_roll', { roomId, playerId: myChar.id, playerName: myChar.name, skillName, mod, id: `${myChar.id}-${skillName}-${Date.now()}` });
           addLog({ text: `✋ **${myChar.name}** quer rolar **${skillName}**. Aguardando Mestre...`, type: 'info', sender: 'Sistema' });
       }
   };
 
   const handleRequestCustomRoll = (targetIds: number[], expression: string, title: string) => {
       if (targetIds.length === 0) {
-           setRollQueue(prev => [...prev, { title: title, subtitle: 'Rolagem Customizada', dc: 0, mod: 0, entityId: null, targetName: 'Mestre', isDamage: true, damageExpression: expression, isCustomNoDamage: true }]);
+           setRollQueue(prev => [...prev, { id: `custom-${Date.now()}`, title: title, subtitle: 'Rolagem Customizada', dc: 0, mod: 0, entityId: null, targetName: 'Mestre', isDamage: true, damageExpression: expression, isCustomNoDamage: true }]);
            return;
       }
       let playerPushed = false;
@@ -629,10 +862,10 @@ socket.off('dmRequestRoll', handleDmRequestRollListener); // PROTEGIDO!
            const ent = entities.find(e => e.id === id);
            if (!ent) return;
            if (ent.type === 'player') {
-               socket.emit('dmRequestRoll', { roomId, targetId: id, skillName: title, mod: 0, dc: 0, isDamage: true, damageExpression: expression, isCustomNoDamage: true });
+               socket.emit('dmRequestRoll', { roomId, targetId: id, skillName: title, mod: 0, dc: 0, isDamage: true, damageExpression: expression, isCustomNoDamage: true, id: `${id}-${title}-${Date.now()}` });
                playerPushed = true;
            } else {
-               dmQueue.push({ title: title, subtitle: `Rolagem para ${ent.name}`, dc: 0, mod: 0, entityId: id, targetName: ent.name, isDamage: true, damageExpression: expression, isCustomNoDamage: true });
+               dmQueue.push({ id: `dm-${id}-${Date.now()}`, title: title, subtitle: `Rolagem para ${ent.name}`, dc: 0, mod: 0, entityId: id, targetName: ent.name, isDamage: true, damageExpression: expression, isCustomNoDamage: true });
            }
       });
       if (playerPushed) addLog({ text: `⚔️ O Mestre exigiu uma rolagem de **${expression}** (${title})!`, type: 'info', sender: 'Sistema' });
@@ -641,39 +874,16 @@ socket.off('dmRequestRoll', handleDmRequestRollListener); // PROTEGIDO!
   };
   
   const handleAttributeRoll = (charName: string, attrName: string, mod: number, damageExpr?: string, damageType?: string, rollType: 'normal'|'advantage'|'disadvantage' = 'normal') => { 
-      setRollQueue(prev => [...prev, { title: attrName, subtitle: `Ação de Combate`, dc: 10, mod, entityId: null, targetName: charName, damageExpression: damageExpr, damageType: damageType || 'Físico', rollType }]);
+      setRollQueue(prev => [...prev, { id: `attr-${Date.now()}`, title: attrName, subtitle: `Ação de Combate`, dc: 10, mod, entityId: null, targetName: charName, damageExpression: damageExpr, damageType: damageType || 'Físico', rollType }]);
   };
 
-  const handleApplyDamageFromChat = (targetId: number, damageExpression: string) => {
-        const target = entities.find(e => e.id === targetId);
-        if (!target) return;
-        const rollMatch = damageExpression.match(/^(\d+)d(\d+)(\+(\d+))?$/i);
-        if (rollMatch) {
-            setRollQueue(prev => [...prev, { title: `Dano em ${target.name}`, subtitle: damageExpression, dc: 0, mod: 0, entityId: targetId, targetName: target.name, isDamage: true, damageExpression: damageExpression }]);
-        } else { 
-            const totalDano = parseInt(damageExpression) || 0; 
-            if (totalDano > 0) {
-                const attacker = entities.find(e => e.id === attackerId) || entities.find(e => e.type === 'player' && e.name.toLowerCase() === playerName.toLowerCase());
-                if (attacker) {
-                    socket.emit('request_attack', {
-                        roomId,
-                        atacanteId: attacker.id,
-                        alvoId: target.id,
-                        nomeAtaque: "Dano Fixo",
-                        rolagemAtaque: 0,
-                        rolagemDano: totalDano,
-                        tipoDano: "Físico"
-                    });
-                }
-                setDamageOverlayData({ rolls: null, mod: 0, total: totalDano, targetName: target.name });
-            }
-        }
-  };
-
+  // 🛡️ REAÇÃO: Modificando handleDiceComplete para interceptar o ataque
   const handleDiceComplete = (total: number, isSuccess: boolean, isCritical: boolean, isSecret: boolean, finalRolls?: number[], finalMod?: number) => {
+      if (processedRollIdRef.current === diceRollId) return;
+      processedRollIdRef.current = diceRollId;
+
       const senderName = role === 'DM' ? 'Mestre' : playerName;
 
-      // 👉 MAGIA NOVA: Aplicar Buff de Furtividade
       if (diceContext.title === 'Furtividade (Esconder-se)' && isSuccess && diceContext.entityId) {
           const ent = entities.find(e => e.id === diceContext.entityId);
           if (ent && !ent.conditions.includes('Furtivo')) {
@@ -743,16 +953,39 @@ socket.off('dmRequestRoll', handleDmRequestRollListener); // PROTEGIDO!
           if (targetEntityIds.length > 0) {
               const target = entities.find(e => e.id === targetEntityIds[0]);
               if (target) {
-                  if (total >= target.ac || (isCritical && total >= 20)) { 
-                      resultMsg = `**ACERTOU!** ⚔️`; targetInfoMsg = `\n🎯 *${target.name}* (CA ${target.ac}) foi atingido!`;
-                      socket.emit('triggerCombatAnimation', { roomId, attackerName: senderName, targetId: target.id, attackType: diceContext.title.includes('Mágico') ? 'magia' : 'fisico' });
-                      handlePlaySFX('sword', true);
-                  } else { 
-                      resultMsg = `**ERROU!** 🛡️`; targetInfoMsg = `\n💨 *${target.name}* defendeu.`; 
+                  // 🛡️ REAÇÃO: INTERCEPTANDO A RESOLUÇÃO DO ATAQUE
+                  const atkData: IncomingAttack = {
+                      id: Date.now().toString(),
+                      attackerName: senderName,
+                      attackerId: attackerId,
+                      targetId: target.id,
+                      targetName: target.name,
+                      attackName: diceContext.title.replace('Ataque: ', '').replace('Ataque Mágico: ', '').trim(),
+                      attackRoll: total,
+                      damageExpr: diceContext.damageExpression || '',
+                      damageType: diceContext.damageType || 'Físico',
+                      isCritical: isCritical && total >= 20,
+                      targetAC: target.ac
+                  };
+                  
+                  // Envia para o Lobby que o ataque está chegando
+                  const payload = { roomId, type: 'ATTACK_INCOMING', attack: atkData };
+                  socket.emit('sendLobbyMessage', payload);
+                  
+                  // Se o atacante também controla o alvo (ex: DM atacando um NPC), dispara localmente
+                  const isMyPlayer = role === 'PLAYER' && target.name.toLowerCase() === playerName.toLowerCase() && target.type === 'player';
+                  const isMyNpc = role === 'DM' && target.type === 'enemy';
+                  if (isMyPlayer || isMyNpc) {
+                      setIncomingAttack(atkData);
+                      playSound('notificacao');
                   }
+
+                  addLog({ text: `⚔️ **${senderName}** disparou um ataque (${total}) contra **${target.name}**. Aguardando reação...`, type: 'info', sender: 'Sistema' });
+                  setRollQueue(prev => prev.slice(1));
+                  return; // Para o fluxo antigo aqui!
               }
           } else {
-              resultMsg = `**Ataque Rolado** ⚔️`; targetInfoMsg = `\n*(⚠️ Selecione um alvo para o Dano Automático funcionar!)*`; handlePlaySFX('sword', true);
+              resultMsg = `**Ataque Rolado** ⚔️`; targetInfoMsg = `\n*(⚠️ Selecione um alvo no mapa (vermelho) para o sistema de Esquiva funcionar!)*`; handlePlaySFX('sword', true);
           }
 
           // Retirar furtividade ao atacar
@@ -789,13 +1022,13 @@ socket.off('dmRequestRoll', handleDmRequestRollListener); // PROTEGIDO!
       setRollQueue(prev => prev.slice(1));
   };
 
-  const openDiceRoller = () => { setRollQueue(prev => [...prev, { title: 'Rolagem Livre', subtitle: 'Sorte', dc: 10, mod: 0, entityId: null, targetName: '' }]); };
+  const openDiceRoller = () => { setRollQueue(prev => [...prev, { id: `free-${Date.now()}`, title: 'Rolagem Livre', subtitle: 'Sorte', dc: 10, mod: 0, entityId: null, targetName: '' }]); };
   const handleDMRoll = (title: string, subtitle: string, mod: number, rollType: 'normal' | 'advantage' | 'disadvantage' = 'normal') => { 
-      setRollQueue(prev => [...prev, { title, subtitle, dc: 10, mod, entityId: null, targetName: '' }]); 
+      setRollQueue(prev => [...prev, { id: `dm-${Date.now()}`, title, subtitle, dc: 10, mod, entityId: null, targetName: '' }]); 
   };
 
   const handleQueueInitiativeRoll = (entityId: number, entityName: string, mod: number) => {
-      setRollQueue(prev => [...prev, { title: 'Iniciativa', subtitle: `Rolagem para ${entityName}`, dc: 0, mod, entityId, targetName: entityName }]);
+      setRollQueue(prev => [...prev, { id: `init-${entityId}-${Date.now()}`, title: 'Iniciativa', subtitle: `Rolagem para ${entityName}`, dc: 0, mod, entityId, targetName: entityName }]);
   };
 
   const handleAddXP = (id: number, amount: number) => {
@@ -1234,6 +1467,14 @@ socket.off('dmRequestRoll', handleDmRequestRollListener); // PROTEGIDO!
           </div>
       )}
 
+      {incomingAttack && entities.find(e => e.id === incomingAttack.targetId) && (
+          <IncomingAttackModal 
+              attack={incomingAttack} 
+              targetEntity={entities.find(e => e.id === incomingAttack.targetId)!} 
+              onResolve={handleResolveIncomingAttack} 
+          />
+      )}
+
       {damageOverlayData && ( <DamageOverlay data={damageOverlayData} onComplete={() => setDamageOverlayData(null)} /> )}
 
       {privateChatTarget && (
@@ -1289,6 +1530,18 @@ socket.off('dmRequestRoll', handleDmRequestRollListener); // PROTEGIDO!
                   const prefix = spell.level === 0 ? "o truque " : `a magia de nível ${spell.level} `;
                   handleSendMessage(`conjurou **${prefix}** **${spell.name}**`);
               }}
+          />
+      )}
+
+      {activeMonsterSheetId && entities.find(e => e.id === activeMonsterSheetId) && (
+          <MonsterSidebar 
+              monster={entities.find(e => e.id === activeMonsterSheetId)!} 
+              onClose={() => setActiveMonsterSheetId(null)} 
+              onRoll={(title, subtitle, mod) => handleDMRoll(title, subtitle, mod, 'normal')}
+              onUpdateHP={handleUpdateHP}
+              onSetTarget={handleSetTarget}
+              entities={entities}
+              initiativeList={initiativeList}
           />
       )}
       
@@ -1458,10 +1711,9 @@ socket.off('dmRequestRoll', handleDmRequestRollListener); // PROTEGIDO!
                     onSendMessage={handleSendMessage} onRollAttribute={handleAttributeRoll} onUpdateCharacter={handleEditEntity} 
                     onSelectEntity={(entity: any) => { setActiveCharacterSheetId(entity.id); }} 
                     onApplyDamageFromChat={handleApplyDamageFromChat} availableSpells={availableSpells} 
-                    actionsData={availableRules.actions}
-                    conditionsData={availableRules.conditions}
                     onNextTurn={handleNextTurn}
                     onPlayerRequestSkill={handlePlayerRequestSkill}
+                    onSetTarget={handleSetTarget}
                 /> 
             </aside>
             )}
@@ -1479,11 +1731,12 @@ socket.off('dmRequestRoll', handleDmRequestRollListener); // PROTEGIDO!
                   onOpenLootGenerator={() => setShowLootGenerator(true)}
                   onStartCombat={handleStartCombat}
                   onRequestCustomRoll={handleRequestCustomRoll}
-                  onQueueInitiativeRoll={handleQueueInitiativeRoll} // <--- ADICIONE ESTA LINHA AQUI
+                  onQueueInitiativeRoll={handleQueueInitiativeRoll}
                   fogRooms={fogRooms}
                   onToggleFogRoom={handleToggleFogRoom}
                   onDeleteFogRoom={handleDeleteFogRoom}
                   conditionsData={availableRules.conditions}
+                  availableMonsters={availableMonsters} // 🐉 PASSANDO PARA O MESTRE
                   /> 
             )}
           </>
@@ -1501,6 +1754,9 @@ socket.off('dmRequestRoll', handleDmRequestRollListener); // PROTEGIDO!
               
               {role === 'DM' && (
                   <>
+                      <button className="w-full text-left px-4 py-2 hover:bg-white/10 text-sm text-[#d4af37] font-bold transition-colors flex items-center gap-2" onClick={() => { setActiveMonsterSheetId(contextMenu.entity.id); setContextMenu(null); }}>
+                          📖 Ficha do Monstro
+                      </button>
                       <button className="w-full text-left px-4 py-2 hover:bg-white/10 text-sm text-gray-200 transition-colors flex items-center gap-2" onClick={() => { setEditingEntity(contextMenu.entity); setContextMenu(null); }}>
                           ✏️ Editar Entidade
                       </button>

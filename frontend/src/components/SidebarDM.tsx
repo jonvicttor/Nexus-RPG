@@ -9,19 +9,48 @@ import Scratchpad from './Scratchpad';
 import Soundboard from './Soundboard';
 import { mapEntityStatsToAttributes } from '../utils/attributeMapping';
 import { EntityControlRow } from './EntityControlRow';
-import { Image as ImageIcon, Check, X, Brush, Square, Minus, Tent, Gem, Search, ShieldAlert, Flame, Heart, Sword, ChevronDown, ChevronRight, ChevronLeft, Activity, LayoutGrid, Trash2, BookOpen, BookText, Info, AlertTriangle, Undo2, Skull, Eye, EyeOff } from 'lucide-react';
-import UniversalDiceRoller from './UniversalDiceRoller';
+import { Image as ImageIcon, Check, X, Brush, Square, Minus, Tent, Gem, Search, ShieldAlert, Flame, Heart, Sword, ChevronDown, ChevronRight, ChevronLeft, Activity, LayoutGrid, Trash2, BookOpen, BookText, Info, AlertTriangle, Undo2, Skull, Eye, EyeOff } from 'lucide-react';   import UniversalDiceRoller from './UniversalDiceRoller';
 import socket from '../services/socket'; 
 
 export interface InitiativeItem { id: number; name: string; value: number; }
 
 const MONSTER_LIST: MonsterPreset[] = [
-  { name: 'Lobo', hp: 11, ac: 13, image: '/tokens/Raças/Orc/druid/druid_orc_humanoid_male_medium_01.png' }, 
-  { name: 'Goblin', hp: 7, ac: 15, image: '/tokens/Raças/Gnome/rogue/rogue_gnome_humanoid_male_small_01.png' }, 
-  { name: 'Esqueleto', hp: 13, ac: 13, image: '/tokens/Raças/Dwarf/fighter/fighter_dwarf_humanoid_male_medium_01.png' }, 
-  { name: 'Orc', hp: 15, ac: 13, image: '/tokens/Raças/Orc/fighter/fighter_orc_humanoid_male_medium_01.png' },
-  { name: 'Bandido', hp: 11, ac: 12, image: '/tokens/Raças/Human/rogue/rogue_human_humanoid_male_medium_01.png' },
-  { name: 'Zumbi', hp: 22, ac: 8, image: '/tokens/Raças/Human/commoner/commoner_human_humanoid_male_medium_01.png' } 
+  { 
+    name: 'Lobo', hp: 11, ac: 13, image: '/tokens/Raças/Orc/druid/druid_orc_humanoid_male_medium_01.png', size: 1, stats: { str: 12, dex: 15, con: 12, int: 3, wis: 12, cha: 6 },
+    actions: [{ name: 'Mordida', attackBonus: 4, damage: '2d4+2', damageType: 'Perfurante' }]
+  }, 
+  { 
+    name: 'Goblin', hp: 7, ac: 15, image: '/tokens/Raças/Gnome/rogue/rogue_gnome_humanoid_male_small_01.png', size: 1, stats: { str: 8, dex: 14, con: 10, int: 10, wis: 8, cha: 8 },
+    actions: [
+      { name: 'Cimitarra', attackBonus: 4, damage: '1d6+2', damageType: 'Cortante' },
+      { name: 'Arco Curto', attackBonus: 4, damage: '1d6+2', damageType: 'Perfurante' }
+    ]
+  }, 
+  { 
+    name: 'Esqueleto', hp: 13, ac: 13, image: '/tokens/Raças/Dwarf/fighter/fighter_dwarf_humanoid_male_medium_01.png', size: 1, stats: { str: 10, dex: 14, con: 15, int: 6, wis: 8, cha: 5 }, immunities: ['veneno'], vulnerabilities: ['concussão'],
+    actions: [
+      { name: 'Espada Curta', attackBonus: 4, damage: '1d6+2', damageType: 'Cortante' },
+      { name: 'Arco Curto', attackBonus: 4, damage: '1d6+2', damageType: 'Perfurante' }
+    ]
+  }, 
+  { 
+    name: 'Orc', hp: 15, ac: 13, image: '/tokens/Raças/Orc/fighter/fighter_orc_humanoid_male_medium_01.png', size: 1, stats: { str: 16, dex: 12, con: 16, int: 7, wis: 11, cha: 10 },
+    actions: [
+      { name: 'Machado Grande', attackBonus: 5, damage: '1d12+3', damageType: 'Cortante' },
+      { name: 'Azagaia', attackBonus: 5, damage: '1d6+3', damageType: 'Perfurante' }
+    ]
+  },
+  { 
+    name: 'Bandido', hp: 11, ac: 12, image: '/tokens/Raças/Human/rogue/rogue_human_humanoid_male_medium_01.png', size: 1, stats: { str: 11, dex: 12, con: 12, int: 10, wis: 10, cha: 10 },
+    actions: [
+      { name: 'Cimitarra', attackBonus: 3, damage: '1d6+1', damageType: 'Cortante' },
+      { name: 'Besta Leve', attackBonus: 3, damage: '1d8+1', damageType: 'Perfurante' }
+    ]
+  },
+  { 
+    name: 'Zumbi', hp: 22, ac: 8, image: '/tokens/Raças/Human/commoner/commoner_human_humanoid_male_medium_01.png', size: 1, stats: { str: 13, dex: 6, con: 16, int: 3, wis: 6, cha: 5 }, immunities: ['veneno'],
+    actions: [{ name: 'Pancada', attackBonus: 3, damage: '1d6+1', damageType: 'Concussão' }]
+  } 
 ];
 
 const INITIAL_MAPS = [
@@ -96,7 +125,8 @@ export interface SidebarDMProps {
   onDeleteFogRoom?: (roomId: string) => void;
   conditionsData?: any[];
   onStartCombat: (combatantIds: number[]) => void;
-  onQueueInitiativeRoll?: (entityId: number, entityName: string, mod: number) => void; // <--- ADICIONE AQUI
+  onQueueInitiativeRoll?: (entityId: number, entityName: string, mod: number) => void;
+  availableMonsters?: any[]; // 🐉 RECEBENDO OS MONSTROS AQUI
 }
 
 const extractTextFromEntries = (entries: any[], depth = 0): string => {
@@ -202,12 +232,18 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll,
         const dex = attacker.stats?.dex || 10;
         return Math.floor((Math.max(str, dex) - 10) / 2);
     };
-    const atkMod = getAtkMod();
+    const baseAtkMod = getAtkMod();
 
-    const handleVisualAttack = (rollType: 'normal' | 'advantage' | 'disadvantage') => {
+    // ⚔️ MAGIA NOVA: Ataque Automático Dinâmico (Lê a ficha se for monstro, usa genérico se não for)
+    const handleAttack = (rollType: 'normal' | 'advantage' | 'disadvantage', customAction?: any) => {
         if (!attacker) return;
         const targetNames = targets.length > 0 ? targets.map((t: Entity) => t.name).join(', ') : 'o vazio';
-        onDMRoll(`Ataque de "${attacker.name}"`, `Alvo(s): ${targetNames}`, atkMod, rollType);
+        
+        if (customAction) {
+            onDMRoll(`Ataque: ${customAction.name} (${attacker.name})`, `Alvo(s): ${targetNames} | Dano: ${customAction.damage} ${customAction.damageType}`, customAction.attackBonus, rollType);
+        } else {
+            onDMRoll(`Ataque Base de "${attacker.name}"`, `Alvo(s): ${targetNames}`, baseAtkMod, rollType);
+        }
     };
 
     const renderHpBar = (entity: Entity) => {
@@ -314,16 +350,30 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll,
 
             <div className="mt-auto space-y-4">
                 {attacker && targets.length > 0 && (
-                    <div className="flex gap-2 justify-center pt-2 relative z-10">
-                        <button onClick={() => handleVisualAttack('disadvantage')} className="flex-1 bg-black/60 hover:bg-white/10 text-gray-400 text-[10px] font-bold py-3 rounded-xl border border-white/10 transition-all uppercase tracking-widest hover:border-white/30" title="Rolar 2 dados e pegar o MENOR">
-                            Desv.
-                        </button>
-                        <button onClick={() => handleVisualAttack('normal')} className="flex-[1.5] bg-gradient-to-t from-red-800 to-red-600 hover:from-red-700 hover:to-red-500 text-white text-xs font-black py-3 rounded-xl shadow-[0_0_20px_rgba(220,38,38,0.4)] border border-red-400 transition-all active:scale-95 uppercase tracking-widest flex items-center justify-center gap-2" title="Rolar D20 padrão">
-                            <span className="text-lg">🎲</span> Atacar
-                        </button>
-                        <button onClick={() => handleVisualAttack('advantage')} className="flex-1 bg-black/60 hover:bg-white/10 text-gray-400 hover:text-green-400 text-[10px] font-bold py-3 rounded-xl border border-white/10 transition-all uppercase tracking-widest hover:border-green-500/50" title="Rolar 2 dados e pegar o MAIOR">
-                            Vant.
-                        </button>
+                    <div className="flex flex-col gap-2 pt-2 relative z-10 border-t border-white/10 mt-2">
+                        {/* ⚔️ SE O ATACANTE TEM AÇÕES, CRIA OS BOTÕES AQUI! */}
+                        {attacker.actions && attacker.actions.length > 0 ? (
+                            <div className="flex flex-col gap-2 max-h-32 overflow-y-auto custom-scrollbar pr-1">
+                                <span className="text-[9px] text-gray-500 uppercase tracking-widest font-black mb-1 block">Ataques do Monstro</span>
+                                {attacker.actions.map((act: any, idx: number) => (
+                                    <div key={idx} className="flex gap-1 items-center bg-black/40 border border-red-900/30 rounded-lg p-1.5 shadow-inner">
+                                        <div className="flex-1 truncate">
+                                            <div className="text-white text-xs font-bold truncate">{act.name} <span className="text-red-400 text-[10px]">+{act.attackBonus}</span></div>
+                                            <div className="text-gray-500 text-[9px] uppercase tracking-widest truncate">{act.damage} ({act.damageType})</div>
+                                        </div>
+                                        <button onClick={() => handleAttack('disadvantage', act)} className="px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-gray-400 text-[9px] font-bold transition-all uppercase" title="Desvantagem">Desv</button>
+                                        <button onClick={() => handleAttack('normal', act)} className="px-3 py-1.5 bg-gradient-to-t from-red-800 to-red-600 hover:from-red-700 hover:to-red-500 text-white rounded border border-red-500/50 text-[10px] font-black transition-all shadow-[0_0_10px_rgba(220,38,38,0.3)] uppercase tracking-wider" title="Ataque Normal">Atacar</button>
+                                        <button onClick={() => handleAttack('advantage', act)} className="px-2 py-1.5 bg-white/5 hover:bg-white/10 hover:text-green-400 hover:border-green-500/50 rounded border border-white/10 text-gray-400 text-[9px] font-bold transition-all uppercase" title="Vantagem">Vant</button>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="flex gap-2 justify-center">
+                                <button onClick={() => handleAttack('disadvantage')} className="flex-1 bg-black/60 hover:bg-white/10 text-gray-400 text-[10px] font-bold py-3 rounded-xl border border-white/10 transition-all uppercase tracking-widest hover:border-white/30" title="Rolar 2 dados e pegar o MENOR">Desv.</button>
+                                <button onClick={() => handleAttack('normal')} className="flex-[1.5] bg-gradient-to-t from-red-800 to-red-600 hover:from-red-700 hover:to-red-500 text-white text-xs font-black py-3 rounded-xl shadow-[0_0_20px_rgba(220,38,38,0.4)] border border-red-400 transition-all active:scale-95 uppercase tracking-widest flex items-center justify-center gap-2" title="Rolar D20 padrão"><span className="text-lg">🎲</span> Atacar</button>
+                                <button onClick={() => handleAttack('advantage')} className="flex-1 bg-black/60 hover:bg-white/10 text-gray-400 hover:text-green-400 text-[10px] font-bold py-3 rounded-xl border border-white/10 transition-all uppercase tracking-widest hover:border-green-500/50" title="Rolar 2 dados e pegar o MAIOR">Vant.</button>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -350,21 +400,21 @@ const CombatVsPanel = ({ attacker, targets, onUpdateHP, onSendMessage, onDMRoll,
 };
 
 const CONDITION_MAP = [
-    { id: 'Blinded', icon: '🦇', label: 'Cego', bg: 'bg-gray-900 hover:bg-gray-800', border: 'border-gray-500/50', text: 'text-gray-200' },
-    { id: 'Charmed', icon: '💕', label: 'Enfeitiçado', bg: 'bg-pink-950 hover:bg-pink-900', border: 'border-pink-500/50', text: 'text-pink-300' },
-    { id: 'Deafened', icon: '🔇', label: 'Surdo', bg: 'bg-slate-900 hover:bg-slate-800', border: 'border-slate-500/50', text: 'text-slate-300' },
-    { id: 'Exhaustion', icon: '😩', label: 'Exaustão', bg: 'bg-amber-950 hover:bg-amber-900', border: 'border-amber-500/50', text: 'text-amber-300' },
-    { id: 'Frightened', icon: '😱', label: 'Amedrontado', bg: 'bg-indigo-950 hover:bg-indigo-900', border: 'border-indigo-500/50', text: 'text-indigo-300' },
-    { id: 'Grappled', icon: '🤼', label: 'Agarrado', bg: 'bg-orange-950 hover:bg-orange-900', border: 'border-orange-500/50', text: 'text-orange-300' },
-    { id: 'Incapacitated', icon: '😵', label: 'Incapacitado', bg: 'bg-stone-900 hover:bg-stone-800', border: 'border-stone-500/50', text: 'text-stone-300' },
-    { id: 'Invisible', icon: '👻', label: 'Invisível', bg: 'bg-teal-950 hover:bg-teal-900', border: 'border-teal-500/50', text: 'text-teal-300' },
-    { id: 'Paralyzed', icon: '⚡', label: 'Paralisado', bg: 'bg-yellow-950 hover:bg-yellow-900', border: 'border-yellow-500/50', text: 'text-yellow-300' },
-    { id: 'Petrified', icon: '🗿', label: 'Petrificado', bg: 'bg-zinc-900 hover:bg-zinc-800', border: 'border-zinc-500/50', text: 'text-zinc-300' },
-    { id: 'Poisoned', icon: '🤢', label: 'Envenenado', bg: 'bg-green-950 hover:bg-green-900', border: 'border-green-500/50', text: 'text-green-300' },
-    { id: 'Prone', icon: '⏬', label: 'Caído', bg: 'bg-amber-950 hover:bg-amber-900', border: 'border-amber-500/50', text: 'text-amber-300' },
-    { id: 'Restrained', icon: '⛓️', label: 'Impedido', bg: 'bg-red-950 hover:bg-red-900', border: 'border-red-500/50', text: 'text-red-300' },
-    { id: 'Stunned', icon: '💫', label: 'Atordoado', bg: 'bg-fuchsia-950 hover:bg-fuchsia-900', border: 'border-fuchsia-500/50', text: 'text-fuchsia-300' },
-    { id: 'Unconscious', icon: '💤', label: 'Inconsciente', bg: 'bg-purple-950 hover:bg-purple-900', border: 'border-purple-500/50', text: 'text-purple-300' },
+  { id: 'Blinded', icon: '🦇', label: 'Cego', bg: 'bg-gray-900 hover:bg-gray-800', border: 'border-gray-500/50', text: 'text-gray-200' },
+  { id: 'Charmed', icon: '💕', label: 'Enfeitiçado', bg: 'bg-pink-950 hover:bg-pink-900', border: 'border-pink-500/50', text: 'text-pink-300' },
+  { id: 'Deafened', icon: '🔇', label: 'Surdo', bg: 'bg-slate-900 hover:bg-slate-800', border: 'border-slate-500/50', text: 'text-slate-300' },
+  { id: 'Exhaustion', icon: '😩', label: 'Exaustão', bg: 'bg-amber-950 hover:bg-amber-900', border: 'border-amber-500/50', text: 'text-amber-300' },
+  { id: 'Frightened', icon: '😱', label: 'Amedrontado', bg: 'bg-indigo-950 hover:bg-indigo-900', border: 'border-indigo-500/50', text: 'text-indigo-300' },
+  { id: 'Grappled', icon: '🤼', label: 'Agarrado', bg: 'bg-orange-950 hover:bg-orange-900', border: 'border-orange-500/50', text: 'text-orange-300' },
+  { id: 'Incapacitated', icon: '😵', label: 'Incapacitado', bg: 'bg-stone-900 hover:bg-stone-800', border: 'border-stone-500/50', text: 'text-stone-300' },
+  { id: 'Invisible', icon: '👻', label: 'Invisível', bg: 'bg-teal-950 hover:bg-teal-900', border: 'border-teal-500/50', text: 'text-teal-300' },
+  { id: 'Paralyzed', icon: '⚡', label: 'Paralisado', bg: 'bg-yellow-950 hover:bg-yellow-900', border: 'border-yellow-500/50', text: 'text-yellow-300' },
+  { id: 'Petrified', icon: '🗿', label: 'Petrificado', bg: 'bg-zinc-900 hover:bg-zinc-800', border: 'border-zinc-500/50', text: 'text-zinc-300' },
+  { id: 'Poisoned', icon: '🤢', label: 'Envenenado', bg: 'bg-green-950 hover:bg-green-900', border: 'border-green-500/50', text: 'text-green-300' },
+  { id: 'Prone', icon: '⏬', label: 'Caído', bg: 'bg-amber-950 hover:bg-amber-900', border: 'border-amber-500/50', text: 'text-amber-300' },
+  { id: 'Restrained', icon: '⛓️', label: 'Impedido', bg: 'bg-red-950 hover:bg-red-900', border: 'border-red-500/50', text: 'text-red-300' },
+  { id: 'Stunned', icon: '💫', label: 'Atordoado', bg: 'bg-fuchsia-950 hover:bg-fuchsia-900', border: 'border-fuchsia-500/50', text: 'text-fuchsia-300' },
+  { id: 'Unconscious', icon: '💤', label: 'Inconsciente', bg: 'bg-purple-950 hover:bg-purple-900', border: 'border-purple-500/50', text: 'text-purple-300' },
 ];
 
 const SidebarDM: React.FC<SidebarDMProps> = ({ 
@@ -381,11 +431,13 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
   onResetView, onGiveItem, onApplyDamageFromChat,
   onDMRoll, onLongRest, availableItems, availableConditions, onOpenLootGenerator,
   onRequestCustomRoll,
+  onQueueInitiativeRoll,
   fogRooms = [], onToggleFogRoom, onDeleteFogRoom,
   conditionsData,
-  onStartCombat,    
-  onQueueInitiativeRoll // <--- ADICIONE AQUI
+  onStartCombat,
+  availableMonsters // 🐉 DECLARANDO AQUI
 }) => {
+    
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>('combat');
   const [mainTab, setMainTab] = useState<MainTab>('tools'); 
@@ -421,7 +473,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
 
   const [conditionToast, setConditionToast] = useState<{visible: boolean, condId: string, timeoutId?: NodeJS.Timeout}>({visible: false, condId: ''});
 
-  // 🔴 NOVOS ESTADOS: Modal de Iniciar Combate
   const [showCombatModal, setShowCombatModal] = useState(false);
   const [selectedCombatants, setSelectedCombatants] = useState<number[]>([]);
 
@@ -447,11 +498,74 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
       };
   }, [onPlaySFX]);
 
-  const FULL_MONSTER_LIST = [...MONSTER_LIST, ...(customMonsters || [])];
-  
-  const filteredMonsters = FULL_MONSTER_LIST.filter(m => 
-      m.name.toLowerCase().includes(monsterSearch.toLowerCase())
-  );
+  // 🐉 TRADUTOR DO JSON 5eTools PARA O NEXUS
+  const parseCompendiumMonster = (m: any): MonsterPreset => {
+      if (m.hp !== undefined && typeof m.hp === 'number' && !m.action) return m as MonsterPreset;
+
+      const hp = m.hp?.average || 10;
+      const acObj = m.ac?.[0];
+      const ac = typeof acObj === 'object' ? (acObj.ac || 10) : (acObj || 10);
+      
+      const parsedActions = (m.action || []).map((act: any) => {
+          const rawText = JSON.stringify(act);
+          const hitMatch = rawText.match(/\{@hit ([-+]?\d+)\}/i);
+          const dmgMatch = rawText.match(/\{@damage ([^}]+)\}/i) || rawText.match(/\{@dice ([^}]+)\}/i);
+          
+          let dType = 'Físico';
+          const lowerText = rawText.toLowerCase();
+          if (lowerText.includes('piercing')) dType = 'Perfurante';
+          else if (lowerText.includes('slashing')) dType = 'Cortante';
+          else if (lowerText.includes('bludgeoning')) dType = 'Concussão';
+          else if (lowerText.includes('fire')) dType = 'Fogo';
+          else if (lowerText.includes('cold')) dType = 'Gelo';
+          else if (lowerText.includes('poison')) dType = 'Veneno';
+          else if (lowerText.includes('acid')) dType = 'Ácido';
+          else if (lowerText.includes('lightning')) dType = 'Elétrico';
+          else if (lowerText.includes('necrotic')) dType = 'Necrótico';
+          else if (lowerText.includes('radiant')) dType = 'Radiante';
+
+          return {
+              name: act.name || 'Ataque',
+              attackBonus: hitMatch ? parseInt(hitMatch[1]) : 0,
+              damage: dmgMatch ? dmgMatch[1] : '',
+              damageType: dType,
+              description: extractTextFromEntries(act.entries || [])
+          };
+      });
+
+      let speedStr = '30ft';
+      if (m.speed) {
+          const speeds = [];
+          if (m.speed.walk) speeds.push(`${m.speed.walk}ft`);
+          if (m.speed.fly) speeds.push(`Voo ${m.speed.fly}ft`);
+          if (m.speed.swim) speeds.push(`Nado ${m.speed.swim}ft`);
+          if (speeds.length > 0) speedStr = speeds.join(', ');
+      }
+
+      return {
+          name: m.name, hp, ac,
+          image: '/tokens/Raças/Orc/fighter/fighter_orc_humanoid_male_medium_01.png', 
+          size: m.size === 'S' ? 0.8 : m.size === 'L' ? 2 : m.size === 'H' ? 3 : m.size === 'G' ? 4 : 1,
+          stats: { str: m.str || 10, dex: m.dex || 10, con: m.con || 10, int: m.int || 10, wis: m.wis || 10, cha: m.cha || 10 },
+          immunities: m.immune ? m.immune.map((i:any) => typeof i === 'string' ? i : i.immune?.[0]).filter(Boolean) : [],
+          resistances: m.resist ? m.resist.map((i:any) => typeof i === 'string' ? i : i.resist?.[0]).filter(Boolean) : [],
+          vulnerabilities: m.vulnerable ? m.vulnerable.map((i:any) => typeof i === 'string' ? i : i.vulnerable?.[0]).filter(Boolean) : [],
+          actions: parsedActions,
+          details: { speed: speedStr, senses: m.senses ? m.senses.join(', ') : 'Nenhuma' },
+          level: m.cr ? (typeof m.cr === 'string' ? m.cr : m.cr.cr) : undefined
+      };
+  };
+
+  // Trazendo apenas os primeiros 50 que correspondem à pesquisa para não travar o navegador
+  const filteredMonsters = React.useMemo(() => {
+      const all = [...MONSTER_LIST, ...(customMonsters || []), ...(availableMonsters || [])];
+      if (!monsterSearch) return all.slice(0, 30).map(parseCompendiumMonster);
+      
+      return all
+          .filter(m => m.name && m.name.toLowerCase().includes(monsterSearch.toLowerCase()))
+          .slice(0, 50)
+          .map(parseCompendiumMonster);
+  }, [monsterSearch, customMonsters, availableMonsters]);
 
   const targetId = targetEntityIds[0];
   const targetEntity = entities.find(e => e.id === targetId);
@@ -698,7 +812,6 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
           confirmColor={confirmModal.confirmColor}
       />
 
-      {/* 🔴 NOVO: Modal para Iniciar o Combate (Selecionar alvos e Rolar Iniciativa) */}
       {showCombatModal && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setShowCombatModal(false)}>
               <div className="bg-[#111] border border-amber-500/30 p-6 rounded-xl shadow-[0_0_40px_rgba(245,158,11,0.2)] w-[400px] max-w-[90vw] animate-in zoom-in-95 duration-200 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
@@ -732,28 +845,28 @@ const SidebarDM: React.FC<SidebarDMProps> = ({
                   <div className="flex gap-3 pt-3 border-t border-white/10 shrink-0">
                       <button onClick={() => setShowCombatModal(false)} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors border border-white/10">Cancelar</button>
                       <button 
-    onClick={() => {
-        selectedCombatants.forEach(id => {
-            const e = entities.find(x => x.id === id);
-            if (e) {
-                const attrs = mapEntityStatsToAttributes(e);
-                const dexMod = Math.floor((attrs.DES - 10) / 2);
-                if (e.type === 'player') {
-                    onRequestRoll(id, 'Iniciativa', dexMod, 0); 
-                } else if (onQueueInitiativeRoll) {
-                    onQueueInitiativeRoll(id, e.name, dexMod);
-                }
-            }
-        });
-        onSendMessage(`⚔️ **INICIATIVA ROLADA!**\n> O Mestre iniciou um novo combate! Todos os participantes devem rolar suas iniciativas.`);
-        handleStartCombatWrapper(selectedCombatants);
-        setShowCombatModal(false);
-    }} 
-    disabled={selectedCombatants.length === 0}
-    className="flex-[1.5] py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:grayscale text-black text-xs font-black uppercase tracking-widest rounded-lg transition-all shadow-[0_0_15px_rgba(245,158,11,0.4)] active:scale-95"
->
-    Iniciar ({selectedCombatants.length})
-</button>
+                          onClick={() => {
+                              selectedCombatants.forEach(id => {
+                                  const e = entities.find(x => x.id === id);
+                                  if (e) {
+                                      const attrs = mapEntityStatsToAttributes(e);
+                                      const dexMod = Math.floor((attrs.DES - 10) / 2);
+                                      if (e.type === 'player') {
+                                          onRequestRoll(id, 'Iniciativa', dexMod, 0); 
+                                      } else if (onQueueInitiativeRoll) {
+                                          onQueueInitiativeRoll(id, e.name, dexMod);
+                                      }
+                                  }
+                              });
+                              onSendMessage(`⚔️ **INICIATIVA ROLADA!**\n> O Mestre iniciou um novo combate! Todos os participantes devem rolar suas iniciativas.`);
+                              handleStartCombatWrapper(selectedCombatants);
+                              setShowCombatModal(false);
+                          }} 
+                          disabled={selectedCombatants.length === 0}
+                          className="flex-[1.5] py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:grayscale text-black text-xs font-black uppercase tracking-widest rounded-lg transition-all shadow-[0_0_15px_rgba(245,158,11,0.4)] active:scale-95"
+                      >
+                          Iniciar ({selectedCombatants.length})
+                      </button>
                   </div>
               </div>
           </div>

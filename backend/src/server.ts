@@ -177,7 +177,8 @@ io.on('connection', (socket) => {
         availableBackgrounds: FULL_BACKGROUNDS, 
         availableFeats: FULL_FEATS, 
         availableSpells: FULL_SPELLS,
-        availableRules: FULL_RULES 
+        availableRules: FULL_RULES,
+        availableMonsters: FULL_BESTIARY // 🐉 A PORTA DO BESTIÁRIO FOI ABERTA!
     });
   };
 
