@@ -1110,35 +1110,39 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                 )}
 
                 {/* 🩸 NOVO PAINEL DE VIDA E XP 🩸 */}
-                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px', padding: '12px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.2)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px', padding: '0 4px' }}>
                     
-                    {/* Header HP */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", paddingBottom: "4px" }}>
-                        <span style={{ fontSize: 10, fontWeight: 800, color: "var(--accent)", textTransform: "uppercase", letterSpacing: ".15em", fontFamily: "var(--ff)", textShadow: "0 1px 2px rgba(0,0,0,0.8)" }}>
+                    {/* Header HP e Pips Integrados */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: "var(--t1)", textTransform: "uppercase", letterSpacing: ".15em", fontFamily: "var(--ff)", textShadow: "0 1px 2px rgba(0,0,0,0.8)" }}>
                             Pontos de Vida
                         </span>
-                        <span style={{ fontFamily: "var(--ff)", fontSize: 14, fontWeight: 900, color: "var(--t1)" }}>
-                            {myCharacter.hp} <span style={{ fontSize: 10, color: "var(--t2)", fontWeight: 700 }}>/ {myCharacter.maxHp}</span>
-                        </span>
-                    </div>
+                        
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+                            {/* Pips de Cristal de Sangue */}
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "3px", flex: 1 }}>
+                                {Array.from({ length: Math.min(myCharacter.maxHp || 1, 50) }).map((_, i) => {
+                                    const isActive = i < (myCharacter.hp || 0);
+                                    return (
+                                        <div key={i} 
+                                            onClick={() => { if (onUpdateCharacter && myCharacter) onUpdateCharacter(myCharacter.id, { hp: i + 1 }); }}
+                                            style={{
+                                                width: '8px', height: '12px', borderRadius: '2px', cursor: 'pointer',
+                                                background: isActive ? 'linear-gradient(135deg, #ef4444 0%, #7f1d1d 100%)' : 'rgba(0,0,0,0.4)',
+                                                border: `1px solid ${isActive ? '#fca5a5' : 'var(--border)'}`,
+                                                boxShadow: isActive ? 'inset 0 1px 2px rgba(255,255,255,0.4), 0 0 5px rgba(220,38,38,0.6)' : 'inset 0 1px 3px rgba(0,0,0,0.8)',
+                                                transition: 'all 0.2s ease'
+                                            }} 
+                                        />
+                                    );
+                                })}
+                            </div>
 
-                    {/* Pips de Cristal de Sangue */}
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "3px" }}>
-                        {Array.from({ length: Math.min(myCharacter.maxHp || 1, 50) }).map((_, i) => {
-                            const isActive = i < (myCharacter.hp || 0);
-                            return (
-                                <div key={i} 
-                                    onClick={() => { if (onUpdateCharacter && myCharacter) onUpdateCharacter(myCharacter.id, { hp: i + 1 }); }}
-                                    style={{
-                                        width: '8px', height: '12px', borderRadius: '2px', cursor: 'pointer',
-                                        background: isActive ? 'linear-gradient(135deg, #ef4444 0%, #7f1d1d 100%)' : 'rgba(0,0,0,0.4)',
-                                        border: `1px solid ${isActive ? '#fca5a5' : 'var(--border)'}`,
-                                        boxShadow: isActive ? 'inset 0 1px 2px rgba(255,255,255,0.4), 0 0 5px rgba(220,38,38,0.6)' : 'inset 0 1px 3px rgba(0,0,0,0.8)',
-                                        transition: 'all 0.2s ease'
-                                    }} 
-                                />
-                            );
-                        })}
+                            {/* Numbers */}
+                            <span style={{ fontFamily: "var(--ff)", fontSize: 16, fontWeight: 900, color: "var(--t1)", flexShrink: 0 }}>
+                                {myCharacter.hp} <span style={{ fontSize: 11, color: "var(--t2)", fontWeight: 700 }}>/ {myCharacter.maxHp}</span>
+                            </span>
+                        </div>
                     </div>
                     
                     {/* Controles HP */}
@@ -1194,13 +1198,15 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                     )}
 
                     {/* Divisor XP */}
-                    <div style={{ height: '1px', background: 'var(--border)', margin: '2px 0' }} />
+                    <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0 8px 0' }} />
 
-                    {/* Barra XP */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ flex: 1 }}>
+                    {/* Barra XP e Descansos */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                        
+                        {/* XP */}
+                        <div>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                                <span style={{ fontSize: 8, color: "var(--t3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", fontFamily: "var(--ff)" }}>XP</span>
+                                <span style={{ fontSize: 9, color: "var(--t2)", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".15em", fontFamily: "var(--ff)" }}>XP</span>
                                 <span style={{ fontSize: 9, fontWeight: 700, color: "var(--t2)", fontFamily: "var(--ff)" }}>
                                     <strong style={{ color: "var(--t1)" }}>{xpVisivel.toLocaleString()}</strong> / {xpNecessarioNoNivel.toLocaleString()}
                                 </span>
@@ -1209,10 +1215,30 @@ const SidebarPlayer: React.FC<SidebarPlayerProps> = ({
                                 <div style={{ width: `${xpPercent}%`, height: "100%", background: "linear-gradient(90deg, #1d4ed8 0%, #3b82f6 100%)", boxShadow: "0 0 8px rgba(59,130,246,0.6)", transition: "width .4s ease" }} />
                             </div>
                         </div>
-                        <div style={{ display: "flex", gap: 3 }}>
-                            <button type="button" onClick={handleShortRest} className="premium-btn hover:bg-white/5" style={{ padding: "4px 8px", fontSize: 9, borderRadius: '3px', background: 'transparent' }} title="Descanso Curto">⟳</button>
-                            <button type="button" onClick={handleLongRest} className="premium-btn hover:bg-white/5" style={{ padding: "4px 8px", fontSize: 9, borderRadius: '3px', background: 'transparent' }} title="Descanso Longo">☽</button>
+
+                        {/* Botões de Descanso Abaixo da XP */}
+                        <div style={{ display: "flex", gap: "8px" }}>
+                            <button 
+                                type="button" 
+                                onClick={handleShortRest} 
+                                className="flex-1 bg-[#0a0c1e] border border-[#2a3060] hover:border-[#c8d4e8] hover:bg-white/5 rounded-[3px] py-1.5 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[inset_0_1px_2px_rgba(255,255,255,0.02)]"
+                                title="Descanso Curto"
+                            >
+                                <span style={{ fontSize: '11px', color: '#8090b8' }}>⟳</span>
+                                <span style={{ fontSize: '9px', fontWeight: 800, color: "var(--t1)", fontFamily: "var(--ff)", textTransform: "uppercase", letterSpacing: ".08em" }}>Curto</span>
+                            </button>
+                            
+                            <button 
+                                type="button" 
+                                onClick={handleLongRest} 
+                                className="flex-1 bg-[#0a0c1e] border border-[#2a3060] hover:border-[#c8d4e8] hover:bg-white/5 rounded-[3px] py-1.5 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[inset_0_1px_2px_rgba(255,255,255,0.02)]"
+                                title="Descanso Longo"
+                            >
+                                <span style={{ fontSize: '10px', color: '#8090b8' }}>☽</span>
+                                <span style={{ fontSize: '9px', fontWeight: 800, color: "var(--t1)", fontFamily: "var(--ff)", textTransform: "uppercase", letterSpacing: ".08em" }}>Longo</span>
+                            </button>
                         </div>
+                        
                     </div>
                 </div>
             </div>
